@@ -30,6 +30,7 @@ export default function TransfersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [currentUserId, setCurrentUserId] = useState<string>('')
+  const [currentUserName, setCurrentUserName] = useState('')
   const [filter, setFilter] = useState('all')
 
   const isDirector = role === 'directeur'
@@ -45,6 +46,14 @@ export default function TransfersPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     setCurrentUserId(user.id)
+
+    // Jib smiyt user
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('full_name')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    setCurrentUserName(profile?.full_name || 'مستخدم')
 
     const { data: transfersData, error: tError } = await supabase
       .from('cash_transfers')
@@ -79,23 +88,14 @@ export default function TransfersPage() {
   }
 
   // ✅ Chkoun kay-accepti : l'user li 3ndo caisse destination
-  const canValidate = (t: Transfer): boolean => {
-    if (t.status !== 'pending') return false
-    if (!t.to_caisse) return false
-
-    // Ila destination hiya Caisse Principale (Directeur)
-    // TYPE = 'central' WLA 'principal'
-    if (t.to_caisse.type === 'central' || t.to_caisse.type === 'principal') {
-      return isDirector
-    }
-
-    // Ila destination caisse personnelle → Owner dyalha
-    if (t.to_caisse.owner_user_id && t.to_caisse.owner_user_id === currentUserId) {
-      return true
-    }
-
-    return false
+const canValidate = (t: Transfer): boolean => {
+  if (t.status !== 'pending') return false
+  if (!t.to_caisse) return false
+  if (t.to_caisse.owner_user_id) {
+    return t.to_caisse.owner_user_id === currentUserId
   }
+  return false
+}
 
   const handleAccept = async (transfer: Transfer) => {
     if (!confirm('هل تريد قبول هذا التحويل؟')) return
@@ -112,16 +112,21 @@ export default function TransfersPage() {
 
     if (error) { setError(error.message); return }
 
+    // ✅ Notification l créateur (li dar transfert)
     if (transfer.created_by && transfer.created_by !== currentUserId) {
-      await supabase.from('notifications').insert({
-        user_id: transfer.created_by,
-        establishment_id: establishmentId,
-        type: 'transfer_accepted',
-        title: '✅ تم قبول التحويل',
-        message: `تم قبول تحويل ${transfer.amount} DH. الرصيد أصبح متوفراً.`,
-        link: '/dashboard/caisse/transfers',
-        metadata: { transfer_id: transfer.id },
-      })
+      const { error: notifError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: transfer.created_by,
+          establishment_id: establishmentId,
+          type: 'transfer_accepted',
+          title: '✅ تم قبول التحويل',
+          message: `${currentUserName} وافق على تحويل ${transfer.amount} DH من ${transfer.from_caisse?.name} إلى ${transfer.to_caisse?.name}`,
+          link: '/dashboard/caisse/transfers',
+          metadata: { transfer_id: transfer.id, amount: transfer.amount },
+        })
+
+      if (notifError) console.error('❌ Notification error:', notifError)
     }
 
     loadData()
@@ -142,16 +147,21 @@ export default function TransfersPage() {
 
     if (error) { setError(error.message); return }
 
+    // ✅ Notification l créateur
     if (transfer.created_by && transfer.created_by !== currentUserId) {
-      await supabase.from('notifications').insert({
-        user_id: transfer.created_by,
-        establishment_id: establishmentId,
-        type: 'transfer_rejected',
-        title: '❌ تم رفض التحويل',
-        message: `تم رفض تحويل ${transfer.amount} DH`,
-        link: '/dashboard/caisse/transfers',
-        metadata: { transfer_id: transfer.id },
-      })
+      const { error: notifError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: transfer.created_by,
+          establishment_id: establishmentId,
+          type: 'transfer_rejected',
+          title: '❌ تم رفض التحويل',
+          message: `${currentUserName} رفض تحويل ${transfer.amount} DH`,
+          link: '/dashboard/caisse/transfers',
+          metadata: { transfer_id: transfer.id, amount: transfer.amount },
+        })
+
+      if (notifError) console.error('❌ Notification error:', notifError)
     }
 
     loadData()

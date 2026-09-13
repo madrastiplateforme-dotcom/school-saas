@@ -7,7 +7,7 @@ import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import { useUserRole } from '@/lib/useUserRole'
 import DateInput from '@/components/DateInput'
-import { Plus, Trash2, Search, Wallet, Lock } from 'lucide-react'
+import { Plus, Trash2, Search, Wallet, Lock, Users, User } from 'lucide-react'
 
 type Expense = {
   id: string
@@ -17,10 +17,11 @@ type Expense = {
   category: string
   payment_method: string
   cash_register_id: string | null
+  nature: string | null
+  staff_id: string | null
   created_at: string
-  cash_registers: {
-    name: string
-  } | null
+  cash_registers: { name: string } | null
+  staff: { full_name: string } | null
 }
 
 type CashRegister = {
@@ -29,6 +30,22 @@ type CashRegister = {
   type: string
   owner_user_id: string | null
 }
+
+type Staff = {
+  id: string
+  full_name: string
+  type: string
+  custom_type: string | null
+  salary_amount: number
+}
+
+const NATURES = [
+  { value: 'autre', label: 'مصروف عادي' },
+  { value: 'salaire', label: 'راتب شهري' },
+  { value: 'prime', label: 'منحة' },
+  { value: 'heures_sup', label: 'ساعات إضافية' },
+  { value: 'avance', label: 'سلفة' },
+]
 
 export default function ExpensesPage() {
   const router = useRouter()
@@ -43,11 +60,15 @@ export default function ExpensesPage() {
 
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([])
+  const [staffList, setStaffList] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [currentUserId, setCurrentUserId] = useState('')
 
+  // Form
+  const [nature, setNature] = useState('autre')
+  const [staffId, setStaffId] = useState('')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [category, setCategory] = useState('')
@@ -61,69 +82,144 @@ export default function ExpensesPage() {
     fetchData(establishmentId)
   }, [establishmentId, role])
 
-  const fetchData = async (sid: string) => {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    setCurrentUserId(user.id)
-
-    // 1. Jib ga3 les caisses
-    const { data: allCaisses } = await supabase
-      .from('cash_registers')
-      .select('id, name, type, owner_user_id')
-      .eq('establishment_id', sid)
-
-    // 2. Filter caisses l'INSERT (dropdown / info box)
-    let myCaisses: CashRegister[] = []
-    if (isSecretary) {
-      myCaisses = (allCaisses || []).filter(c => c.owner_user_id === user.id)
-    } else if (isDirector) {
-      myCaisses = (allCaisses || []).filter(c => c.type === 'central' || c.type === 'principal')
-    } else {
-      myCaisses = allCaisses || []
-    }
-
-    setCashRegisters(myCaisses)
-    if (myCaisses.length > 0) setCashRegisterId(myCaisses[0].id)
-
-    // 3. Jib les dépenses
-    let expensesQuery = supabase
-      .from('expenses')
-      .select(`
-        *,
-        cash_registers (name)
-      `)
-      .eq('establishment_id', sid)
-
-    // - Secrétaire : ghir dyalha
-    // - Directeur : KOULCHI
-    if (isSecretary) {
-      const myCaisseIds = (allCaisses || [])
-        .filter(c => c.owner_user_id === user.id)
-        .map(c => c.id)
-      
-      if (myCaisseIds.length > 0) {
-        expensesQuery = expensesQuery.in('cash_register_id', myCaisseIds)
-      } else {
-        setExpenses([])
-        setLoading(false)
-        return
+  // ✅ Mli tbdel nature, 3mer automatic
+  useEffect(() => {
+    if (nature === 'salaire' && staffId) {
+      const s = staffList.find(x => x.id === staffId)
+      if (s) {
+        setDescription(`راتب - ${s.full_name}`)
+        setAmount(String(s.salary_amount || ''))
+        setCategory('رواتب')
+      }
+    } else if (nature === 'prime' && staffId) {
+      const s = staffList.find(x => x.id === staffId)
+      if (s) {
+        setDescription(`منحة - ${s.full_name}`)
+        setCategory('منح')
+        if (!amount) setAmount('')
+      }
+    } else if (nature === 'heures_sup' && staffId) {
+      const s = staffList.find(x => x.id === staffId)
+      if (s) {
+        setDescription(`ساعات إضافية - ${s.full_name}`)
+        setCategory('ساعات إضافية')
+        if (!amount) setAmount('')
+      }
+    } else if (nature === 'avance' && staffId) {
+      const s = staffList.find(x => x.id === staffId)
+      if (s) {
+        setDescription(`سلفة - ${s.full_name}`)
+        setCategory('سلف')
+        if (!amount) setAmount('')
+      }
+    } else if (nature === 'autre') {
+      setStaffId('')
+      if (description.startsWith('راتب') || description.startsWith('منحة') || description.startsWith('ساعات') || description.startsWith('سلفة')) {
+        setDescription('')
+        setAmount('')
+        setCategory('')
       }
     }
+  }, [nature, staffId])
 
-    const { data: expensesData, error: expensesError } = await expensesQuery
-      .order('expense_date', { ascending: false })
+  const fetchData = async (sid: string) => {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
 
-    if (expensesError) setError(expensesError.message)
-    else setExpenses(expensesData || [])
+  setCurrentUserId(user.id)
 
-    setLoading(false)
+  // 1. Caisses
+  let caisseQuery = supabase
+    .from('cash_registers')
+    .select('id, name, type, owner_user_id')
+    .eq('establishment_id', sid)
+
+  if (isSecretary) {
+    caisseQuery = caisseQuery.eq('owner_user_id', user.id)
+  } else if (isDirector) {
+    caisseQuery = caisseQuery.or('type.eq.central,type.eq.principal')
   }
+
+  const { data: cashData, error: cashError } = await caisseQuery
+
+  if (cashError) setError(cashError.message)
+  else {
+    setCashRegisters(cashData || [])
+    if (cashData && cashData.length > 0) setCashRegisterId(cashData[0].id)
+  }
+
+  // 2. Staff
+  if (isDirector || isSecretary) {
+    const { data: staffData } = await supabase
+      .from('staff')
+      .select('id, full_name, type, custom_type, salary_amount')
+      .eq('establishment_id', sid)
+      .eq('status', 'active')
+      .order('full_name', { ascending: true })
+    setStaffList(staffData || [])
+  }
+
+  // 3. Expenses (BLA staff join)
+  let expensesQuery = supabase
+    .from('expenses')
+    .select(`
+      *,
+      cash_registers (name)
+    `)
+    .eq('establishment_id', sid)
+
+  if (isSecretary && cashData && cashData.length > 0) {
+    expensesQuery = expensesQuery.in('cash_register_id', cashData.map(c => c.id))
+  } else if (isDirector && cashData && cashData.length > 0) {
+    expensesQuery = expensesQuery.in('cash_register_id', cashData.map(c => c.id))
+  }
+
+  const { data: expensesData, error: expensesError } = await expensesQuery
+    .order('expense_date', { ascending: false })
+
+  if (expensesError) {
+    setError(expensesError.message)
+    setLoading(false)
+    return
+  }
+
+  // 4. Merge staff b expenses (bla join)
+  if (expensesData && expensesData.length > 0) {
+    const staffIds = [...new Set(expensesData.map((e: any) => e.staff_id).filter(Boolean))]
+    
+    if (staffIds.length > 0) {
+      const { data: staffData } = await supabase
+        .from('staff')
+        .select('id, full_name')
+        .in('id', staffIds as string[])
+
+      const staffMap = new Map((staffData || []).map((s: any) => [s.id, s]))
+
+      const merged = expensesData.map((e: any) => ({
+        ...e,
+        staff: e.staff_id ? staffMap.get(e.staff_id) || null : null,
+      }))
+      setExpenses(merged)
+    } else {
+      setExpenses(expensesData)
+    }
+  } else {
+    setExpenses([])
+  }
+
+  setLoading(false)
+}
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!establishmentId || !description.trim() || !amount) return
+
+    if (nature !== 'autre' && !staffId) {
+      setError('يرجى اختيار الموظف')
+      return
+    }
+
     setAdding(true)
     setError('')
 
@@ -149,6 +245,8 @@ export default function ExpensesPage() {
         payment_method: paymentMethod,
         cash_register_id: finalCaisseId,
         user_id: currentUserId,
+        nature: nature,
+        staff_id: nature !== 'autre' ? staffId : null,
       })
       .select()
       .single()
@@ -156,6 +254,8 @@ export default function ExpensesPage() {
     if (error) {
       setError(error.message)
     } else {
+      setNature('autre')
+      setStaffId('')
       setDescription('')
       setAmount('')
       setCategory('')
@@ -182,7 +282,8 @@ export default function ExpensesPage() {
 
   const filteredExpenses = expenses.filter((exp) =>
     exp.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (exp.category || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (exp.category || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    ((exp.staff as any)?.full_name || '').toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   if (loading || permissionsLoading || roleLoading) {
@@ -194,6 +295,23 @@ export default function ExpensesPage() {
   }
 
   const canSelectCaisse = !isSecretary && !isDirector
+  const isSalary = nature !== 'autre'
+
+  const getNatureBadge = (nature: string | null) => {
+    if (!nature || nature === 'autre') return null
+    const n = NATURES.find(x => x.value === nature)
+    const colors: Record<string, string> = {
+      salaire: 'bg-blue-100 text-blue-700',
+      prime: 'bg-purple-100 text-purple-700',
+      heures_sup: 'bg-amber-100 text-amber-700',
+      avance: 'bg-pink-100 text-pink-700',
+    }
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium ${colors[nature] || 'bg-gray-100 text-gray-700'}`}>
+        {n?.label || nature}
+      </span>
+    )
+  }
 
   return (
     <div className="p-6">
@@ -216,8 +334,56 @@ export default function ExpensesPage() {
       {canCreateExpenses ? (
         <div className="bg-white p-6 rounded-xl shadow-sm mb-8">
           <h2 className="text-lg font-semibold mb-4">إضافة مصروف جديد</h2>
+
+          {/* Nature selector */}
+          <div className="mb-4 flex gap-2 flex-wrap">
+            {NATURES.map((n) => (
+              <button
+                key={n.value}
+                type="button"
+                onClick={() => setNature(n.value)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                  nature === n.value
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {n.label}
+              </button>
+            ))}
+          </div>
+
           <form onSubmit={handleAddExpense} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
+            {/* Staff selector — ghir ila Salary/Prime/etc */}
+            {isSalary && (
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <Users className="inline h-4 w-4 mr-1" />
+                  الموظف <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={staffId}
+                  onChange={(e) => setStaffId(e.target.value)}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                  <option value="">-- اختر الموظف --</option>
+                  {staffList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name} — {s.type === 'teacher' ? 'أستاذ' : s.type === 'secretaire' ? 'سكرتيرة' : s.type === 'chauffeur' ? 'سائق' : s.type === 'femme_menage' ? 'عاملة نظافة' : s.type === 'admin' ? 'إداري' : (s.custom_type || s.type)}
+                      {s.salary_amount > 0 ? ` (${s.salary_amount} DH)` : ''}
+                    </option>
+                  ))}
+                </select>
+                {staffList.length === 0 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    ⚠️ لا يوجد موظفون. أضفهم من صفحة "الموظفون"
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className={isSalary ? 'md:col-span-2' : ''}>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 الوصف <span className="text-red-500">*</span>
               </label>
@@ -227,7 +393,7 @@ export default function ExpensesPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="مثال: شراء لوازم مكتبية"
+                placeholder={isSalary ? 'يتم التعبئة تلقائياً' : 'مثال: شراء لوازم مكتبية'}
               />
             </div>
 
@@ -248,9 +414,7 @@ export default function ExpensesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                الفئة
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">الفئة</label>
               <input
                 type="text"
                 value={category}
@@ -261,16 +425,12 @@ export default function ExpensesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                التاريخ
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">التاريخ</label>
               <DateInput value={expenseDate} onChange={setExpenseDate} />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                طريقة الدفع
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">طريقة الدفع</label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
@@ -285,9 +445,7 @@ export default function ExpensesPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                الصندوق
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">الصندوق</label>
               {!canSelectCaisse ? (
                 <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
                   <Lock className="h-4 w-4 text-emerald-600 flex-shrink-0" />
@@ -307,9 +465,7 @@ export default function ExpensesPage() {
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 >
                   {cashRegisters.map((cr) => (
-                    <option key={cr.id} value={cr.id}>
-                      {cr.name}
-                    </option>
+                    <option key={cr.id} value={cr.id}>{cr.name}</option>
                   ))}
                 </select>
               )}
@@ -322,7 +478,7 @@ export default function ExpensesPage() {
                 className="inline-flex items-center gap-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
                 <Plus className="h-4 w-4" />
-                {adding ? 'جارٍ الإضافة...' : 'إضافة المصروف'}
+                {adding ? 'جارٍ الإضافة...' : `إضافة ${NATURES.find(n => n.value === nature)?.label}`}
               </button>
             </div>
           </form>
@@ -363,10 +519,9 @@ export default function ExpensesPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الوصف</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">النوع</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المبلغ</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">التاريخ</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الفئة</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الطريقة</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الصندوق</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">إجراءات</th>
                 </tr>
@@ -374,11 +529,20 @@ export default function ExpensesPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredExpenses.map((exp) => (
                   <tr key={exp.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{exp.description}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{exp.amount} DH</td>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                      {exp.description}
+                      {(exp.staff as any)?.full_name && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          <User className="inline h-3 w-3 mr-1" />
+                          {(exp.staff as any).full_name}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {getNatureBadge(exp.nature) || <span className="text-xs text-slate-400">-</span>}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-800">{exp.amount} DH</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{exp.expense_date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{exp.category || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{exp.payment_method}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{exp.cash_registers?.name || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button

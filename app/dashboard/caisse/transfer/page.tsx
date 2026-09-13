@@ -24,6 +24,7 @@ export default function TransferPage() {
 
   const [registers, setRegisters] = useState<CashRegister[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
+  const [currentUserName, setCurrentUserName] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -49,6 +50,14 @@ export default function TransferPage() {
     if (!user) return
     setCurrentUserId(user.id)
 
+    // Jib smiyt user
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('full_name')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    setCurrentUserName(profile?.full_name || 'مستخدم')
+
     const { data: cashData } = await supabase
       .from('cash_registers')
       .select('id, name, type, owner_user_id, initial_balance')
@@ -58,11 +67,10 @@ export default function TransferPage() {
     const allRegs = cashData || []
     setRegisters(allRegs)
 
-    // ✅ Auto-select "from" : ghir caisse dyal l'user
-   if (isDirector) {
-  const myCaisse = allRegs.find((r) => r.type === 'central' || r.type === 'principal')
-  if (myCaisse) setFromId(myCaisse.id)
-} else if (isSecretary) {
+    if (isDirector) {
+      const myCaisse = allRegs.find((r) => r.type === 'central' || r.type === 'principal')
+      if (myCaisse) setFromId(myCaisse.id)
+    } else if (isSecretary) {
       const myCaisse = allRegs.find((r) => r.owner_user_id === user.id)
       if (myCaisse) setFromId(myCaisse.id)
     }
@@ -70,14 +78,12 @@ export default function TransferPage() {
     setLoading(false)
   }
 
-  // ✅ "من الصندوق" : ghir caisse dyal l'user
   const mySourceRegister = (() => {
-  if (isDirector) return registers.find((r) => r.type === 'central' || r.type === 'principal')
-  if (isSecretary) return registers.find((r) => r.owner_user_id === currentUserId)
-  return null
-})()
+    if (isDirector) return registers.find((r) => r.type === 'central' || r.type === 'principal')
+    if (isSecretary) return registers.find((r) => r.owner_user_id === currentUserId)
+    return null
+  })()
 
-  // ✅ "إلى الصندوق" : ga3 les caisses li machi dyal l'user
   const availableToRegisters = registers.filter((r) => r.id !== mySourceRegister?.id)
 
   const getCurrentBalance = async (regId: string): Promise<number> => {
@@ -95,28 +101,11 @@ export default function TransferPage() {
 
     return initial + totalIn - totalOut
   }
-
-  // ✅ Jib user_id dyal destinataire (owner wla Directeur ila Centrale)
-  const getRecipientUserId = async (toReg: CashRegister | undefined): Promise<string | null> => {
+const getRecipientUserId = async (toReg: CashRegister | undefined): Promise<string | null> => {
   if (!toReg) return null
-  
-  // Ila caisse personnelle → owner
   if (toReg.owner_user_id) return toReg.owner_user_id
-
-  // ✅ Ila Caisse Principale → Directeur
-  if (toReg.type === 'central' || toReg.type === 'principal') {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('user_profiles')
-      .select('user_id, roles!inner(name)')
-      .eq('establishment_id', establishmentId)
-      .eq('roles.name', 'Directeur')
-      .maybeSingle()
-    return data?.user_id || null
-  }
-
   return null
-}
+}  
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -132,14 +121,13 @@ export default function TransferPage() {
 
     try {
       const currentBalance = await getCurrentBalance(fromId)
-      const fromCaisseName = mySourceRegister?.name || 'صندوقك'
-
       if (numAmount > currentBalance) {
         setError(`❌ المبلغ غير كافٍ. رصيدك: ${currentBalance.toFixed(2)} DH فقط.`)
         setSaving(false)
         return
       }
 
+      // 1. Insert transfer
       const { data: transfer, error: tError } = await supabase
         .from('cash_transfers')
         .insert({
@@ -157,25 +145,30 @@ export default function TransferPage() {
 
       if (tError) throw tError
 
-      // Notification l destinataire
+      // 2. ✅ Notification l destinataire
       const toCaisse = registers.find((r) => r.id === toId)
       const recipientId = await getRecipientUserId(toCaisse)
 
       if (recipientId && recipientId !== currentUserId) {
-        await supabase.from('notifications').insert({
-          user_id: recipientId,
-          establishment_id: establishmentId,
-          type: 'transfer_request',
-          title: '💰 طلب تحويل جديد',
-          message: `${mySourceRegister?.name} يطلب تحويل ${numAmount} DH إلى صندوقك`,
-          link: '/dashboard/caisse/transfers',
-          metadata: { transfer_id: transfer.id, amount: numAmount },
-        })
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .insert({
+            user_id: recipientId,
+            establishment_id: establishmentId,
+            type: 'transfer_request',
+            title: '💰 طلب تحويل جديد',
+            message: `${currentUserName} (${mySourceRegister?.name}) يطلب تحويل ${numAmount} DH إلى ${toCaisse?.name}`,
+            link: '/dashboard/caisse/transfers',
+            metadata: { transfer_id: transfer.id, amount: numAmount },
+          })
+
+        if (notifError) console.error('❌ Notification error:', notifError)
       }
 
-      setSuccess('✅ تم إرسال طلب التحويل. في انتظار موافقة الطرف الآخر.')
-      setTimeout(() => router.push('/dashboard/caisse/transfers'), 1500)
+      setSuccess('✅ تم إنشاء طلب التحويل. في انتظار الموافقة.')
+      setTimeout(() => router.push('/dashboard/caisse/transfers'), 2000)
     } catch (err: any) {
+      console.error('❌ Submit error:', err)
       setError(err.message)
     } finally {
       setSaving(false)
@@ -214,8 +207,6 @@ export default function TransferPage() {
       </header>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 shadow-sm border space-y-5">
-
-        {/* من الصندوق (fixe) */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             من صندوقك (ثابت)
@@ -229,7 +220,6 @@ export default function TransferPage() {
           </div>
         </div>
 
-        {/* إلى الصندوق */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             إلى الصندوق <span className="text-red-500">*</span>
@@ -243,7 +233,7 @@ export default function TransferPage() {
             <option value="">-- اختر الصندوق المستلم --</option>
             {availableToRegisters.map((r) => (
               <option key={r.id} value={r.id}>
-                {r.name} ({r.type === 'central' ? 'المدير' : r.type === 'secretary' ? 'سكرتيرة' : 'خدمة'})
+                {r.name} ({r.type === 'central' || r.type === 'principal' ? 'المدير' : r.type === 'secretary' ? 'سكرتيرة' : 'خدمة'})
               </option>
             ))}
           </select>
@@ -252,7 +242,6 @@ export default function TransferPage() {
           </p>
         </div>
 
-        {/* Amount */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             المبلغ (DH) <span className="text-red-500">*</span>
@@ -265,13 +254,11 @@ export default function TransferPage() {
           />
         </div>
 
-        {/* Date */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">تاريخ التحويل</label>
           <DateInput value={transferDate} onChange={setTransferDate} className="h-11" />
         </div>
 
-        {/* Note */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">ملاحظة (اختياري)</label>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}

@@ -1,99 +1,832 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useEffect, useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
-import { useLanguage } from '@/lib/LanguageContext'
-import Amount from '@/components/Amount'
-import { AlertCircle, ArrowUpRight, CalendarDays, PiggyBank, TrendingDown, TrendingUp, UserPlus, Users, Wallet } from 'lucide-react'
+import { useUserRole } from '@/lib/useUserRole'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend, LineChart, Line, CartesianGrid,
+} from 'recharts'
+import {
+  TrendingUp, TrendingDown, Wallet, AlertCircle, Users, FileText,
+  Plus, Send, Bell, Wrench, Sparkles, Building2, User as UserIcon,
+  Search, Home, GraduationCap, Calendar, CheckCircle2,
+} from 'lucide-react'
 
-type Stats = {
-  studentCount: number
-  totalPaymentsThisMonth: number
-  totalPaymentsAll: number
-  totalExpensesThisMonth: number
-  totalExpensesAll: number
-  totalOutstanding: number
-  totalBalance: number
-}
+const ARABIC_MONTHS = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'ماي', 'يونيو',
+  'يوليوز', 'غشت', 'شتنبر', 'أكتوبر', 'نونبر', 'دجنبر',
+]
 
-const initialStats: Stats = { studentCount: 0, totalPaymentsThisMonth: 0, totalPaymentsAll: 0, totalExpensesThisMonth: 0, totalExpensesAll: 0, totalOutstanding: 0, totalBalance: 0 }
+const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']
 
-export default function Dashboard() {
+export default function DashboardPage() {
+  const router = useRouter()
   const establishmentId = useEstablishmentId()
-  const { t } = useLanguage()
-  const [stats, setStats] = useState<Stats>(initialStats)
+  const { role, loading: roleLoading } = useUserRole()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [schoolName, setSchoolName] = useState('')
 
-  const fetchStats = async (sid: string) => {
-    setError('')
-    const supabase = createClient()
-    const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
-    try {
-      const [studentsResult, paymentsMonthResult, paymentsAllResult, expensesMonthResult, expensesAllResult, installmentsResult, schoolResult] = await Promise.all([
-        supabase.from('students').select('*', { count: 'exact', head: true }).eq('establishment_id', sid).eq('status', 'active'),
-        supabase.from('payments').select('amount').eq('establishment_id', sid).eq('status', 'completed').gte('payment_date', firstDayOfMonth),
-        supabase.from('payments').select('amount').eq('establishment_id', sid).eq('status', 'completed'),
-        supabase.from('expenses').select('amount').eq('establishment_id', sid).gte('expense_date', firstDayOfMonth),
-        supabase.from('expenses').select('amount').eq('establishment_id', sid),
-        supabase.from('installments').select('amount, paid_amount, due_date, status').eq('establishment_id', sid),
-        supabase.from('establishments').select('name').eq('id', sid).single(),
-      ])
-      const sum = (rows: { amount: number }[] | null) => rows?.reduce((total, row) => total + Number(row.amount), 0) || 0
-      const totalPaymentsAll = sum(paymentsAllResult.data)
-      const totalExpensesAll = sum(expensesAllResult.data)
-      setStats({
-        studentCount: studentsResult.count || 0,
-        totalPaymentsThisMonth: sum(paymentsMonthResult.data),
-        totalPaymentsAll,
-        totalExpensesThisMonth: sum(expensesMonthResult.data),
-        totalExpensesAll,
-        totalOutstanding: installmentsResult.data?.filter((item) => item.status !== 'paid').reduce((total, item) => total + (Number(item.amount) - Number(item.paid_amount)), 0) || 0,
-        totalBalance: totalPaymentsAll - totalExpensesAll,
-      })
-      if (schoolResult.data) setSchoolName(schoolResult.data.name)
-    } catch {
-      setError('Impossible de charger les indicateurs pour le moment.')
-    } finally { setLoading(false) }
-  }
+  const [schoolName, setSchoolName] = useState('')
+  const [userName, setUserName] = useState('')
+
+  // Data
+  const [payments, setPayments] = useState<any[]>([])
+  const [expenses, setExpenses] = useState<any[]>([])
+  const [installments, setInstallments] = useState<any[]>([])
+  const [students, setStudents] = useState<any[]>([])
+  const [services, setServices] = useState<any[]>([])
+  const [contracts, setContracts] = useState<any[]>([])
+  const [contractItems, setContractItems] = useState<any[]>([])
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [caisses, setCaisses] = useState<any[]>([])
+  const [families, setFamilies] = useState<any[]>([])
+  const [transfers, setTransfers] = useState<any[]>([])
+
+  const [recentPayments, setRecentPayments] = useState<any[]>([])
+  const [searchPayment, setSearchPayment] = useState('')
+
+  const isDirector = role === 'directeur'
+  const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!establishmentId) return
-    const timer = window.setTimeout(() => { void fetchStats(establishmentId) }, 0)
-    return () => window.clearTimeout(timer)
-  }, [establishmentId])
+    if (!establishmentId || !role) return
+    loadData()
+  }, [establishmentId, role])
 
-  if (loading) return <div className="surface-card grid min-h-72 place-items-center text-slate-500">{t('loadingSpace')}</div>
+  const loadData = async () => {
+    setLoading(true)
+    setError('')
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { router.push('/login'); return }
 
-  const metrics = [
-    { label: t('activeStudents'), value: stats.studentCount.toString(), note: t('registeredStudents'), icon: Users, iconClass: 'bg-emerald-100 text-emerald-700' },
-    { label: t('monthlyIncome'), value: <Amount value={stats.totalPaymentsThisMonth} />, note: t('confirmedPayments'), icon: TrendingUp, iconClass: 'bg-sky-100 text-sky-700' },
-    { label: t('outstandingAmount'), value: <Amount value={stats.totalOutstanding} />, note: t('pendingInstallments'), icon: AlertCircle, iconClass: 'bg-amber-100 text-amber-700' },
-    { label: t('availableBalance'), value: <Amount value={stats.totalBalance} />, note: stats.totalBalance >= 0 ? t('positiveSituation') : t('watchSituation'), icon: PiggyBank, iconClass: stats.totalBalance >= 0 ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700' },
-  ]
+    // 1. Profile
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('full_name, establishments(name)')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    setUserName(profile?.full_name || '')
+    setSchoolName((profile?.establishments as any)?.name || '')
+
+    // 2. Caisses
+    const { data: caissesData } = await supabase
+      .from('cash_registers')
+      .select('id, name, type, initial_balance, owner_user_id')
+      .eq('establishment_id', establishmentId)
+
+    setCaisses(caissesData || [])
+
+    // 3. Payments
+    const sixMonthsAgo = new Date()
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+
+    const { data: payData } = await supabase
+      .from('payments')
+      .select('id, amount, payment_date, cash_register_id, student_id, installment_id, method, notes, reference')
+      .eq('establishment_id', establishmentId)
+      .gte('payment_date', sixMonthsAgo.toISOString().split('T')[0])
+      .order('payment_date', { ascending: false })
+
+    setPayments(payData || [])
+
+    // 4. Recent payments (m3a student name)
+    const { data: recentData } = await supabase
+      .from('payments')
+      .select(`
+        id, amount, payment_date, method, cash_register_id,
+        students (first_name, last_name),
+        installments (description)
+      `)
+      .eq('establishment_id', establishmentId)
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    setRecentPayments(recentData || [])
+
+    // 5. Expenses
+    const { data: expData } = await supabase
+      .from('expenses')
+      .select('id, amount, expense_date, nature, cash_register_id')
+      .eq('establishment_id', establishmentId)
+      .gte('expense_date', sixMonthsAgo.toISOString().split('T')[0])
+
+    setExpenses(expData || [])
+
+    // 6. Installments
+    const { data: instData } = await supabase
+      .from('installments')
+      .select('id, amount, paid_amount, due_date, status, student_id, service_id')
+      .eq('establishment_id', establishmentId)
+      .in('status', ['pending', 'partially_paid'])
+
+    setInstallments(instData || [])
+
+    // 7. Students
+    const { data: studentsData } = await supabase
+      .from('students')
+      .select('id, first_name, last_name, status, family_id, created_at')
+      .eq('establishment_id', establishmentId)
+      .eq('status', 'active')
+
+    setStudents(studentsData || [])
+
+    // 8. Services
+    const { data: servicesData } = await supabase
+      .from('services')
+      .select('id, name, type')
+      .eq('establishment_id', establishmentId)
+
+    setServices(servicesData || [])
+
+    // 9. Contracts
+    const { data: contractsData } = await supabase
+      .from('contracts')
+      .select('id, student_id')
+      .eq('establishment_id', establishmentId)
+
+    setContracts(contractsData || [])
+
+    // 10. Contract items
+    const { data: ciData } = await supabase
+      .from('contract_items')
+      .select('id, contract_id, service_id, final_price')
+
+    setContractItems(ciData || [])
+
+    // 11. Families
+    const { data: familiesData } = await supabase
+      .from('families')
+      .select('id, family_name, created_at')
+      .eq('establishment_id', establishmentId)
+
+    setFamilies(familiesData || [])
+
+    // 12. Transfers
+    const { data: transfersData } = await supabase
+      .from('cash_transfers')
+      .select('id, amount, status, transfer_date, from_cash_register_id, to_cash_register_id')
+      .eq('establishment_id', establishmentId)
+      .eq('status', 'accepted')
+
+    setTransfers(transfersData || [])
+
+    // 13. Notifications
+    const { data: notifData } = await supabase
+      .from('notifications')
+      .select('id, title, message, read, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    setNotifications(notifData || [])
+
+    setLoading(false)
+  }
+
+  // ============ STATS ============
+  const thisMonth = new Date().toISOString().slice(0, 7)
+  const lastMonth = (() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 1)
+    return d.toISOString().slice(0, 7)
+  })()
+
+  const monthlyEncaissements = payments
+    .filter(p => p.payment_date?.startsWith(thisMonth))
+    .reduce((s, p) => s + Number(p.amount), 0)
+
+  const lastMonthEncaissements = payments
+    .filter(p => p.payment_date?.startsWith(lastMonth))
+    .reduce((s, p) => s + Number(p.amount), 0)
+
+  const encaissementChange = lastMonthEncaissements > 0
+    ? ((monthlyEncaissements - lastMonthEncaissements) / lastMonthEncaissements) * 100
+    : 0
+
+  const monthlyDepenses = expenses
+    .filter(e => e.expense_date?.startsWith(thisMonth))
+    .reduce((s, e) => s + Number(e.amount), 0)
+
+  const lastMonthDepenses = expenses
+    .filter(e => e.expense_date?.startsWith(lastMonth))
+    .reduce((s, e) => s + Number(e.amount), 0)
+
+  const depenseChange = lastMonthDepenses > 0
+    ? ((monthlyDepenses - lastMonthDepenses) / lastMonthDepenses) * 100
+    : 0
+
+  const monthlyRba7 = monthlyEncaissements - monthlyDepenses
+
+  const totalImpayes = installments.reduce(
+    (s, i) => s + (Number(i.amount) - Number(i.paid_amount)), 0
+  )
+
+  const monthlyPaymentsCount = payments.filter(p => p.payment_date?.startsWith(thisMonth)).length
+
+  const newStudentsThisMonth = students.filter(
+    s => s.created_at?.startsWith(thisMonth)
+  ).length
+
+  // Solde dyal koul caisse
+  const caisseBalances = useMemo(() => {
+    return caisses.map(c => {
+      const initial = Number(c.initial_balance || 0)
+      const inPay = payments.filter(p => p.cash_register_id === c.id).reduce((s, p) => s + Number(p.amount), 0)
+      const outExp = expenses.filter(e => e.cash_register_id === c.id).reduce((s, e) => s + Number(e.amount), 0)
+      const inTrans = transfers.filter(t => t.to_cash_register_id === c.id).reduce((s, t) => s + Number(t.amount), 0)
+      const outTrans = transfers.filter(t => t.from_cash_register_id === c.id).reduce((s, t) => s + Number(t.amount), 0)
+      return {
+        ...c,
+        balance: initial + inPay - outExp + inTrans - outTrans,
+      }
+    })
+  }, [caisses, payments, expenses, transfers])
+
+  const totalBalance = caisseBalances.reduce((s, c) => s + c.balance, 0)
+
+  // ============ CHARTS ============
+  const monthlyChartData = useMemo(() => {
+    const data: any[] = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date()
+      d.setMonth(d.getMonth() - i)
+      const monthKey = d.toISOString().slice(0, 7)
+      const monthName = ARABIC_MONTHS[d.getMonth()]
+
+      const enc = payments
+        .filter(p => p.payment_date?.startsWith(monthKey))
+        .reduce((s, p) => s + Number(p.amount), 0)
+
+      const dep = expenses
+        .filter(e => e.expense_date?.startsWith(monthKey))
+        .reduce((s, e) => s + Number(e.amount), 0)
+
+      data.push({
+        name: monthName,
+        encaissements: Number(enc.toFixed(2)),
+        depenses: Number(dep.toFixed(2)),
+        rba7: Number((enc - dep).toFixed(2)),
+      })
+    }
+    return data
+  }, [payments, expenses])
+
+  const serviceDistribution = useMemo(() => {
+    const studentContracts = new Map<string, string[]>()
+    contracts.forEach(c => {
+      if (!studentContracts.has(c.student_id)) studentContracts.set(c.student_id, [])
+      studentContracts.get(c.student_id)!.push(c.id)
+    })
+
+    const contractServices = new Map<string, string[]>()
+    contractItems.forEach(ci => {
+      if (!contractServices.has(ci.contract_id)) contractServices.set(ci.contract_id, [])
+      contractServices.get(ci.contract_id)!.push(ci.service_id)
+    })
+
+    const result: any[] = []
+    services.forEach(svc => {
+      const total = payments
+        .filter(p => {
+          const studentCts = studentContracts.get(p.student_id) || []
+          return studentCts.some(cid => (contractServices.get(cid) || []).includes(svc.id))
+        })
+        .reduce((s, p) => s + Number(p.amount), 0)
+
+      if (total > 0) result.push({ name: svc.name, value: Number(total.toFixed(2)) })
+    })
+    return result
+  }, [services, payments, contracts, contractItems])
+
+  // Recent payments filtered by search
+  const filteredRecentPayments = useMemo(() => {
+    if (!searchPayment.trim()) return recentPayments
+    const term = searchPayment.toLowerCase()
+    return recentPayments.filter(p => {
+      const name = `${p.students?.first_name || ''} ${p.students?.last_name || ''}`.toLowerCase()
+      return name.includes(term) || (p.installments?.description || '').toLowerCase().includes(term)
+    })
+  }, [recentPayments, searchPayment])
+
+  // Top 5 impayés
+  const topImpayes = useMemo(() => {
+    const studentImpayes = new Map<string, { name: string, amount: number }>()
+    installments.forEach(i => {
+      const s = students.find(x => x.id === i.student_id)
+      if (!s) return
+      const key = s.id
+      const remaining = Number(i.amount) - Number(i.paid_amount)
+      if (!studentImpayes.has(key)) {
+        studentImpayes.set(key, { name: `${s.first_name} ${s.last_name}`, amount: 0 })
+      }
+      studentImpayes.get(key)!.amount += remaining
+    })
+    return Array.from(studentImpayes.values())
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5)
+  }, [installments, students])
+
+  if (loading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
+  if (!isDirector && !isSecretary) return <div className="p-6">ليس لديك صلاحية</div>
 
   return (
-    <div>
-      <section className="relative overflow-hidden rounded-[1.5rem] bg-[#0b4c42] px-6 py-7 text-white shadow-xl shadow-emerald-950/10 sm:px-8">
-        <div className="absolute -left-16 -top-16 h-52 w-52 rounded-full bg-emerald-300/10" /><div className="absolute -bottom-24 right-12 h-56 w-56 rounded-full bg-amber-300/10" />
-        <div className="relative flex flex-col justify-between gap-6 md:flex-row md:items-center"><div><p className="text-sm font-bold text-emerald-200">{t('dashboardKicker')}</p><h1 className="mt-2 text-3xl font-black tracking-tight">{t('dashboardGreeting')}, {schoolName || t('school')}.</h1><p className="mt-2 text-emerald-50/80">{t('dashboardIntro')}</p></div><Link href="/dashboard/enroll" style={{ color: '#0b4c42' }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold transition hover:-translate-y-0.5 hover:bg-emerald-50"><UserPlus className="h-4 w-4" />{t('enroll')}</Link></div>
-      </section>
+    <div className="p-6 space-y-6" dir="rtl">
 
-      {error && <p className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{t('dashboardLoadError')}</p>}
+      {/* HEADER */}
+      <header className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">لوحة القيادة</p>
+          <h1 className="text-2xl font-bold text-slate-800 mt-1">
+            مرحباً {userName || 'المدير'} 👋
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">هذه أهم مؤشرات مؤسستك اليوم</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600">
+            🏫 {schoolName || '-'}
+          </span>
+        </div>
+      </header>
 
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{metrics.map(({ label, value, note, icon: Icon, iconClass }) => <article key={label} className="surface-card p-5"><div className="flex items-start justify-between"><div><p className="text-sm font-semibold text-slate-500">{label}</p><p className="mt-3 text-2xl font-black tracking-tight text-slate-800">{value}</p></div><span className={`grid h-11 w-11 place-items-center rounded-2xl ${iconClass}`}><Icon className="h-5 w-5" /></span></div><p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">{note}</p></article>)}</section>
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
 
-      <section className="mt-6 grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
-        <article className="surface-card p-6"><div className="flex items-start justify-between"><div><p className="page-kicker">{t('financialOverview')}</p><h2 className="mt-2 text-xl font-extrabold">{t('cashHealth')}</h2></div><span className="rounded-xl bg-emerald-50 p-2 text-emerald-700"><Wallet className="h-5 w-5" /></span></div><div className="mt-8 grid gap-4 sm:grid-cols-2"><div className="rounded-2xl bg-emerald-50 p-5"><p className="text-sm font-bold text-emerald-800">{t('cumulativeIncome')}</p><p className="mt-2 text-2xl font-black text-emerald-900"><Amount value={stats.totalPaymentsAll} /></p></div><div className="rounded-2xl bg-rose-50 p-5"><p className="text-sm font-bold text-rose-800">{t('cumulativeExpenses')}</p><p className="mt-2 text-2xl font-black text-rose-900"><Amount value={stats.totalExpensesAll} /></p></div></div><Link href="/dashboard/reports" className="mt-6 inline-flex items-center gap-1 text-sm font-bold text-emerald-700 hover:text-emerald-900">{t('viewReports')} <ArrowUpRight className="h-4 w-4" /></Link></article>
-        <article className="surface-card p-6"><p className="page-kicker">{t('shortcuts')}</p><h2 className="mt-2 text-xl font-extrabold">{t('frequentActions')}</h2><div className="mt-5 space-y-2"><QuickLink href="/dashboard/payments/new" label={t('recordPayment')} icon={Wallet} /><QuickLink href="/dashboard/expenses" label={t('addExpense')} icon={TrendingDown} /><QuickLink href="/dashboard/installments" label={t('viewInstallments')} icon={CalendarDays} /></div></article>
-      </section>
+      {/* STATS CARDS - CLICKABLE */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+
+        {/* Encaissements */}
+        <button
+          onClick={() => router.push('/dashboard/payments')}
+          className="text-right bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md hover:border-emerald-300 transition group"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 group-hover:scale-110 transition">
+              <TrendingUp className="h-6 w-6" />
+            </div>
+            {encaissementChange !== 0 && (
+              <span className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+                encaissementChange >= 0 ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'
+              }`}>
+                {encaissementChange >= 0 ? '↑' : '↓'} {Math.abs(encaissementChange).toFixed(0)}%
+              </span>
+            )}
+          </div>
+          <p className="text-2xl font-bold text-slate-800">{monthlyEncaissements.toFixed(2)} DH</p>
+          <p className="text-xs text-slate-500 mt-1">
+            مداخيل هذا الشهر ({monthlyPaymentsCount} دفعة)
+          </p>
+        </button>
+
+        {/* Dépenses */}
+        <button
+          onClick={() => router.push('/dashboard/expenses')}
+          className="text-right bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md hover:border-red-300 transition group"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center text-red-600 group-hover:scale-110 transition">
+              <TrendingDown className="h-6 w-6" />
+            </div>
+            {depenseChange !== 0 && (
+              <span className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+                depenseChange <= 0 ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'
+              }`}>
+                {depenseChange >= 0 ? '↑' : '↓'} {Math.abs(depenseChange).toFixed(0)}%
+              </span>
+            )}
+          </div>
+          <p className="text-2xl font-bold text-slate-800">{monthlyDepenses.toFixed(2)} DH</p>
+          <p className="text-xs text-slate-500 mt-1">مصاريف هذا الشهر</p>
+        </button>
+
+        {/* Rba7 */}
+        <button
+          onClick={() => router.push('/dashboard/reports')}
+          className={`text-right rounded-2xl p-5 border shadow-sm hover:shadow-md transition group ${
+            monthlyRba7 >= 0
+              ? 'bg-gradient-to-br from-indigo-500 to-indigo-700 text-white border-indigo-600'
+              : 'bg-gradient-to-br from-red-500 to-red-700 text-white border-red-600'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center group-hover:scale-110 transition">
+              <Wallet className="h-6 w-6" />
+            </div>
+            <span className="text-xs font-semibold bg-white/20 px-2 py-1 rounded-lg">
+              {monthlyRba7 >= 0 ? '✅ ربح' : '⚠️ خسارة'}
+            </span>
+          </div>
+          <p className="text-2xl font-bold">{monthlyRba7.toFixed(2)} DH</p>
+          <p className="text-xs opacity-90 mt-1">النتيجة (مداخيل - مصاريف)</p>
+        </button>
+
+        {/* Impayés */}
+        <button
+          onClick={() => router.push('/dashboard/impayes')}
+          className={`text-right rounded-2xl p-5 border shadow-sm hover:shadow-md transition group ${
+            totalImpayes > 0 ? 'bg-amber-50 border-amber-200 hover:border-amber-400' : 'bg-white border-slate-100'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-110 transition ${
+              totalImpayes > 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'
+            }`}>
+              <AlertCircle className="h-6 w-6" />
+            </div>
+            <span className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+              totalImpayes > 0 ? 'text-amber-700 bg-amber-100' : 'text-slate-500 bg-slate-100'
+            }`}>
+              {installments.length} قسط
+            </span>
+          </div>
+          <p className={`text-2xl font-bold ${totalImpayes > 0 ? 'text-amber-700' : 'text-slate-800'}`}>
+            {totalImpayes.toFixed(2)} DH
+          </p>
+          <p className="text-xs text-slate-500 mt-1">إجمالي المتأخرات</p>
+        </button>
+      </div>
+
+      {/* QUICK STATS - CLICKABLE */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <button
+          onClick={() => router.push('/dashboard/students')}
+          className="text-right bg-white rounded-xl p-4 border border-slate-100 flex items-center gap-3 hover:shadow-md hover:border-indigo-300 transition"
+        >
+          <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600 flex-shrink-0">
+            <Users className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-slate-800">{students.length}</p>
+            <p className="text-xs text-slate-500 truncate">تلميذ نشط</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => router.push('/dashboard/families')}
+          className="text-right bg-white rounded-xl p-4 border border-slate-100 flex items-center gap-3 hover:shadow-md hover:border-emerald-300 transition"
+        >
+          <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600 flex-shrink-0">
+            <Home className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-slate-800">{families.length}</p>
+            <p className="text-xs text-slate-500 truncate">أسرة</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => router.push('/dashboard/contracts')}
+          className="text-right bg-white rounded-xl p-4 border border-slate-100 flex items-center gap-3 hover:shadow-md hover:border-purple-300 transition"
+        >
+          <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600 flex-shrink-0">
+            <FileText className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-slate-800">{contracts.length}</p>
+            <p className="text-xs text-slate-500 truncate">عقد</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => router.push('/dashboard/services')}
+          className="text-right bg-white rounded-xl p-4 border border-slate-100 flex items-center gap-3 hover:shadow-md hover:border-amber-300 transition"
+        >
+          <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center text-amber-600 flex-shrink-0">
+            <Wrench className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-slate-800">{services.length}</p>
+            <p className="text-xs text-slate-500 truncate">خدمة</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => router.push('/dashboard/enroll')}
+          className="text-right bg-white rounded-xl p-4 border border-slate-100 flex items-center gap-3 hover:shadow-md hover:border-cyan-300 transition"
+        >
+          <div className="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center text-cyan-600 flex-shrink-0">
+            <GraduationCap className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-slate-800">{newStudentsThisMonth}</p>
+            <p className="text-xs text-slate-500 truncate">تسجيل جديد</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => router.push('/dashboard/caisse')}
+          className="text-right bg-white rounded-xl p-4 border border-slate-100 flex items-center gap-3 hover:shadow-md hover:border-slate-400 transition"
+        >
+          <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-600 flex-shrink-0">
+            <Wallet className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-slate-800">{totalBalance.toFixed(0)} DH</p>
+            <p className="text-xs text-slate-500 truncate">إجمالي الصناديق</p>
+          </div>
+        </button>
+      </div>
+
+      {/* CAISSES SECTION - CLICKABLE */}
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-indigo-600" />
+            <h3 className="font-bold text-slate-800">الصناديق ({caisseBalances.length})</h3>
+          </div>
+          <button
+            onClick={() => router.push('/dashboard/caisse')}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+          >
+            عرض الكل ←
+          </button>
+        </div>
+        {caisseBalances.length === 0 ? (
+          <p className="text-center text-slate-400 py-8">لا توجد صناديق</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {caisseBalances.map((c) => {
+              const isCentral = c.type === 'central' || c.type === 'principal'
+              const isSecr = c.type === 'secretary'
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => router.push(`/dashboard/caisse/${c.id}`)}
+                  className="text-right bg-slate-50 rounded-xl p-4 border border-slate-200 hover:border-indigo-300 hover:shadow-md transition flex items-center gap-3"
+                >
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    isCentral ? 'bg-indigo-100 text-indigo-600' :
+                    isSecr ? 'bg-emerald-100 text-emerald-600' :
+                    'bg-amber-100 text-amber-600'
+                  }`}>
+                    {isCentral ? <Building2 className="h-5 w-5" /> : <UserIcon className="h-5 w-5" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800 truncate">{c.name}</p>
+                    <p className={`text-lg font-bold ${c.balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {c.balance.toFixed(2)} DH
+                    </p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* CHARTS */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="h-4 w-4 text-indigo-600" />
+            <h3 className="font-bold text-slate-800">المداخيل والمصاريف (6 أشهر)</h3>
+          </div>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={monthlyChartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+              <XAxis dataKey="name" fontSize={11} stroke="#94A3B8" />
+              <YAxis fontSize={10} stroke="#94A3B8" />
+              <Tooltip
+                contentStyle={{ borderRadius: 10, border: '1px solid #E2E8F0', fontSize: 12 }}
+                formatter={(value: any) => `${Number(value).toFixed(2)} DH`}
+              />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="encaissements" fill="#10B981" name="مداخيل" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="depenses" fill="#EF4444" name="مصاريف" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="h-4 w-4 text-purple-600" />
+            <h3 className="font-bold text-slate-800">توزيع المداخيل حسب الخدمة</h3>
+          </div>
+          {serviceDistribution.length === 0 ? (
+            <p className="text-center text-slate-400 py-20">لا توجد بيانات</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie
+                  data={serviceDistribution}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={(e: any) => `${e.name}: ${Number(e.value).toFixed(0)}`}
+                  outerRadius={90}
+                  dataKey="value"
+                >
+                  {serviceDistribution.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value: any) => `${Number(value).toFixed(2)} DH`} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* LINE CHART */}
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+          <TrendingUp className="h-4 w-4 text-emerald-600" />
+          <h3 className="font-bold text-slate-800">تطور الأرباح (6 أشهر)</h3>
+        </div>
+        <ResponsiveContainer width="100%" height={250}>
+          <LineChart data={monthlyChartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+            <XAxis dataKey="name" fontSize={11} stroke="#94A3B8" />
+            <YAxis fontSize={10} stroke="#94A3B8" />
+            <Tooltip
+              contentStyle={{ borderRadius: 10, border: '1px solid #E2E8F0', fontSize: 12 }}
+              formatter={(value: any) => `${Number(value).toFixed(2)} DH`}
+            />
+            <Line
+              type="monotone"
+              dataKey="rba7"
+              stroke="#4F46E5"
+              strokeWidth={3}
+              name="الربح"
+              dot={{ r: 5, fill: '#4F46E5' }}
+              activeDot={{ r: 7 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* RECENT PAYMENTS + TOP IMPAYES */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+        {/* Recent Payments */}
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-emerald-600" />
+              <h3 className="font-bold text-slate-800">آخر المدفوعات</h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute right-3 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchPayment}
+                  onChange={(e) => setSearchPayment(e.target.value)}
+                  placeholder="بحث..."
+                  className="w-40 md:w-56 pr-9 pl-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              <button
+                onClick={() => router.push('/dashboard/payments')}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap"
+              >
+                عرض الكل ←
+              </button>
+            </div>
+          </div>
+          {filteredRecentPayments.length === 0 ? (
+            <p className="text-center text-slate-400 py-12">لا توجد مدفوعات</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-100">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">التلميذ</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">القسط</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">المبلغ</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">التاريخ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredRecentPayments.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50 transition">
+                      <td className="px-4 py-3 text-sm font-medium text-slate-800">
+                        {p.students ? `${p.students.first_name} ${p.students.last_name}` : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{p.installments?.description || '-'}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-emerald-600">+ {Number(p.amount).toFixed(2)} DH</td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{p.payment_date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Top 5 Impayés */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              أكبر المتأخرات
+            </h3>
+            <button
+              onClick={() => router.push('/dashboard/impayes')}
+              className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+            >
+              عرض الكل ←
+            </button>
+          </div>
+          {topImpayes.length === 0 ? (
+            <p className="text-center text-slate-400 py-12">لا توجد متأخرات 🎉</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {topImpayes.map((s, i) => (
+                <div key={i} className="p-4 flex items-center gap-3 hover:bg-slate-50 transition">
+                  <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center text-amber-700 font-bold text-sm flex-shrink-0">
+                    {i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{s.name}</p>
+                  </div>
+                  <p className="text-sm font-bold text-red-600 whitespace-nowrap">{s.amount.toFixed(2)} DH</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ACTIONS + NOTIFICATIONS */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-indigo-600" />
+            إجراءات سريعة
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <button onClick={() => router.push('/dashboard/payments/new')} className="flex flex-col items-center justify-center gap-2 p-4 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition text-emerald-700 font-medium">
+              <Plus className="h-6 w-6" />
+              <span className="text-sm">تسجيل دفعة</span>
+            </button>
+            <button onClick={() => router.push('/dashboard/expenses')} className="flex flex-col items-center justify-center gap-2 p-4 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition text-red-700 font-medium">
+              <Plus className="h-6 w-6" />
+              <span className="text-sm">تسجيل مصروف</span>
+            </button>
+            <button onClick={() => router.push('/dashboard/contracts')} className="flex flex-col items-center justify-center gap-2 p-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition text-indigo-700 font-medium">
+              <FileText className="h-6 w-6" />
+              <span className="text-sm">عقد جديد</span>
+            </button>
+            <button onClick={() => router.push('/dashboard/impayes')} className="flex flex-col items-center justify-center gap-2 p-4 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition text-amber-700 font-medium">
+              <AlertCircle className="h-6 w-6" />
+              <span className="text-sm">المتأخرون</span>
+            </button>
+            <button onClick={() => router.push('/dashboard/caisse')} className="flex flex-col items-center justify-center gap-2 p-4 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition text-slate-700 font-medium">
+              <Wallet className="h-6 w-6" />
+              <span className="text-sm">الصناديق</span>
+            </button>
+             <button onClick={() => router.push('/dashboard/attendance')} className="flex flex-col items-center justify-center gap-2 p-4 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-xl transition text-cyan-700 font-medium">
+  <CheckCircle2 className="h-6 w-6" />
+  <span className="text-sm">الحضور</span>
+</button>
+            <button onClick={() => router.push('/dashboard/reports')} className="flex flex-col items-center justify-center gap-2 p-4 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl transition text-purple-700 font-medium">
+              <TrendingUp className="h-6 w-6" />
+              <span className="text-sm">التقارير</span>
+            </button>
+            <button 
+  onClick={() => router.push('/dashboard/attendance')} 
+  className="flex flex-col items-center justify-center gap-2 p-4 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-xl transition text-cyan-700 font-medium"
+>
+  <CheckCircle2 className="h-6 w-6" />
+  <span className="text-sm">الحضور</span>
+</button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <Bell className="h-4 w-4 text-indigo-600" />
+              آخر الإشعارات
+            </h3>
+            <button onClick={() => router.push('/dashboard/notifications')} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+              عرض الكل ←
+            </button>
+          </div>
+          {notifications.length === 0 ? (
+            <div className="text-center py-8">
+              <Bell className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-400">لا توجد إشعارات</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {notifications.slice(0, 5).map((n) => (
+                <div key={n.id} className={`p-3 rounded-lg border text-sm ${!n.read ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100'}`}>
+                  <p className={`text-xs ${!n.read ? 'font-bold text-slate-800' : 'font-medium text-slate-700'}`}>
+                    {n.title}
+                  </p>
+                  {n.message && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{n.message}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
-}
-
-function QuickLink({ href, label, icon: Icon }: { href: string; label: string; icon: typeof Wallet }) {
-  return <Link href={href} className="flex items-center gap-3 rounded-xl border border-slate-100 p-3 text-sm font-semibold text-slate-600 transition hover:border-emerald-100 hover:bg-emerald-50 hover:text-emerald-800"><span className="rounded-lg bg-slate-100 p-2"><Icon className="h-4 w-4" /></span>{label}<ArrowUpRight className="ml-auto h-4 w-4" /></Link>
 }

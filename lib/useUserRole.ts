@@ -26,7 +26,18 @@ export function useUserRole() {
         .maybeSingle()
       
       if (admin) {
-        setRole('super_admin')
+        // ✅ Si Super Admin f assistance mode → kaydir bhal Directeur
+        const assistId = typeof window !== 'undefined' 
+          ? sessionStorage.getItem('assistance_establishment_id') 
+          : null
+        
+        if (assistId) {
+          // ✅ Super Admin f mode assistance → kaychof koulchi kif Directeur
+          setRole('directeur')
+        } else {
+          // ✅ Super Admin f dashboard dyalou (machi f école)
+          setRole('super_admin')
+        }
         setLoading(false)
         return
       }

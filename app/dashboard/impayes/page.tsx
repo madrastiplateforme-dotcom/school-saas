@@ -1,231 +1,476 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
-import { useUserPermissions } from '@/lib/useUserPermissions'
-import Amount from '@/components/Amount'
-import { Search, RefreshCw } from 'lucide-react'
+import { useUserRole } from '@/lib/useUserRole'
+import {
+  AlertCircle, Search, RefreshCw, Bell, MessageCircle, Mail,
+  Send, TrendingDown, Users, Wallet, Clock, CheckCircle2,
+  Filter, Phone,
+} from 'lucide-react'
 
-type UnpaidSummary = {
+type UnpaidStudent = {
   student_id: string
-  student_name: string
-  family_name: string | null
-  total_due: number
-  total_paid: number
-  total_remaining: number
-  overdue_count: number
-  oldest_due_date: string | null
-  last_payment_date: string | null
+  full_name: string
+  family_name: string
+  parent_phone: string
+  parent_email: string
+  parent_user_id: string | null
+  className: string
+  levelName: string
+  total_unpaid: number
+  installments: {
+    id: string
+    description: string
+    amount: number
+    paid_amount: number
+    due_date: string
+    days_overdue: number
+  }[]
+  oldest_due_date: string
+  max_days_overdue: number
 }
 
 export default function ImpayesPage() {
-  const router = useRouter()
   const establishmentId = useEstablishmentId()
-  const { hasPermission, loading: permissionsLoading } = useUserPermissions()
-  const canViewPayments = hasPermission('payments', 'view')
+  const { role, loading: roleLoading } = useUserRole()
 
-  const [unpaidList, setUnpaidList] = useState<UnpaidSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const [unpaidStudents, setUnpaidStudents] = useState<UnpaidStudent[]>([])
+
+  // Filtres
   const [searchTerm, setSearchTerm] = useState('')
-  const [filter, setFilter] = useState('all')
+  const [classFilter, setClassFilter] = useState('all')
+  const [levelFilter, setLevelFilter] = useState('all')
+  const [minAmount, setMinAmount] = useState('')
+
+  // Relance modal
+  const [relanceStudent, setRelanceStudent] = useState<UnpaidStudent | null>(null)
+  const [relanceType, setRelanceType] = useState<'notification' | 'sms' | 'email' | 'all'>('all')
+  const [sending, setSending] = useState(false)
+
+  const isDirector = role === 'directeur'
+  const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!establishmentId) return
-    fetchUnpaid(establishmentId)
-  }, [establishmentId])
+    if (!establishmentId || !role) return
+    loadData()
+  }, [establishmentId, role])
 
-  const fetchUnpaid = async (sid: string) => {
+  const loadData = async () => {
+    setLoading(true)
+    setError('')
     const supabase = createClient()
 
-    // جلب الأقساط غير المدفوعة أو الجزئية مع التلميذ والعائلة
-    const { data: installments, error } = await supabase
+    // 1. Jib installments (pending + partially_paid)
+    const { data: instData, error: instError } = await supabase
       .from('installments')
       .select(`
-        id, amount, paid_amount, due_date, status,
-        student_id,
+        id, description, amount, paid_amount, due_date, status, student_id,
         students (
-          first_name, last_name,
-          families (family_name, father_name)
+          id, first_name, last_name, family_id,
+          families (family_name, phone, email, parent_user_id),
+          enrollments (classes(name), levels(name))
         )
       `)
-      .eq('establishment_id', sid)
+      .eq('establishment_id', establishmentId)
       .in('status', ['pending', 'partially_paid'])
+      .lt('due_date', new Date().toISOString().split('T')[0])
       .order('due_date', { ascending: true })
 
-    if (error) {
-      setError(error.message)
+    if (instError) {
+      setError(instError.message)
       setLoading(false)
       return
     }
 
-    // تجميع البيانات حسب التلميذ
-    const summaryMap = new Map<string, UnpaidSummary>()
+    // 2. Group by student
+    const studentsMap = new Map<string, UnpaidStudent>()
+    const today = new Date()
 
-    installments?.forEach((inst: any) => {
-      const student = inst.students
-      if (!student) return
+    ;(instData || []).forEach((inst: any) => {
+      const s = inst.students
+      if (!s) return
 
-      const sid = inst.student_id
-      if (!summaryMap.has(sid)) {
-        summaryMap.set(sid, {
-          student_id: sid,
-          student_name: `${student.first_name} ${student.last_name}`,
-          family_name: student.families?.family_name || student.families?.father_name || null,
-          total_due: 0,
-          total_paid: 0,
-          total_remaining: 0,
-          overdue_count: 0,
-          oldest_due_date: null,
-          last_payment_date: null,
+      const remaining = Number(inst.amount) - Number(inst.paid_amount)
+      if (remaining <= 0) return
+
+      const dueDate = new Date(inst.due_date)
+      const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))
+
+      const family = s.families || {}
+      const enr = s.enrollments?.[0] || {}
+      const className = enr.classes?.name || '-'
+      const levelName = enr.levels?.name || '-'
+
+      if (!studentsMap.has(s.id)) {
+        studentsMap.set(s.id, {
+          student_id: s.id,
+          full_name: `${s.first_name} ${s.last_name}`,
+          family_name: family.family_name || '',
+          parent_phone: family.phone || '',
+          parent_email: family.email || '',
+          parent_user_id: family.parent_user_id || null,
+          className,
+          levelName,
+          total_unpaid: 0,
+          installments: [],
+          oldest_due_date: inst.due_date,
+          max_days_overdue: daysOverdue,
         })
       }
 
-      const summary = summaryMap.get(sid)!
-      summary.total_due += Number(inst.amount)
-      summary.total_paid += Number(inst.paid_amount || 0)
-      summary.total_remaining += Number(inst.amount) - Number(inst.paid_amount || 0)
-      if (inst.due_date < new Date().toISOString().split('T')[0]) {
-        summary.overdue_count += 1
-      }
-      if (!summary.oldest_due_date || inst.due_date < summary.oldest_due_date) {
-        summary.oldest_due_date = inst.due_date
+      const entry = studentsMap.get(s.id)!
+      entry.total_unpaid += remaining
+      entry.installments.push({
+        id: inst.id,
+        description: inst.description,
+        amount: Number(inst.amount),
+        paid_amount: Number(inst.paid_amount),
+        due_date: inst.due_date,
+        days_overdue: daysOverdue,
+      })
+      if (daysOverdue > entry.max_days_overdue) {
+        entry.max_days_overdue = daysOverdue
+        entry.oldest_due_date = inst.due_date
       }
     })
 
-    // جلب آخر تاريخ دفع لكل تلميذ
-    const studentIds = Array.from(summaryMap.keys())
-    if (studentIds.length > 0) {
-      const { data: payments } = await supabase
-        .from('payments')
-        .select('student_id, payment_date')
-        .in('student_id', studentIds)
-        .order('payment_date', { ascending: false })
-
-      payments?.forEach((p: any) => {
-        const summary = summaryMap.get(p.student_id)
-        if (summary && !summary.last_payment_date) {
-          summary.last_payment_date = p.payment_date
-        }
-      })
-    }
-
-    setUnpaidList(Array.from(summaryMap.values()))
+    setUnpaidStudents(Array.from(studentsMap.values()).sort((a, b) => b.total_unpaid - a.total_unpaid))
     setLoading(false)
   }
 
-  const filteredList = unpaidList.filter((item) => {
-    const matchesSearch =
-      item.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.family_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+  // Filtres
+  const classes = useMemo(() => {
+    const set = new Set(unpaidStudents.map(s => s.className).filter(c => c !== '-'))
+    return Array.from(set).sort()
+  }, [unpaidStudents])
 
-    let matchesFilter = true
-    if (filter === 'overdue') {
-      matchesFilter = item.overdue_count > 0
-    } else if (filter === 'up_to_date') {
-      matchesFilter = item.total_remaining === 0
-    } else if (filter === '30') {
-      matchesFilter = item.oldest_due_date !== null && daysAgo(item.oldest_due_date) > 30
-    } else if (filter === '60') {
-      matchesFilter = item.oldest_due_date !== null && daysAgo(item.oldest_due_date) > 60
-    } else if (filter === '90') {
-      matchesFilter = item.oldest_due_date !== null && daysAgo(item.oldest_due_date) > 90
+  const levels = useMemo(() => {
+    const set = new Set(unpaidStudents.map(s => s.levelName).filter(l => l !== '-'))
+    return Array.from(set).sort()
+  }, [unpaidStudents])
+
+  const filtered = useMemo(() => {
+    return unpaidStudents.filter(s => {
+      if (searchTerm && !s.full_name.toLowerCase().includes(searchTerm.toLowerCase()) && !s.family_name.toLowerCase().includes(searchTerm.toLowerCase())) return false
+      if (classFilter !== 'all' && s.className !== classFilter) return false
+      if (levelFilter !== 'all' && s.levelName !== levelFilter) return false
+      if (minAmount && s.total_unpaid < Number(minAmount)) return false
+      return true
+    })
+  }, [unpaidStudents, searchTerm, classFilter, levelFilter, minAmount])
+
+  // Totals
+  const totals = useMemo(() => {
+    return filtered.reduce((acc, s) => ({
+      count: acc.count + 1,
+      amount: acc.amount + s.total_unpaid,
+      installments: acc.installments + s.installments.length,
+    }), { count: 0, amount: 0, installments: 0 })
+  }, [filtered])
+
+  // Handle relance
+  const handleRelance = async () => {
+    if (!relanceStudent) return
+    setSending(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const res = await fetch('/api/establishment/send-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: relanceStudent.student_id,
+          parentUserId: relanceStudent.parent_user_id,
+          parentPhone: relanceStudent.parent_phone,
+          parentEmail: relanceStudent.parent_email,
+          studentName: relanceStudent.full_name,
+          amount: relanceStudent.total_unpaid,
+          installmentsCount: relanceStudent.installments.length,
+          maxDaysOverdue: relanceStudent.max_days_overdue,
+          type: relanceType,
+          establishmentId,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'حدث خطأ')
+
+      const parts = []
+      if (relanceType === 'all' || relanceType === 'notification') parts.push('إشعار')
+      if (relanceType === 'all' || relanceType === 'sms') parts.push('SMS')
+      if (relanceType === 'all' || relanceType === 'email') parts.push('البريد')
+
+      setSuccess(`✅ تم إرسال ${parts.join(' + ')} إلى ${relanceStudent.full_name}`)
+      setRelanceStudent(null)
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setSending(false)
     }
-
-    return matchesSearch && matchesFilter
-  })
-
-  function daysAgo(dateString: string): number {
-    const today = new Date()
-    const date = new Date(dateString)
-    return Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
   }
 
-  if (loading || permissionsLoading) {
-    return <div className="p-6">Chargement...</div>
+  // Badge dyal âge
+  const getAgeBadge = (days: number) => {
+    if (days <= 7) return { label: `${days} يوم`, color: 'bg-yellow-100 text-yellow-700' }
+    if (days <= 30) return { label: `${days} يوم`, color: 'bg-orange-100 text-orange-700' }
+    if (days <= 90) return { label: `${days} يوم`, color: 'bg-red-100 text-red-700' }
+    return { label: `${days} يوم (متأخر جداً)`, color: 'bg-red-200 text-red-900 font-bold' }
   }
 
-  if (!canViewPayments) {
-    return <div className="p-6">ليس لديك صلاحية للوصول لهذه الصفحة</div>
-  }
+  if (loading || roleLoading) return <div className="p-6">Chargement...</div>
+  if (!isDirector && !isSecretary) return <div className="p-6">ليس لديك صلاحية</div>
 
   return (
-    <div className="p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">المتأخرون عن الدفع</h1>
+    <div className="p-6 space-y-6" dir="rtl">
+      <header className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <AlertCircle className="h-6 w-6 text-red-600" />
+            المتأخرون عن الدفع
+          </h1>
+          <p className="text-gray-600">قائمة التلاميذ الذين لم يؤدوا الأقساط في وقتها</p>
+        </div>
+        <button
+          onClick={loadData}
+          className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium"
+        >
+          <RefreshCw className="h-4 w-4" /> تحديث
+        </button>
       </header>
 
-      {error && <div className="mb-4 text-red-600">{error}</div>}
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
+      {success && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg">{success}</div>}
 
-      <div className="flex flex-wrap gap-4 mb-6">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-2 text-red-600">
+            <Users className="h-5 w-5" />
+            <span className="text-sm font-medium">عدد التلاميذ</span>
+          </div>
+          <p className="text-2xl font-bold text-slate-800">{totals.count}</p>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-2 text-orange-600">
+            <Wallet className="h-5 w-5" />
+            <span className="text-sm font-medium">إجمالي المبالغ المتأخرة</span>
+          </div>
+          <p className="text-2xl font-bold text-slate-800">{totals.amount.toFixed(2)} DH</p>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-2 text-amber-600">
+            <Clock className="h-5 w-5" />
+            <span className="text-sm font-medium">عدد الأقساط المتأخرة</span>
+          </div>
+          <p className="text-2xl font-bold text-slate-800">{totals.installments}</p>
+        </div>
+      </div>
+
+      {/* Filtres */}
+      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+          <Filter className="h-4 w-4 text-indigo-600" />
+          <h2 className="font-bold text-slate-800">الفلاتر</h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="relative">
+            <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="بحث بالاسم..."
+              className="w-full pr-10 pl-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+            />
+          </div>
+          <select
+            value={levelFilter}
+            onChange={(e) => setLevelFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+          >
+            <option value="all">جميع المستويات</option>
+            {levels.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+          >
+            <option value="all">جميع الأقسام</option>
+            {classes.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
           <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            placeholder="بحث بالاسم أو العائلة..."
+            type="number"
+            value={minAmount}
+            onChange={(e) => setMinAmount(e.target.value)}
+            placeholder="الحد الأدنى (DH)"
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm"
           />
         </div>
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-        >
-          <option value="all">الكل</option>
-          <option value="overdue">متأخر</option>
-          <option value="up_to_date">على ما يرام</option>
-          <option value="30">تأخر 30+ يوم</option>
-          <option value="60">تأخر 60+ يوم</option>
-          <option value="90">تأخر 90+ يوم</option>
-        </select>
-        <button
-          onClick={() => fetchUnpaid(establishmentId!)}
-          className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-100"
-        >
-          <RefreshCw className="h-4 w-4" />
-          تحديث
-        </button>
       </div>
 
-      <div className="bg-white p-6 rounded-xl shadow-sm">
-        <h2 className="text-lg font-semibold mb-4">قائمة المتأخرين ({filteredList.length})</h2>
-        {filteredList.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">لا يوجد بيانات</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">العائلة</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">التلميذ</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">إجمالي المستحق</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المدفوع</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المتبقي</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">عدد الأقساط المتأخرة</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">أيام التأخير</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredList.map((item) => (
-                  <tr key={item.student_id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{item.family_name || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.student_name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm"><Amount value={item.total_due} /></td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm"><Amount value={item.total_paid} /></td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-red-600"><Amount value={item.total_remaining} /></td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">{item.overdue_count}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">{item.oldest_due_date ? daysAgo(item.oldest_due_date) : '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Liste */}
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-2xl p-16 text-center border">
+          <CheckCircle2 className="h-16 w-16 text-emerald-500 mx-auto mb-4" />
+          <p className="text-gray-700 font-medium text-lg">لا يوجد متأخرون 🎉</p>
+          <p className="text-sm text-gray-500 mt-1">جميع الأقساط مدفوعة في وقتها</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((s) => {
+            const ageBadge = getAgeBadge(s.max_days_overdue)
+            return (
+              <div key={s.student_id} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-[200px]">
+                    <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-orange-500 rounded-full flex items-center justify-center text-white font-bold">
+                      {s.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800">{s.full_name}</p>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                        <span>{s.levelName} - {s.className}</span>
+                        {s.parent_phone && (
+                          <>
+                            <span>•</span>
+                            <span className="flex items-center gap-1">
+                              <Phone className="h-3 w-3" />
+                              <span dir="ltr">{s.parent_phone}</span>
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-xl font-bold text-red-700">{s.total_unpaid.toFixed(2)} DH</p>
+                      <p className="text-xs text-slate-500">{s.installments.length} قسط متأخر</p>
+                    </div>
+                    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${ageBadge.color}`}>
+                      <Clock className="h-3.5 w-3.5" /> {ageBadge.label}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Détail dyal échéances */}
+                <div className="mt-3 bg-slate-50 rounded-lg p-3 space-y-1">
+                  {s.installments.map((inst) => {
+                    const rem = inst.amount - inst.paid_amount
+                    return (
+                      <div key={inst.id} className="flex items-center justify-between text-sm">
+                        <span className="text-slate-700">{inst.description}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-slate-500">{inst.due_date}</span>
+                          <span className="font-medium text-red-600">{rem.toFixed(2)} DH</span>
+                          <span className="text-xs text-orange-600">({inst.days_overdue} يوم)</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Actions */}
+                <div className="mt-3 flex justify-end">
+                  <button
+                    onClick={() => { setRelanceStudent(s); setRelanceType('all') }}
+                    className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm font-medium"
+                  >
+                    <Send className="h-4 w-4" /> إرسال تذكير
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Relance Modal */}
+      {relanceStudent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center">
+                <Send className="h-6 w-6 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">إرسال تذكير</h3>
+                <p className="text-sm text-gray-500">{relanceStudent.full_name} — {relanceStudent.total_unpaid.toFixed(2)} DH</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 mb-4">
+              <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input type="radio" name="relance" checked={relanceType === 'all'} onChange={() => setRelanceType('all')} className="text-indigo-600" />
+                <div className="flex-1">
+                  <p className="font-medium text-slate-800">الكل (إشعار + SMS + بريد)</p>
+                  <p className="text-xs text-slate-500">إرسال عبر جميع القنوات</p>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input type="radio" name="relance" checked={relanceType === 'notification'} onChange={() => setRelanceType('notification')} className="text-indigo-600" />
+                <Bell className="h-4 w-4 text-slate-500" />
+                <div className="flex-1">
+                  <p className="font-medium text-slate-800">إشعار فقط</p>
+                  <p className="text-xs text-slate-500">يظهر في بوابة ولي الأمر</p>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input type="radio" name="relance" checked={relanceType === 'sms'} onChange={() => setRelanceType('sms')} className="text-indigo-600" />
+                <MessageCircle className="h-4 w-4 text-slate-500" />
+                <div className="flex-1">
+                  <p className="font-medium text-slate-800">SMS</p>
+                  <p className="text-xs text-slate-500" dir="ltr">{relanceStudent.parent_phone || 'لا يوجد رقم'}</p>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input type="radio" name="relance" checked={relanceType === 'email'} onChange={() => setRelanceType('email')} className="text-indigo-600" />
+                <Mail className="h-4 w-4 text-slate-500" />
+                <div className="flex-1">
+                  <p className="font-medium text-slate-800">البريد الإلكتروني</p>
+                  <p className="text-xs text-slate-500" dir="ltr">{relanceStudent.parent_email || 'لا يوجد بريد'}</p>
+                </div>
+              </label>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 mb-4">
+              ⚠️ <strong>ملاحظة:</strong> SMS والبريد سيتطلبان تفعيل الخدمة لاحقاً. حالياً يتم تسجيل الطلب في النظام.
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={handleRelance}
+                disabled={sending}
+                className="h-11 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 font-medium"
+              >
+                <Send className="h-4 w-4" />
+                {sending ? 'جارٍ الإرسال...' : 'إرسال'}
+              </button>
+              <button
+                onClick={() => setRelanceStudent(null)}
+                className="h-11 px-6 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                إلغاء
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

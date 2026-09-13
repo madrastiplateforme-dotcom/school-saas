@@ -1,6 +1,5 @@
 // lib/billing.ts
 
-// أسامي الشهور بالعربية (المغربية)
 const ARABIC_MONTHS = [
   'يناير', 'فبراير', 'مارس', 'أبريل', 'ماي', 'يونيو',
   'يوليوز', 'غشت', 'شتنبر', 'أكتوبر', 'نونبر', 'دجنبر'
@@ -66,6 +65,7 @@ export function generateInstallmentsForContract(params: {
         establishment_id: establishmentId,
         contract_id: contractId,
         student_id: studentId,
+        service_id: service.service_id,
         description: `${service.name} - ${ARABIC_MONTHS[firstMonthDate.getMonth()]} ${firstMonthDate.getFullYear()}`,
         amount: firstMonthAmount,
         due_date: startDate,
@@ -80,6 +80,7 @@ export function generateInstallmentsForContract(params: {
         establishment_id: establishmentId,
         contract_id: contractId,
         student_id: studentId,
+        service_id: service.service_id,
         description: `${service.name} - ${ARABIC_MONTHS[dueDate.getMonth()]} ${dueDate.getFullYear()}`,
         amount: monthlyPrice,
         due_date: dueDate.toISOString().split('T')[0],
@@ -95,6 +96,7 @@ export function generateInstallmentsForContract(params: {
       establishment_id: establishmentId,
       contract_id: contractId,
       student_id: studentId,
+      service_id: service.service_id,
       description: service.name,
       amount: service.final_price,
       due_date: startDate,
