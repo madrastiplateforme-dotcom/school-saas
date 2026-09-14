@@ -1,10 +1,20 @@
+// app/api/admin/create-establishment/route.ts
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { sendEmail } from '@/lib/email'
+import { welcomeEmail } from '@/lib/email-templates'
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { establishmentName, establishmentEmail, directorEmail, directorPassword, directorName, establishmentPhone } = body
+    const {
+      establishmentName,
+      establishmentEmail,
+      directorEmail,
+      directorPassword,
+      directorName,
+      establishmentPhone,
+    } = body
 
     if (!establishmentName || !establishmentEmail || !directorEmail || !directorPassword) {
       return NextResponse.json({ error: 'جميع الحقول الإجبارية مطلوبة' }, { status: 400 })
@@ -12,7 +22,7 @@ export async function POST(request: Request) {
 
     const supabaseAdmin = createAdminClient()
 
-    // 1. إنشاء مستخدم المدير (مع تأكيد تلقائي)
+    // 1. إنشاء مستخدم المدير
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: directorEmail,
       password: directorPassword,
@@ -20,11 +30,16 @@ export async function POST(request: Request) {
     })
 
     if (authError || !authData.user) {
-      // نتحقق إذا كان الخطأ بسبب بريد موجود مسبقاً
       if (authError?.message?.includes('already been registered')) {
-        return NextResponse.json({ error: 'هذا البريد الإلكتروني مستعمل بالفعل، استعمل بريدًا آخر' }, { status: 400 })
+        return NextResponse.json(
+          { error: 'هذا البريد الإلكتروني مستعمل بالفعل، استعمل بريدًا آخر' },
+          { status: 400 },
+        )
       }
-      return NextResponse.json({ error: authError?.message || 'فشل إنشاء حساب المدير' }, { status: 400 })
+      return NextResponse.json(
+        { error: authError?.message || 'فشل إنشاء حساب المدير' },
+        { status: 400 },
+      )
     }
 
     const directorId = authData.user.id
@@ -35,6 +50,7 @@ export async function POST(request: Request) {
       .insert({
         name: establishmentName,
         email: establishmentEmail,
+        director_email: directorEmail,
         phone: establishmentPhone,
         status: 'active',
         code: `EST-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
@@ -43,9 +59,11 @@ export async function POST(request: Request) {
       .single()
 
     if (establishmentError || !establishmentData) {
-      // حذف المستخدم إذا فشل إنشاء المؤسسة
       await supabaseAdmin.auth.admin.deleteUser(directorId)
-      return NextResponse.json({ error: establishmentError?.message || 'فشل إنشاء المؤسسة' }, { status: 400 })
+      return NextResponse.json(
+        { error: establishmentError?.message || 'فشل إنشاء المؤسسة' },
+        { status: 400 },
+      )
     }
 
     // 3. إنشاء دور افتراضي "Directeur"
@@ -75,7 +93,6 @@ export async function POST(request: Request) {
       })
 
     if (profileError) {
-      // تنظيف
       await supabaseAdmin.from('establishments').delete().eq('id', establishmentData.id)
       await supabaseAdmin.auth.admin.deleteUser(directorId)
       return NextResponse.json({ error: profileError.message }, { status: 400 })
@@ -90,7 +107,46 @@ export async function POST(request: Request) {
         is_main: true,
       })
 
-    return NextResponse.json({ success: true, establishmentId: establishmentData.id })
+    // 6. ✅ إرسال إيميل ترحيب (من SMTP ديال SaaS)
+    const siteUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      request.headers.get('origin') ||
+      'http://localhost:3000'
+
+    const loginUrl = `${siteUrl}/login`
+
+    const emailContent = welcomeEmail({
+      directorName: directorName || directorEmail,
+      schoolName: establishmentName,
+      email: directorEmail,
+      password: directorPassword,
+      loginUrl,
+    })
+
+    const emailResult = await sendEmail({
+      to: directorEmail,
+      subject: emailContent.subject,
+      html: emailContent.html,
+      text: emailContent.text,
+      replyTo: establishmentEmail,     // 🔑 الردود ترجع للمدرسة
+      establishmentId: establishmentData.id,
+      template: 'welcome',
+      metadata: {
+        schoolName: establishmentName,
+        director_email: directorEmail,
+      },
+    })
+
+    if (!emailResult.ok) {
+      console.warn('⚠️ فشل إرسال إيميل الترحيب:', emailResult.error)
+      // ما كنرجعوش خطأ — المدرسة تدارت بنجاح
+    }
+
+    return NextResponse.json({
+      success: true,
+      establishmentId: establishmentData.id,
+      emailSent: emailResult.ok,
+    })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'حدث خطأ' }, { status: 500 })
   }

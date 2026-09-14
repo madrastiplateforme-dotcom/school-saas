@@ -1,283 +1,456 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { logAudit } from '@/lib/audit'
-import { CreditCard, RefreshCw } from 'lucide-react'
+import {
+  CreditCard, Search, RefreshCw, Building2, Users, TrendingUp,
+  AlertCircle, CheckCircle2, Clock, X, Save, Calendar, DollarSign,
+  MoreVertical, Ban, PlayCircle, FileText,
+} from 'lucide-react'
 
-type SubscriptionInvoice = {
+type SchoolSub = {
   id: string
   establishment_id: string
-  billing_month: string
-  student_count: number
-  amount: number
-  status: string
-  paid_at: string | null
-  created_at: string
-  establishments?: { name: string }
+  plan: 'gratuit' | 'standard' | 'pro'
+  status: 'active' | 'suspended' | 'cancelled'
+  started_at: string
+  current_period_start: string | null
+  current_period_end: string | null
+  // enriched
+  school_name: string
+  students_count: number
+  monthly_amount: number
+  invoices_count: number
+  unpaid_amount: number
 }
 
+const PRICE_PER_STUDENT = 1.5
+const FREE_STUDENTS = 20
+
+const calcAmount = (students: number) => {
+  const billable = Math.max(0, students - FREE_STUDENTS)
+  return Math.round(billable * PRICE_PER_STUDENT * 100) / 100
+}
+
+const formatMoney = (n: number) =>
+  n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+const formatDate = (d?: string | null) => {
+  if (!d) return '—'
+  try {
+    return new Date(d).toLocaleDateString('fr-FR')
+  } catch {
+    return d
+  }
+}
+
+const planLabel = (p: string) =>
+  p === 'gratuit' ? 'مجانية' : p === 'standard' ? 'قياسية' : 'احترافية'
+
+const statusLabel = (s: string) =>
+  s === 'active' ? 'نشط' : s === 'suspended' ? 'موقوف' : 'ملغى'
+
 export default function SubscriptionsPage() {
-  const router = useRouter()
-  const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([])
+  const [subs, setSubs] = useState<SchoolSub[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [paymentModal, setPaymentModal] = useState<SubscriptionInvoice | null>(null)
-  const [paymentAmount, setPaymentAmount] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState('transfer')
-  const [paymentNotes, setPaymentNotes] = useState('')
-  const [savingPayment, setSavingPayment] = useState(false)
-  const [runningDailyCheck, setRunningDailyCheck] = useState(false)
+  const [success, setSuccess] = useState('')
+  const [search, setSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterPlan, setFilterPlan] = useState('')
 
   useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) {
-        router.push('/login')
-        return
-      }
-      supabase
-        .from('admin_users')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .single()
-        .then(({ data: adminData }) => {
-          if (!adminData) {
-            setError('غير مصرح')
-            setLoading(false)
-            return
-          }
-          generateInvoicesAndFetch()
-        })
-    })
+    loadAll()
   }, [])
 
-  const generateInvoicesAndFetch = async () => {
+  const loadAll = async () => {
     setLoading(true)
-    try {
-      // توليد الفواتير الناقصة
-      await fetch('/api/admin/subscription-invoices/generate', { method: 'POST' })
-
-      // جلب الفواتير
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('subscription_invoices')
-        .select('*, establishments(name)')
-        .order('billing_month', { ascending: false })
-
-      if (error) setError(error.message)
-      else setInvoices(data || [])
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleDailyCheck = async () => {
-    setRunningDailyCheck(true)
-    try {
-      const res = await fetch('/api/admin/daily-check', { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'حدث خطأ')
-      alert(`تم الفحص اليومي: ${data.updatedInvoices} فاتورة تأخرت، ${data.suspended} مؤسسة أوقفت`)
-      generateInvoicesAndFetch() // تحديث البيانات
-    } catch (err: any) {
-      alert(err.message)
-    } finally {
-      setRunningDailyCheck(false)
-    }
-  }
-
-  const handleSavePayment = async () => {
-    if (!paymentModal) return
-    setSavingPayment(true)
     setError('')
+    const supabase = createClient()
 
-    try {
-      const supabase = createClient()
-      // تسجيل دفعة في subscription_payments
-      const { error: paymentError } = await supabase
-        .from('subscription_payments')
-        .insert({
-          establishment_id: paymentModal.establishment_id,
-          amount: Number(paymentAmount),
-          payment_date: new Date().toISOString().split('T')[0],
-          period_start: paymentModal.billing_month,
-          period_end: paymentModal.billing_month,
-          notes: paymentNotes,
-        })
+    // 1. All subscriptions + establishments
+    const { data: subsData, error: subsErr } = await supabase
+      .from('school_subscriptions')
+      .select(`
+        id, establishment_id, plan, status, started_at,
+        current_period_start, current_period_end,
+        establishments(name)
+      `)
+      .order('created_at', { ascending: false })
 
-      if (paymentError) throw paymentError
+    if (subsErr) {
+      setError(subsErr.message)
+      setLoading(false)
+      return
+    }
 
-      // تحديث حالة الفاتورة
-      const { error: updateError } = await supabase
+    // 2. For each, count students + invoices
+    const rows: SchoolSub[] = []
+    for (const s of subsData || []) {
+      // count students
+      const { count: studentsCount } = await supabase
+        .from('students')
+        .select('id', { count: 'exact', head: true })
+        .eq('establishment_id', s.establishment_id)
+        .eq('status', 'active')
+
+      // invoices
+      const { data: invs } = await supabase
         .from('subscription_invoices')
-        .update({ status: 'paid', paid_at: new Date().toISOString() })
-        .eq('id', paymentModal.id)
+        .select('amount, status')
+        .eq('establishment_id', s.establishment_id)
 
-      if (updateError) throw updateError
+      const invoicesCount = (invs || []).length
+      const unpaidAmount = (invs || [])
+        .filter((i: any) => i.status !== 'paid' && i.status !== 'cancelled')
+        .reduce((sum: number, i: any) => sum + Number(i.amount || 0), 0)
 
-      // تحديث حالة الاشتراك في المؤسسة
-      await supabase
-        .from('establishments')
-        .update({ subscription_status: 'paid' })
-        .eq('id', paymentModal.establishment_id)
+      rows.push({
+        id: s.id,
+        establishment_id: s.establishment_id,
+        plan: s.plan as any,
+        status: s.status as any,
+        started_at: s.started_at,
+        current_period_start: s.current_period_start,
+        current_period_end: s.current_period_end,
+        school_name: (s.establishments as any)?.name || '—',
+        students_count: studentsCount || 0,
+        monthly_amount: calcAmount(studentsCount || 0),
+        invoices_count: invoicesCount,
+        unpaid_amount: unpaidAmount,
+      })
+    }
 
-      await logAudit('pay_subscription_invoice', { invoiceId: paymentModal.id, amount: paymentAmount }, paymentModal.establishment_id)
+    setSubs(rows)
+    setLoading(false)
+  }
 
-      setPaymentModal(null)
-      setPaymentAmount('')
-      setPaymentNotes('')
-      generateInvoicesAndFetch()
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setSavingPayment(false)
+  const handleChangePlan = async (sub: SchoolSub, newPlan: 'gratuit' | 'standard' | 'pro') => {
+    const supabase = createClient()
+    const { error: upErr } = await supabase
+      .from('school_subscriptions')
+      .update({ plan: newPlan, updated_at: new Date().toISOString() })
+      .eq('id', sub.id)
+    if (upErr) {
+      setError(upErr.message)
+    } else {
+      setSuccess(`تم تغيير خطة ${sub.school_name} إلى "${planLabel(newPlan)}"`)
+      setTimeout(() => setSuccess(''), 2500)
+      await loadAll()
     }
   }
 
-  if (loading) {
-    return <div className="p-6">Chargement...</div>
+  const handleToggleStatus = async (sub: SchoolSub) => {
+    const newStatus = sub.status === 'active' ? 'suspended' : 'active'
+    if (!confirm(`${newStatus === 'suspended' ? 'إيقاف' : 'تفعيل'} اشتراك "${sub.school_name}"؟`)) return
+
+    const supabase = createClient()
+    const { error: upErr } = await supabase
+      .from('school_subscriptions')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', sub.id)
+    if (upErr) {
+      setError(upErr.message)
+    } else {
+      setSuccess(`تم ${newStatus === 'suspended' ? 'إيقاف' : 'تفعيل'} ${sub.school_name}`)
+      setTimeout(() => setSuccess(''), 2500)
+      await loadAll()
+    }
   }
+
+  const filtered = subs.filter(s => {
+    if (filterStatus && s.status !== filterStatus) return false
+    if (filterPlan && s.plan !== filterPlan) return false
+    if (search && !s.school_name.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
+
+  // Stats
+  const totalStudents = subs.reduce((s, r) => s + r.students_count, 0)
+  const totalMonthlyRevenue = subs
+    .filter(s => s.status === 'active')
+    .reduce((s, r) => s + r.monthly_amount, 0)
+  const totalUnpaid = subs.reduce((s, r) => s + r.unpaid_amount, 0)
+
+  if (loading) return <div className="p-6 text-center">جارٍ التحميل...</div>
 
   return (
-    <div>
-      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">فواتير الاشتراكات الشهرية</h1>
+    <div className="p-6 space-y-6" dir="rtl">
+      <header className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <CreditCard className="h-6 w-6 text-indigo-600" />
+            اشتراكات المدارس
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            إدارة خطط الاشتراك والمداخيل الشهرية
+          </p>
+        </div>
         <div className="flex gap-2">
-          <button
-            onClick={generateInvoicesAndFetch}
-            className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-100"
+          <Link
+            href="/admin/invoices"
+            className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm"
           >
-            <RefreshCw className="h-4 w-4" />
-            تحديث
-          </button>
+            <FileText className="h-4 w-4" /> الفواتير
+          </Link>
           <button
-            onClick={handleDailyCheck}
-            disabled={runningDailyCheck}
-            className="bg-yellow-100 text-yellow-800 px-3 py-2 rounded-lg hover:bg-yellow-200 disabled:opacity-50 text-sm"
+            onClick={loadAll}
+            className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm"
           >
-            {runningDailyCheck ? 'جارٍ الفحص...' : 'تشغيل الفحص اليومي'}
+            <RefreshCw className="h-4 w-4" /> تحديث
           </button>
+        </div>
+      </header>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
+          <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+      {success && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg flex items-center gap-2">
+          <CheckCircle2 className="h-5 w-5" />
+          <span>{success}</span>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+              <Building2 className="h-4 w-4" />
+            </div>
+            <span className="text-xs font-medium text-slate-500">المدارس</span>
+          </div>
+          <div className="text-2xl font-bold text-slate-800">{subs.length}</div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <Users className="h-4 w-4" />
+            </div>
+            <span className="text-xs font-medium text-slate-500">إجمالي التلاميذ</span>
+          </div>
+          <div className="text-2xl font-bold text-slate-800">{totalStudents}</div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+            <span className="text-xs font-medium text-slate-500">المداخيل الشهرية</span>
+          </div>
+          <div className="text-xl font-bold text-emerald-600">
+            {formatMoney(totalMonthlyRevenue)}
+            <span className="text-xs font-normal text-slate-400 mr-1">د.م</span>
+          </div>
+        </div>
+
+        <div className={`bg-white rounded-2xl border shadow-sm p-5 ${
+          totalUnpaid > 0 ? 'border-rose-200' : 'border-gray-100'
+        }`}>
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+              totalUnpaid > 0 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-700'
+            }`}>
+              <AlertCircle className="h-4 w-4" />
+            </div>
+            <span className="text-xs font-medium text-slate-500">غير مدفوع</span>
+          </div>
+          <div className={`text-xl font-bold ${totalUnpaid > 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+            {formatMoney(totalUnpaid)}
+            <span className="text-xs font-normal text-slate-400 mr-1">د.م</span>
+          </div>
         </div>
       </div>
 
-      {error && <div className="mb-4 text-red-600">{error}</div>}
+      {/* Filters */}
+      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-3">
+        <div className="relative">
+          <Search className="absolute right-3 top-3 h-5 w-5 text-gray-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="بحث عن مدرسة..."
+            className="w-full h-11 pr-11 pl-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
 
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المؤسسة</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">شهر الفاتورة</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">عدد التلاميذ</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المبلغ</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الحالة</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">إجراء</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {invoices.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">لا توجد فواتير</td>
-              </tr>
-            ) : (
-              invoices.map((invoice) => (
-                <tr key={invoice.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {invoice.establishments?.name || invoice.establishment_id}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{invoice.billing_month}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{invoice.student_count}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{invoice.amount} DH</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      invoice.status === 'paid' ? 'bg-green-100 text-green-700' :
-                      invoice.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
-                      {invoice.status === 'paid' ? 'مدفوع' : invoice.status === 'pending' ? 'قيد الانتظار' : 'متأخر'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {invoice.status !== 'paid' && (
-                      <button
-                        onClick={() => {
-                          setPaymentModal(invoice)
-                          setPaymentAmount(String(invoice.amount))
-                        }}
-                        className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-100 text-xs"
-                      >
-                        <CreditCard className="h-3 w-3" />
-                        تسجيل دفعة
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        <div className="grid grid-cols-2 gap-3">
+          <select
+            value={filterPlan}
+            onChange={(e) => setFilterPlan(e.target.value)}
+            className="h-10 px-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">كل الخطط</option>
+            <option value="gratuit">مجانية</option>
+            <option value="standard">قياسية</option>
+            <option value="pro">احترافية</option>
+          </select>
+
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="h-10 px-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">كل الحالات</option>
+            <option value="active">نشط</option>
+            <option value="suspended">موقوف</option>
+            <option value="cancelled">ملغى</option>
+          </select>
+        </div>
       </div>
 
-      {/* نافذة تسجيل دفعة */}
-      {paymentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold mb-4">تسجيل دفعة فاتورة</h3>
-            <p className="text-sm text-gray-600 mb-4">المؤسسة: {paymentModal.establishments?.name}</p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">المبلغ (DH)</label>
-                <input
-                  type="number"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">طريقة الدفع</label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                >
-                  <option value="transfer">تحويل بنكي</option>
-                  <option value="cash">نقداً</option>
-                  <option value="cheque">شيك</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">ملاحظات</label>
-                <textarea
-                  value={paymentNotes}
-                  onChange={(e) => setPaymentNotes(e.target.value)}
-                  rows={2}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                ></textarea>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleSavePayment}
-                  disabled={savingPayment}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {savingPayment ? 'جاري الحفظ...' : 'حفظ'}
-                </button>
-                <button
-                  onClick={() => setPaymentModal(null)}
-                  className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300"
-                >
-                  إلغاء
-                </button>
-              </div>
-            </div>
+      {/* Table */}
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-2xl p-16 text-center border border-gray-100">
+          <Building2 className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+          <p className="text-slate-500 font-medium">
+            {subs.length === 0 ? 'لا توجد مدارس' : 'لا توجد نتائج'}
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">
+                    المدرسة
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">
+                    التلاميذ
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">
+                    الخطة
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">
+                    المبلغ الشهري
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">
+                    الحالة
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">
+                    الفواتير
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase w-32">
+                    إجراءات
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map(s => {
+                  const isActive = s.status === 'active'
+                  const isFree = s.monthly_amount === 0
+                  return (
+                    <tr key={s.id} className="hover:bg-slate-50 transition">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                            {s.school_name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">{s.school_name}</p>
+                            <p className="text-xs text-slate-400">
+                              منذ {formatDate(s.started_at)}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="inline-flex items-center gap-1 text-sm font-bold text-slate-700">
+                          {s.students_count}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <select
+                          value={s.plan}
+                          onChange={(e) => handleChangePlan(s, e.target.value as any)}
+                          className={`text-xs font-bold rounded-lg px-2 py-1.5 border-0 cursor-pointer ${
+                            s.plan === 'gratuit' ? 'bg-slate-100 text-slate-700' :
+                            s.plan === 'standard' ? 'bg-blue-100 text-blue-700' :
+                            'bg-purple-100 text-purple-700'
+                          }`}
+                        >
+                          <option value="gratuit">مجانية</option>
+                          <option value="standard">قياسية</option>
+                          <option value="pro">احترافية</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className={`text-sm font-bold ${isFree ? 'text-slate-400' : 'text-emerald-600'}`}>
+                          {formatMoney(s.monthly_amount)}
+                          <span className="text-xs font-normal text-slate-400 mr-1">د.م</span>
+                        </div>
+                        {!isFree && (
+                          <p className="text-[10px] text-slate-400">
+                            {s.students_count} - 20 = {s.students_count - 20} × 1.5
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {isActive ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded">
+                            <CheckCircle2 className="h-3 w-3" /> نشط
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 bg-rose-50 px-2 py-1 rounded">
+                            <Ban className="h-3 w-3" /> موقوف
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="text-sm font-bold text-slate-700">{s.invoices_count}</div>
+                        {s.unpaid_amount > 0 && (
+                          <p className="text-[10px] text-rose-600 font-bold">
+                            غير مدفوع: {formatMoney(s.unpaid_amount)}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <Link
+                            href={`/admin/subscriptions/${s.id}`}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                            title="التفاصيل"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Link>
+                          <button
+                            onClick={() => handleToggleStatus(s)}
+                            className={`p-1.5 rounded-lg transition ${
+                              isActive
+                                ? 'text-rose-600 hover:bg-rose-50'
+                                : 'text-emerald-600 hover:bg-emerald-50'
+                            }`}
+                            title={isActive ? 'إيقاف' : 'تفعيل'}
+                          >
+                            {isActive ? <Ban className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
+
+      {/* Info */}
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3 text-sm text-blue-800">
+        <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+        <div>
+          <strong>معادلة الحساب:</strong> المبلغ الشهري = (عدد التلاميذ − 20) × 1.5 د.م. المدارس اللي عندها 20 تلميذاً أو أقل مجانية.
+        </div>
+      </div>
     </div>
   )
 }

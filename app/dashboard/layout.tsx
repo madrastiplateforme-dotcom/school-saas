@@ -9,7 +9,8 @@ import { useLanguage } from '@/lib/LanguageContext'
 import {
   AlertCircle, BookOpen, Calendar, ChevronDown, FileText, GraduationCap,
   LayoutDashboard, LogOut, School, Settings, Shield, UserPlus, Users,
-  Wallet, Wrench, ArrowLeft, BarChart3, Building2, Send,
+  Wallet, Wrench, ArrowLeft, BarChart3, Building2, Send, Link2,
+  ClipboardList, ShieldCheck, Mail, MessageSquare, CreditCard,
 } from 'lucide-react'
 
 const menuSections = [
@@ -17,17 +18,22 @@ const menuSections = [
     title: 'PRINCIPAL',
     items: [
       { href: '/dashboard', key: 'dashboard', icon: LayoutDashboard, label: 'Tableau de bord' },
-      { href: '/dashboard/enroll', key: 'enroll', icon: UserPlus, label: 'Nouvelle inscription' },
+      { href: '/dashboard/enroll', key: 'enroll', icon: UserPlus, label: 'Inscription' },
+       { href: '/dashboard/users', key: 'users', icon: Users, label: 'Utilisateurs' },
+      { href: '/dashboard/messages', key: 'messages', icon: MessageSquare, label: 'Messages' },
     ],
   },
-  {
-    title: 'SCOLARITÉ',
-    items: [
-      { href: '/dashboard/students', key: 'students', icon: Users, label: 'Élèves' },
-      { href: '/dashboard/families', key: 'families', icon: Users, label: 'Familles' },
-      { href: '/dashboard/attendance', key: 'attendance', icon: CheckCircle2, label: 'Absences' },
-    ],
-  },
+ {
+  title: 'SCOLARITÉ',
+  items: [
+    { href: '/dashboard/students', key: 'students', icon: Users, label: 'Élèves' },
+    { href: '/dashboard/families', key: 'families', icon: Users, label: 'Familles' },
+    { href: '/dashboard/attendance', key: 'attendance', icon: CheckCircle2, label: 'Absences' },
+    { href: '/dashboard/attendance/reports', key: 'attendanceReports', icon: FileText, label: ' Rapport des absences' },
+    { href: '/dashboard/evaluations', key: 'evaluations', icon: ClipboardList, label: 'Évaluations & Notes' }, // ← زيد
+    { href: '/dashboard/bulletins', key: 'bulletins', icon: FileText, label: 'Bulletins' }, // ← زيد
+  ],
+},
   {
     title: 'FINANCE',
     items: [
@@ -47,13 +53,19 @@ const settingsItems = [
   { href: '/dashboard/academic-years', key: 'academicYears', icon: Calendar, label: 'Années scolaires' },
   { href: '/dashboard/levels', key: 'levels', icon: GraduationCap, label: 'Niveaux' },
   { href: '/dashboard/classes', key: 'classes', icon: BookOpen, label: 'Classes' },
+  { href: '/dashboard/subjects', key: 'subjects', icon: BookOpen, label: 'Matières' },
+  { href: '/dashboard/teacher-subjects', key: 'teacherSubjects', icon: Link2, label: 'Enseignants ↔ Matières' },
+  { href: '/dashboard/timetable', key: 'timetable', icon: Calendar, label: 'Emploi du temps' },
+  { href: '/dashboard/evaluation-types', key: 'evalTypes', icon: ClipboardList, label: 'Types d\'évaluation' }, // ← زيد
   { href: '/dashboard/services', key: 'services', icon: Wrench, label: 'Services' },
-  { href: '/dashboard/personnel', key: 'personnel', icon: Users, label: 'الموظفون' },
-  { href: '/dashboard/users', key: 'users', icon: Users, label: 'Utilisateurs' },
+  { href: '/dashboard/personnel', key: 'personnel', icon: Users, label: 'Personnel' },
+  { href: '/dashboard/school-settings', key: 'schoolSettings', icon: Settings, label: 'Gestion de durée' },
+  { href: '/dashboard/billing', key: 'billing', icon: CreditCard, label: 'Abbonnements' },
+  { href: '/dashboard/settings/email', key: 'email', icon: Mail, label: 'Email' },
   { href: '/dashboard/roles', key: 'roles', icon: Shield, label: 'Rôles' },
   { href: '/dashboard/settings', key: 'settings', icon: Settings, label: 'Paramètres' },
+  { href: '/dashboard/settings/privacy', key: 'privacy', icon: ShieldCheck, label: 'الخصوصية' },
 ]
-
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()

@@ -107,8 +107,10 @@ export async function proxy(request: NextRequest) {
   }
 
   // ===== 8. Secrétaire =====
-  if (isSecretaire) {
-     const allowedPaths = [
+  // ===== 8. Secrétaire =====
+// ===== 8. Secrétaire =====
+if (isSecretaire) {
+  const allowedPaths = [
     '/dashboard/secretary',
     '/dashboard/payments',
     '/dashboard/expenses',
@@ -116,20 +118,22 @@ export async function proxy(request: NextRequest) {
     '/dashboard/families',
     '/dashboard/installments',
     '/dashboard/caisse',
-    '/dashboard/caisse/transfers',  // 🆕
-    '/dashboard/caisse/transfer',   // 🆕
+    '/dashboard/caisse/transfers',
+    '/dashboard/caisse/transfer',
+    '/dashboard/messages',    // 🆕 الرسائل
+    '/dashboard/notifications', // 🆕 الإشعارات
     '/dashboard/profile',
     '/pending',
   ]
-    const isAllowed = allowedPaths.some((p) => path.startsWith(p))
+  const isAllowed = allowedPaths.some((p) => path.startsWith(p))
 
-    if (!isAllowed) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard/secretary'
-      return NextResponse.redirect(url)
-    }
-    return supabaseResponse
+  if (!isAllowed) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard/secretary'
+    return NextResponse.redirect(url)
   }
+  return supabaseResponse
+}
 
   // ===== 9. Parent =====
   if (isParent) {

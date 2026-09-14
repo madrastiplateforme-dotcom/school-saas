@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
@@ -20,6 +21,13 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
+  CreditCard,
+  FileText,
+  DollarSign,
+  Users,
+  Ban,
+  X,
+  Save,
 } from 'lucide-react'
 
 type Establishment = {
@@ -388,10 +396,15 @@ export default function EstablishmentsPage() {
     return matchesSearch && matchesStatus
   })
 
+  // Stats totales
+  const totalActive = establishments.filter((e) => e.status === 'active').length
+  const totalSuspended = establishments.filter((e) => e.status === 'suspended').length
+  const totalStudents = establishments.reduce((s, e) => s + (e.student_count || 0), 0)
+
   return (
-    <div>
+    <div className="p-6 space-y-6" dir="rtl">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center flex-wrap gap-3">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold text-gray-900">المؤسسات</h1>
           {pendingCount > 0 && (
@@ -401,25 +414,39 @@ export default function EstablishmentsPage() {
             </span>
           )}
         </div>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="inline-flex items-center gap-1 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-        >
-          <Plus className="h-4 w-4" />
-          إضافة مؤسسة
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <Link
+            href="/admin/subscriptions"
+            className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm"
+          >
+            <CreditCard className="h-4 w-4" />
+            الاشتراكات
+          </Link>
+          <Link
+            href="/admin/invoices"
+            className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm"
+          >
+            <FileText className="h-4 w-4" />
+            الفواتير
+          </Link>
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg hover:bg-indigo-700 font-medium text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            إضافة مؤسسة
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3 text-emerald-600 mb-2">
             <CheckCircle2 className="h-5 w-5" />
             <span className="text-sm font-medium">نشطة</span>
           </div>
-          <p className="text-2xl font-bold text-slate-800">
-            {establishments.filter((e) => e.status === 'active').length}
-          </p>
+          <p className="text-2xl font-bold text-slate-800">{totalActive}</p>
         </div>
 
         <div className={`rounded-xl p-5 border shadow-sm ${
@@ -434,37 +461,53 @@ export default function EstablishmentsPage() {
 
         <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3 text-red-600 mb-2">
-            <AlertCircle className="h-5 w-5" />
+            <Ban className="h-5 w-5" />
             <span className="text-sm font-medium">موقوفة</span>
           </div>
-          <p className="text-2xl font-bold text-slate-800">
-            {establishments.filter((e) => e.status === 'suspended').length}
-          </p>
+          <p className="text-2xl font-bold text-slate-800">{totalSuspended}</p>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-3 text-indigo-600 mb-2">
+            <Users className="h-5 w-5" />
+            <span className="text-sm font-medium">إجمالي التلاميذ</span>
+          </div>
+          <p className="text-2xl font-bold text-slate-800">{totalStudents}</p>
         </div>
       </div>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
+          <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
       {resetMessage && (
-        <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-md text-sm">
-          {resetMessage}
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-sm flex items-start justify-between gap-2">
+          <span>{resetMessage}</span>
+          <button onClick={() => setResetMessage('')} className="text-blue-400 hover:text-blue-600">
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
       {/* Filtres */}
-      <div className="flex flex-wrap gap-4 mb-6">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-3">
+        <div className="relative">
+          <Search className="absolute right-3 top-3 h-5 w-5 text-gray-400" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            className="w-full h-11 pr-11 pl-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
             placeholder="بحث بالاسم أو البريد أو الهاتف..."
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+          className="h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
         >
           <option value="all">كل الحالات</option>
           <option value="active">نشطة</option>
@@ -473,33 +516,34 @@ export default function EstablishmentsPage() {
         </select>
       </div>
 
+      {/* Create Form */}
       {showCreateForm && (
-        <div className="bg-white p-6 rounded-xl shadow mb-8">
-          <h2 className="text-lg font-semibold mb-4">إنشاء مؤسسة جديدة</h2>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <h2 className="text-lg font-bold mb-4">إنشاء مؤسسة جديدة</h2>
           <form onSubmit={handleCreateEstablishment} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">اسم المؤسسة</label>
-              <input type="text" required value={estName} onChange={(e) => setEstName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+              <input type="text" required value={estName} onChange={(e) => setEstName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">بريد المؤسسة</label>
-              <input type="email" required value={estEmail} onChange={(e) => setEstEmail(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+              <input type="email" required value={estEmail} onChange={(e) => setEstEmail(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">هاتف المؤسسة</label>
-              <input type="tel" value={estPhone} onChange={(e) => setEstPhone(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+              <input type="tel" value={estPhone} onChange={(e) => setEstPhone(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">اسم المدير</label>
-              <input type="text" required value={dirName} onChange={(e) => setDirName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+              <input type="text" required value={dirName} onChange={(e) => setDirName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">بريد المدير</label>
-              <input type="email" required value={dirEmail} onChange={(e) => setDirEmail(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+              <input type="email" required value={dirEmail} onChange={(e) => setDirEmail(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">كلمة المرور</label>
-              <input type="password" required minLength={6} value={dirPassword} onChange={(e) => setDirPassword(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+              <input type="password" required minLength={6} value={dirPassword} onChange={(e) => setDirPassword(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700">شعار المؤسسة (اختياري)</label>
@@ -507,9 +551,12 @@ export default function EstablishmentsPage() {
             </div>
             {formError && <div className="md:col-span-2 text-red-600 text-sm">{formError}</div>}
             {formSuccess && <div className="md:col-span-2 text-green-600 text-sm">{formSuccess}</div>}
-            <div className="md:col-span-2">
-              <button type="submit" disabled={creating} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {creating ? 'جاري الإنشاء...' : 'إنشاء'}
+            <div className="md:col-span-2 flex gap-2">
+              <button type="submit" disabled={creating} className="inline-flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
+                {creating ? <><RefreshCw className="h-4 w-4 animate-spin" /> جاري الإنشاء...</> : <><Save className="h-4 w-4" /> إنشاء</>}
+              </button>
+              <button type="button" onClick={() => setShowCreateForm(false)} className="bg-white border border-gray-300 text-gray-700 px-5 py-2.5 rounded-lg hover:bg-gray-50 font-medium">
+                إلغاء
               </button>
             </div>
           </form>
@@ -517,188 +564,227 @@ export default function EstablishmentsPage() {
       )}
 
       {/* Table */}
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المؤسسة</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الحالة</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المدير</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الشعار</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">إجراءات</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredEstablishments.map((est) => (
-              <tr
-                key={est.id}
-                className={est.status === 'pending' ? 'bg-amber-50/50' : ''}
-              >
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    {est.logo_url ? (
-                      <img src={est.logo_url} alt="logo" className="h-8 w-8 rounded-full object-cover" />
-                    ) : (
-                      <School className="h-6 w-6 text-gray-400" />
-                    )}
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{est.name}</p>
-                      <p className="text-xs text-gray-500">{est.email}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    est.status === 'active' ? 'bg-green-100 text-green-700' :
-                    est.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                    'bg-red-100 text-red-700'
-                  }`}>
-                    {est.status === 'active' ? 'نشطة' : est.status === 'pending' ? '⏳ معلقة' : 'موقوفة'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {est.user_profiles && est.user_profiles.length > 0 ? (
-                    <div className="flex items-center gap-2">
-                      <span>{est.user_profiles[0]?.full_name || 'مدير'}</span>
-                      <button
-                        onClick={() => setDirectorModal(est)}
-                        className="text-xs text-indigo-600 hover:underline"
-                      >
-                        تغيير
-                      </button>
-                      <button
-                        onClick={() => handleResetPassword(est.user_profiles[0].user_id)}
-                        className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded hover:bg-yellow-100"
-                      >
-                        <KeyRound className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-gray-400">لا يوجد مدير</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {est.logo_url ? (
-                    <img src={est.logo_url} alt="logo" className="h-10 w-10 rounded-full object-cover" />
-                  ) : (
-                    <label className="cursor-pointer text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hover:bg-gray-200">
-                      <Upload className="h-3 w-3 inline ml-1" />
-                      رفع شعار
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (file) handleLogoUpload(est.id, file)
-                        }}
-                      />
-                    </label>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        setEditModal(est)
-                        setEditName(est.name)
-                        setEditEmail(est.email)
-                        setEditPhone(est.phone)
-                        setEditAddress(est.address || '')
-                        setEditCity(est.city || '')
-                        setEditPricePerStudent(String(est.subscription_price_per_student))
-                        setEditDueDate(est.subscription_due_date || '')
-                        setEditGracePeriod(String(est.grace_period_days ?? 5))
-                      }}
-                      className="text-blue-600 hover:text-blue-800"
-                      title="تعديل"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    {est.status === 'active' ? (
-                      <button
-                        onClick={() => handleStatusChange(est.id, 'suspended')}
-                        className="text-red-600 hover:text-red-800"
-                        title="تعليق"
-                      >
-                        <Pause className="h-4 w-4" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleStatusChange(est.id, 'active')}
-                        className={`${est.status === 'pending' ? 'text-emerald-600 hover:text-emerald-800 font-bold' : 'text-green-600 hover:text-green-800'}`}
-                        title={est.status === 'pending' ? 'تفعيل الطلب' : 'تفعيل'}
-                      >
-                        <Play className="h-4 w-4" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleAssistanceMode(est.id)}
-                      className="text-purple-600 hover:text-purple-800"
-                      title="دخول للمؤسسة (وضع المساعدة)"
-                    >
-                      <LogIn className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteEstablishment(est.id)}
-                      className="text-red-600 hover:text-red-800"
-                      title="حذف نهائي"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
+      <div className="bg-white shadow-sm rounded-2xl overflow-hidden border border-gray-100">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">المؤسسة</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase">الحالة</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase">التلاميذ</th>
+                <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">المدير</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase">الشعار</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase w-40">إجراءات</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredEstablishments.map((est) => (
+                <tr key={est.id} className={est.status === 'pending' ? 'bg-amber-50/50' : ''}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      {est.logo_url ? (
+                        <img src={est.logo_url} alt="logo" className="h-9 w-9 rounded-lg object-cover" />
+                      ) : (
+                        <span className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-100 text-indigo-700">
+                          <School className="h-4 w-4" />
+                        </span>
+                      )}
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{est.name}</p>
+                        <p className="text-xs text-gray-500">{est.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                      est.status === 'active' ? 'bg-green-100 text-green-700' :
+                      est.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {est.status === 'active' ? 'نشطة' : est.status === 'pending' ? '⏳ معلقة' : 'موقوفة'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <span className="inline-flex items-center gap-1 text-sm font-bold text-slate-700">
+                      <Users className="h-3.5 w-3.5 text-slate-400" />
+                      {est.student_count}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    {est.user_profiles && est.user_profiles.length > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <span className="truncate max-w-[140px]">{est.user_profiles[0]?.full_name || 'مدير'}</span>
+                        <button
+                          onClick={() => setDirectorModal(est)}
+                          className="text-xs text-indigo-600 hover:underline whitespace-nowrap"
+                        >
+                          تغيير
+                        </button>
+                        <button
+                          onClick={() => handleResetPassword(est.user_profiles![0].user_id)}
+                          className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded hover:bg-yellow-100"
+                          title="إعادة تعيين كلمة المرور"
+                        >
+                          <KeyRound className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">لا يوجد مدير</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    {est.logo_url ? (
+                      <img src={est.logo_url} alt="logo" className="h-10 w-10 rounded-lg object-cover mx-auto" />
+                    ) : (
+                      <label className="cursor-pointer inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2.5 py-1.5 rounded hover:bg-gray-200 transition">
+                        <Upload className="h-3 w-3" />
+                        رفع شعار
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) handleLogoUpload(est.id, file)
+                          }}
+                        />
+                      </label>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center justify-center gap-1">
+                      <Link
+                        href={`/admin/subscriptions/${est.id}`}
+                        className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                        title="تفاصيل الاشتراك"
+                      >
+                        <CreditCard className="h-4 w-4" />
+                      </Link>
+                      <button
+                        onClick={() => {
+                          setEditModal(est)
+                          setEditName(est.name)
+                          setEditEmail(est.email)
+                          setEditPhone(est.phone)
+                          setEditAddress(est.address || '')
+                          setEditCity(est.city || '')
+                          setEditPricePerStudent(String(est.subscription_price_per_student))
+                          setEditDueDate(est.subscription_due_date || '')
+                          setEditGracePeriod(String(est.grace_period_days ?? 5))
+                        }}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                        title="تعديل"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      {est.status === 'active' ? (
+                        <button
+                          onClick={() => handleStatusChange(est.id, 'suspended')}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="تعليق"
+                        >
+                          <Pause className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleStatusChange(est.id, 'active')}
+                          className={`p-1.5 rounded-lg transition ${
+                            est.status === 'pending'
+                              ? 'text-emerald-600 hover:bg-emerald-50'
+                              : 'text-green-600 hover:bg-green-50'
+                          }`}
+                          title={est.status === 'pending' ? 'تفعيل الطلب' : 'تفعيل'}
+                        >
+                          <Play className="h-4 w-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleAssistanceMode(est.id)}
+                        className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition"
+                        title="دخول للمؤسسة (وضع المساعدة)"
+                      >
+                        <LogIn className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteEstablishment(est.id)}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition"
+                        title="حذف نهائي"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {filteredEstablishments.length === 0 && (
+          <div className="p-16 text-center">
+            <School className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+            <p className="text-slate-500 font-medium">
+              {establishments.length === 0 ? 'لا توجد مؤسسات' : 'لا توجد نتائج'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Edit Modal */}
       {editModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 my-8">
-            <h3 className="text-lg font-semibold mb-4">تعديل بيانات المؤسسة</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-lg max-w-lg w-full p-6 my-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">تعديل بيانات المؤسسة</h3>
+              <button onClick={() => setEditModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">اسم المؤسسة</label>
-                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">اسم المؤسسة</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">البريد الإلكتروني</label>
-                <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">البريد الإلكتروني</label>
+                <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">الهاتف</label>
-                <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">العنوان</label>
-                <input type="text" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">المدينة</label>
-                <input type="text" value={editCity} onChange={(e) => setEditCity(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">الهاتف</label>
+                <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" dir="ltr" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">سعر التلميذ (DH)</label>
-                  <input type="number" min="0" step="0.01" value={editPricePerStudent} onChange={(e) => setEditPricePerStudent(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">العنوان</label>
+                  <input type="text" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">تاريخ الاستحقاق</label>
-                  <input type="date" value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">المدينة</label>
+                  <input type="text" value={editCity} onChange={(e) => setEditCity(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">سعر التلميذ (د.م)</label>
+                  <input type="number" min="0" step="0.01" value={editPricePerStudent} onChange={(e) => setEditPricePerStudent(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-center" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">تاريخ الاستحقاق</label>
+                  <input type="date" value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">فترة السماح (أيام)</label>
-                <input type="number" min="0" step="1" value={editGracePeriod} onChange={(e) => setEditGracePeriod(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">فترة السماح (أيام)</label>
+                <input type="number" min="0" step="1" value={editGracePeriod} onChange={(e) => setEditGracePeriod(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-center" />
               </div>
-              <div className="flex gap-2 justify-end">
-                <button onClick={handleUpdateEstablishment} disabled={savingEdit} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <button onClick={handleUpdateEstablishment} disabled={savingEdit} className="h-11 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 font-medium">
+                  <Save className="h-4 w-4" />
                   {savingEdit ? 'جاري الحفظ...' : 'حفظ'}
                 </button>
-                <button onClick={() => setEditModal(null)} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">إلغاء</button>
+                <button onClick={() => setEditModal(null)} className="h-11 px-6 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">
+                  إلغاء
+                </button>
               </div>
             </div>
           </div>
@@ -707,27 +793,34 @@ export default function EstablishmentsPage() {
 
       {/* Director Modal */}
       {directorModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold mb-4">تغيير المدير</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">تغيير المدير</h3>
+              <button onClick={() => setDirectorModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">اسم المدير الجديد</label>
-                <input type="text" value={newDirectorName} onChange={(e) => setNewDirectorName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">اسم المدير الجديد</label>
+                <input type="text" value={newDirectorName} onChange={(e) => setNewDirectorName(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">بريد المدير الجديد</label>
-                <input type="email" value={newDirectorEmail} onChange={(e) => setNewDirectorEmail(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">بريد المدير الجديد</label>
+                <input type="email" value={newDirectorEmail} onChange={(e) => setNewDirectorEmail(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">كلمة المرور</label>
-                <input type="password" value={newDirectorPassword} onChange={(e) => setNewDirectorPassword(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">كلمة المرور</label>
+                <input type="password" value={newDirectorPassword} onChange={(e) => setNewDirectorPassword(e.target.value)} className="block w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
               </div>
-              <div className="flex gap-2">
-                <button onClick={handleChangeDirector} disabled={changingDirector} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <button onClick={handleChangeDirector} disabled={changingDirector} className="h-11 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
                   {changingDirector ? 'جاري التغيير...' : 'تعيين مدير'}
                 </button>
-                <button onClick={() => setDirectorModal(null)} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">إلغاء</button>
+                <button onClick={() => setDirectorModal(null)} className="h-11 px-6 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">
+                  إلغاء
+                </button>
               </div>
             </div>
           </div>

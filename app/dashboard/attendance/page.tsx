@@ -219,100 +219,133 @@ export default function AttendancePage() {
     })
   }
 
-  const handleSave = async () => {
-    if (!establishmentId || !selectedClass || students.length === 0) return
-    setSaving(true)
-    setError('')
-    setSuccess('')
+ const handleSave = async () => {
+  if (!establishmentId || !selectedClass || students.length === 0) return
+  setSaving(true)
+  setError('')
+  setSuccess('')
 
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setSaving(false); return }
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) { setSaving(false); return }
 
-    try {
-      const selectedClassData = classes.find(c => c.id === selectedClass)
+  try {
+    const selectedClassData = classes.find(c => c.id === selectedClass)
 
-      // 1. Prépare data pour upsert
-      const attToSave = Array.from(attendances.values()).map(a => ({
-        establishment_id: establishmentId,
-        student_id: a.student_id,
-        class_id: selectedClass,
-        level_id: selectedClassData?.level_id || null,
-        attendance_date: date,
-        status: a.status,
-        check_in_time: a.check_in_time || null,
-        check_out_time: a.check_out_time || null,
-        note: a.note || null,
-        marked_by: user.id,
-        updated_at: new Date().toISOString(),
-      }))
+    // 1. Prépare data pour upsert
+    const attToSave = Array.from(attendances.values()).map(a => ({
+      establishment_id: establishmentId,
+      student_id: a.student_id,
+      class_id: selectedClass,
+      level_id: selectedClassData?.level_id || null,
+      attendance_date: date,
+      status: a.status,
+      check_in_time: a.check_in_time || null,
+      check_out_time: a.check_out_time || null,
+      note: a.note || null,
+      marked_by: user.id,
+      updated_at: new Date().toISOString(),
+    }))
 
-      // 2. Upsert
-      const { error: upsertErr } = await supabase
-        .from('attendances')
-        .upsert(attToSave, { onConflict: 'student_id,attendance_date' })
+    // 2. Upsert
+    const { error: upsertErr } = await supabase
+      .from('attendances')
+      .upsert(attToSave, { onConflict: 'student_id,attendance_date' })
 
-      if (upsertErr) throw upsertErr
+    if (upsertErr) throw upsertErr
 
-      // 3. Notifications l parents dyal absents
-      if (sendNotifications) {
-        const absentStudents = students.filter(s => {
-          const att = attendances.get(s.id)
-          return att && att.status === 'absent'
+    let successMsg = `✅ تم حفظ الحضور (${students.length} تلميذ)`
+
+    // 3. Notifications + Emails
+    if (sendNotifications) {
+      const absentStudents = students.filter(s => {
+        const att = attendances.get(s.id)
+        return att && att.status === 'absent'
+      })
+
+      const lateStudents = students.filter(s => {
+        const att = attendances.get(s.id)
+        return att && att.status === 'late'
+      })
+
+      // 3.a In-app notifications
+      const notifsToInsert: any[] = []
+
+      for (const s of absentStudents) {
+        if (!s.parent_user_id) continue
+        notifsToInsert.push({
+          user_id: s.parent_user_id,
+          establishment_id: establishmentId,
+          type: 'attendance_absent',
+          title: '⚠️ غياب التلميذ',
+          message: `التلميذ(ة) ${s.first_name} ${s.last_name} غائب(ة) اليوم ${date}`,
+          link: '/parent/dashboard',
+          metadata: {
+            student_id: s.id,
+            date,
+            student_name: `${s.first_name} ${s.last_name}`,
+          },
         })
+      }
 
-        const notifsToInsert: any[] = []
+      for (const s of lateStudents) {
+        if (!s.parent_user_id) continue
+        notifsToInsert.push({
+          user_id: s.parent_user_id,
+          establishment_id: establishmentId,
+          type: 'attendance_late',
+          title: '⏰ تأخر التلميذ',
+          message: `التلميذ(ة) ${s.first_name} ${s.last_name} وصل(ت) متأخر(ة) اليوم`,
+          link: '/parent/dashboard',
+          metadata: { student_id: s.id, date },
+        })
+      }
 
-        for (const s of absentStudents) {
-          if (!s.parent_user_id) continue
-          notifsToInsert.push({
-            user_id: s.parent_user_id,
-            establishment_id: establishmentId,
-            type: 'attendance_absent',
-            title: '⚠️ غياب التلميذ',
-            message: `التلميذ(ة) ${s.first_name} ${s.last_name} غائب(ة) اليوم ${date}`,
-            link: '/parent/dashboard',
-            metadata: {
-              student_id: s.id,
+      if (notifsToInsert.length > 0) {
+        const { error: notifErr } = await supabase
+          .from('notifications')
+          .insert(notifsToInsert)
+        if (notifErr) console.error('Notif error:', notifErr)
+      }
+
+      // 3.b 📧 Email للأولياء (غياب فقط)
+      if (absentStudents.length > 0) {
+        try {
+          const emailRes = await fetch('/api/establishment/absence-alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              studentIds: absentStudents.map(s => s.id),
               date,
-              student_name: `${s.first_name} ${s.last_name}`,
-            },
+            }),
           })
-        }
+          const emailData = await emailRes.json()
 
-        const lateStudents = students.filter(s => {
-          const att = attendances.get(s.id)
-          return att && att.status === 'late'
-        })
-        for (const s of lateStudents) {
-          if (!s.parent_user_id) continue
-          notifsToInsert.push({
-            user_id: s.parent_user_id,
-            establishment_id: establishmentId,
-            type: 'attendance_late',
-            title: '⏰ تأخر التلميذ',
-            message: `التلميذ(ة) ${s.first_name} ${s.last_name} وصل(ت) متأخر(ة) اليوم`,
-            link: '/parent/dashboard',
-            metadata: { student_id: s.id, date },
-          })
-        }
-
-        if (notifsToInsert.length > 0) {
-          const { error: notifErr } = await supabase
-            .from('notifications')
-            .insert(notifsToInsert)
-          if (notifErr) console.error('Notif error:', notifErr)
+          if (emailData.sent > 0) {
+            successMsg += ` + ${emailData.sent} إيميل`
+          }
+          if (emailData.failed > 0) {
+            successMsg += ` (${emailData.failed} فشل)`
+          }
+          if (emailData.skipped > 0) {
+            successMsg += ` (${emailData.skipped} بلا إيميل)`
+          }
+        } catch (e) {
+          console.error('Email send failed:', e)
         }
       }
 
-      setSuccess(`✅ تم حفظ الحضور (${students.length} تلميذ)${sendNotifications ? ' + إشعار الأولياء' : ''}`)
-      setTimeout(() => setSuccess(''), 4000)
-    } catch (err: any) {
-      setError(err.message || 'حدث خطأ')
-    } finally {
-      setSaving(false)
+      successMsg += ' + إشعار الأولياء'
     }
+
+    setSuccess(successMsg)
+    setTimeout(() => setSuccess(''), 5000)
+  } catch (err: any) {
+    setError(err.message || 'حدث خطأ')
+  } finally {
+    setSaving(false)
   }
+}
 
   const stats = useMemo(() => {
     const values = Array.from(attendances.values())

@@ -1,8 +1,25 @@
+// app/api/establishment/create-staff/route.ts
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { generateSystemEmail, generatePassword } from '@/lib/generate-credentials'
+import { sendEmail } from '@/lib/email'
+import { credentialsEmail } from '@/lib/email-templates'
+
+const ROLE_LABEL_AR: Record<string, string> = {
+  secretaire: 'السكرتيرة',
+  parent: 'ولي الأمر',
+  teacher: 'أستاذ',
+  admin: 'إداري',
+}
+
+const ROLE_LABEL_FR: Record<string, string> = {
+  secretaire: 'Secrétaire',
+  parent: 'Parent',
+  teacher: 'Enseignant',
+  admin: 'Administratif',
+}
 
 export async function POST(request: Request) {
   try {
@@ -12,17 +29,21 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          getAll() { return cookieStore.getAll() },
+          getAll() {
+            return cookieStore.getAll()
+          },
           setAll(cookiesToSet) {
             cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, options)
             })
           },
         },
-      }
+      },
     )
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
     const { data: profile } = await supabase
@@ -42,16 +63,29 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const {
-      full_name, role_type,
-      custom_type, phone, salary_amount, hire_date,
-      family_id,
-    } = body
+  full_name, role_type,
+  custom_type, phone, salary_amount, hire_date,
+  family_id,
+  personal_email,
+  email: emailLegacy,      // ✅ يقبل email كذلك
+  password: customPassword, // ✅ يقبل password
+} = body
 
     if (!full_name || !role_type) {
       return NextResponse.json({ error: 'الاسم والنوع مطلوبان' }, { status: 400 })
     }
 
     const adminClient = createAdminClient()
+
+    // 🔑 جيب اسم + إيميل المدرسة (للـ replyTo + الإيميل)
+    const { data: establishment } = await adminClient
+      .from('establishments')
+      .select('name, email')
+      .eq('id', profile.establishment_id)
+      .single()
+
+    const schoolName = establishment?.name || 'المؤسسة'
+    const schoolEmail = establishment?.email || null
 
     // ============================================
     // 1. Staff akhor (Enseignant, Chauffeur...) → bla compte
@@ -81,10 +115,17 @@ export async function POST(request: Request) {
     // ============================================
     // 2. Secrétaire wla Parent → compte AUTO
     // ============================================
-    const finalEmail = generateSystemEmail(full_name, role_type)
-    const finalPassword = generatePassword()
+    const emailInput = personal_email || emailLegacy
+const isRealEmail = !!emailInput && emailInput.includes('@')
+const finalEmail = isRealEmail
+  ? emailInput.trim().toLowerCase()
+  : generateSystemEmail(full_name, role_type)
 
-    // Créer auth user
+const finalPassword =
+  customPassword && customPassword.length >= 6
+    ? customPassword
+    : generatePassword()
+
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: finalEmail,
       password: finalPassword,
@@ -94,13 +135,12 @@ export async function POST(request: Request) {
     if (authError || !authData.user) {
       return NextResponse.json(
         { error: authError?.message || 'فشل إنشاء الحساب' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
     const newUserId = authData.user.id
 
-    // Rôle système
     const systemRoleName = role_type === 'secretaire' ? 'Secrétaire' : 'Parent'
     const { data: roleData, error: roleError } = await adminClient.rpc('get_or_create_role', {
       p_establishment_id: profile.establishment_id,
@@ -109,7 +149,6 @@ export async function POST(request: Request) {
 
     if (roleError) console.error('Role error:', roleError)
 
-    // User profile
     const { error: profileError } = await adminClient.from('user_profiles').insert({
       user_id: newUserId,
       establishment_id: profile.establishment_id,
@@ -133,14 +172,15 @@ export async function POST(request: Request) {
       })
 
       await adminClient.from('staff').insert({
-        establishment_id: profile.establishment_id,
-        full_name,
-        type: 'admin',
-        custom_type: 'Secrétaire',
-        phone: phone || null,
-        salary_amount: salary_amount || 0,
-        hire_date: hire_date || null,
-      })
+  establishment_id: profile.establishment_id,
+  full_name,
+  type: 'admin',
+  custom_type: 'Secrétaire',
+  phone: phone || null,
+  salary_amount: salary_amount || 0,
+  hire_date: hire_date || null,
+  user_id: newUserId,  // ✅ زيد هاد السطر
+})
     }
 
     // Parent → link famille
@@ -152,13 +192,59 @@ export async function POST(request: Request) {
         .eq('establishment_id', profile.establishment_id)
     }
 
-    // ✅ Rajje3 credentials (ghir had l'mrra!)
+    // ============================================
+    // 3. ✅ إرسال إيميل (من SaaS، Reply-To = المدرسة)
+    // ============================================
+    const siteUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      request.headers.get('origin') ||
+      'http://localhost:3000'
+
+    const loginUrl = `${siteUrl}/login`
+    const roleLabelAr = ROLE_LABEL_AR[role_type] || role_type
+    const roleLabelFr = ROLE_LABEL_FR[role_type] || role_type
+
+    const emailContent = credentialsEmail({
+      fullName: full_name,
+      role: `${roleLabelAr} / ${roleLabelFr}`,
+      schoolName,
+      email: finalEmail,
+      password: finalPassword,
+      loginUrl,
+    })
+
+    let emailSent = false
+    if (isRealEmail) {
+      const emailResult = await sendEmail({
+        to: finalEmail,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+        replyTo: schoolEmail,             // 🔑
+        establishmentId: profile.establishment_id,
+        template: 'credentials',
+        metadata: {
+          newUserId,
+          role: role_type,
+          fullName: full_name,
+          schoolName,
+        },
+      })
+
+      emailSent = emailResult.ok
+      if (!emailResult.ok) {
+        console.warn('⚠️ فشل إرسال إيميل البيانات:', emailResult.error)
+      }
+    }
+
     return NextResponse.json({
       success: true,
       hasAccount: true,
       userId: newUserId,
       email: finalEmail,
       password: finalPassword,
+      isRealEmail,
+      emailSent,
       message: 'تم إنشاء الحساب',
     })
   } catch (error: any) {

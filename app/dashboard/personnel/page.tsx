@@ -5,8 +5,14 @@ import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import DateInput from '@/components/DateInput'
-import { Search, Plus, Trash2, X, Users, GraduationCap, Car, Briefcase, UserCog, Sparkles, KeyRound, Copy, CheckCircle2, ShieldCheck } from 'lucide-react'
+import {
+  Search, Plus, Trash2, X, Users, GraduationCap, Car, Briefcase,
+  UserCog, Sparkles, KeyRound, Copy, CheckCircle2, Pencil, Loader2,
+} from 'lucide-react'
 
+// ─────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────
 type Staff = {
   id: string
   full_name: string
@@ -16,6 +22,7 @@ type Staff = {
   salary_amount: number
   hire_date: string | null
   status: string
+  user_id: string | null
 }
 
 const STAFF_TYPES = [
@@ -33,8 +40,12 @@ type Credentials = {
   password: string
   full_name: string
   role: string
+  emailSent?: boolean
 }
 
+// ─────────────────────────────────────────────────────────
+// Page
+// ─────────────────────────────────────────────────────────
 export default function PersonnelPage() {
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
@@ -47,21 +58,31 @@ export default function PersonnelPage() {
   const [success, setSuccess] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
 
+  // ── Add state ──
   const [showModal, setShowModal] = useState(false)
   const [fullName, setFullName] = useState('')
   const [staffType, setStaffType] = useState('secretaire')
   const [customType, setCustomType] = useState('')
   const [phone, setPhone] = useState('')
+  const [personalEmail, setPersonalEmail] = useState('')
   const [salaryAmount, setSalaryAmount] = useState('')
   const [hireDate, setHireDate] = useState('')
   const [saving, setSaving] = useState(false)
 
-  // Modal dyal credentials
+  // ── Credentials / Reset ──
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [copied, setCopied] = useState(false)
-
-  // Reset password
   const [resetData, setResetData] = useState<Credentials | null>(null)
+  const [resetting, setResetting] = useState(false)
+
+  // ── Edit state (🆕) ──
+  const [editStaff, setEditStaff] = useState<Staff | null>(null)
+  const [eName, setEName] = useState('')
+  const [ePhone, setEPhone] = useState('')
+  const [eSalary, setESalary] = useState('')
+  const [eHireDate, setEHireDate] = useState('')
+  const [eCustomType, setECustomType] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   useEffect(() => {
     if (!establishmentId) return
@@ -86,16 +107,26 @@ export default function PersonnelPage() {
     setStaffType('secretaire')
     setCustomType('')
     setPhone('')
+    setPersonalEmail('')
     setSalaryAmount('')
     setHireDate('')
     setError('')
   }
 
+  // ─────────────────────────────────────────────────────
+  // Ajouter staff
+  // ─────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!establishmentId) return
-    if (!fullName.trim()) { setError('الاسم مطلوب'); return }
-    if (staffType === 'autre' && !customType.trim()) { setError('يرجى كتابة نوع الموظف'); return }
+    if (!fullName.trim()) {
+      setError('الاسم مطلوب')
+      return
+    }
+    if (staffType === 'autre' && !customType.trim()) {
+      setError('يرجى كتابة نوع الموظف')
+      return
+    }
 
     setSaving(true)
     setError('')
@@ -111,19 +142,20 @@ export default function PersonnelPage() {
           phone: phone || null,
           salary_amount: Number(salaryAmount) || 0,
           hire_date: hireDate || null,
+          personal_email: personalEmail.trim() || null,
         }),
       })
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'حدث خطأ')
 
-      // Ila 3ndo compte → bayen credentials
       if (data.hasAccount) {
         setCredentials({
           email: data.email,
           password: data.password,
           full_name: fullName.trim(),
-          role: STAFF_TYPES.find(t => t.value === staffType)?.label || staffType,
+          role: STAFF_TYPES.find((t) => t.value === staffType)?.label || staffType,
+          emailSent: data.emailSent === true,
         })
       } else {
         setSuccess('تمت إضافة الموظف بنجاح')
@@ -140,41 +172,139 @@ export default function PersonnelPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('هل تريد حذف هذا الموظف؟')) return
-    const supabase = createClient()
-    const { error } = await supabase.from('staff').delete().eq('id', id)
-    if (error) setError(error.message)
-    else fetchData(establishmentId!)
-  }
+  // ─────────────────────────────────────────────────────
+  // Supprimer
+  // ─────────────────────────────────────────────────────
+  const handleDelete = async (staff: Staff) => {
+    const msg = staff.user_id
+      ? `هل تريد حذف ${staff.full_name} وحساب الدخول ديالو؟\n\n⚠️ هذا الإجراء لا يمكن التراجع عنه.`
+      : `هل تريد حذف ${staff.full_name}؟`
 
-  const handleResetPassword = async (fullName: string, userId?: string) => {
-    if (!userId) {
-      alert('هذا الموظف ليس لديه حساب دخول')
-      return
-    }
-    if (!confirm(`هل تريد إعادة تعيين كلمة مرور ${fullName}؟`)) return
+    if (!confirm(msg)) return
 
+    setError('')
     try {
-      const res = await fetch('/api/establishment/reset-password', {
+      const res = await fetch('/api/establishment/delete-staff', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ staffId: staff.id }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'حدث خطأ')
 
-      setResetData({
-        email: '(نفس البريد السابق)',
-        password: data.password,
-        full_name: data.fullName || fullName,
-        role: 'Reset',
-      })
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'فشل الحذف')
+      }
+
+      setSuccess(data.message || 'تم الحذف')
+      setTimeout(() => setSuccess(''), 3000)
+      fetchData(establishmentId!)
     } catch (err: any) {
       setError(err.message)
     }
   }
 
+  // ─────────────────────────────────────────────────────
+  // Reset Password
+  // ─────────────────────────────────────────────────────
+  const handleResetPassword = async (staff: Staff) => {
+    if (!staff.user_id) {
+      alert('هذا الموظف ليس لديه حساب دخول')
+      return
+    }
+    if (!confirm(`هل تريد إعادة تعيين كلمة مرور ${staff.full_name}؟`)) return
+
+    setResetting(true)
+    setError('')
+
+    try {
+      const res = await fetch('/api/establishment/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: staff.user_id }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'حدث خطأ')
+      }
+
+      if (data.emailSent) {
+        setSuccess(`✅ تم إرسال كلمة المرور الجديدة إلى ${staff.full_name}`)
+        setTimeout(() => setSuccess(''), 4000)
+      } else {
+        setResetData({
+          email: data.email || '(نفس البريد السابق)',
+          password: data.password,
+          full_name: data.fullName || staff.full_name,
+          role: 'Reset',
+        })
+      }
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  // ─────────────────────────────────────────────────────
+  // 🆕 Edit
+  // ─────────────────────────────────────────────────────
+  const openEdit = (staff: Staff) => {
+    setEditStaff(staff)
+    setEName(staff.full_name || '')
+    setEPhone(staff.phone || '')
+    setESalary(String(staff.salary_amount || ''))
+    setEHireDate(staff.hire_date || '')
+    setECustomType(staff.custom_type || '')
+    setError('')
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editStaff || !establishmentId) return
+    if (!eName.trim()) {
+      setError('الاسم مطلوب')
+      return
+    }
+
+    setSavingEdit(true)
+    setError('')
+
+    try {
+      const res = await fetch('/api/establishment/update-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          staffId: editStaff.id,
+          full_name: eName.trim(),
+          phone: ePhone.trim() || null,
+          salary_amount: Number(eSalary) || 0,
+          hire_date: eHireDate || null,
+          custom_type: editStaff.type === 'autre' ? eCustomType.trim() : null,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'فشل التحديث')
+      }
+
+      setSuccess(data.message || 'تم تحديث الموظف')
+      if (data.warnings?.length) {
+        setError(`⚠️ تحذيرات: ${data.warnings.join(' · ')}`)
+      }
+      setTimeout(() => setSuccess(''), 3000)
+
+      setEditStaff(null)
+      fetchData(establishmentId)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  // ─────────────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────────────
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     setCopied(true)
@@ -193,16 +323,19 @@ export default function PersonnelPage() {
   const filtered = staffList.filter(
     (s) =>
       s.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (s.phone || '').includes(searchTerm)
+      (s.phone || '').includes(searchTerm),
   )
 
   if (loading || permissionsLoading) return <div className="p-6">Chargement...</div>
   if (!canView) return <div className="p-6">ليس لديك صلاحية</div>
 
-  const selectedType = STAFF_TYPES.find(t => t.value === staffType)
+  const selectedType = STAFF_TYPES.find((t) => t.value === staffType)
 
+  // ─────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────
   return (
-    <div className="p-6">
+    <div className="p-6" dir="rtl">
       <header className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -213,7 +346,10 @@ export default function PersonnelPage() {
         </div>
         {canCreate && (
           <button
-            onClick={() => { resetForm(); setShowModal(true) }}
+            onClick={() => {
+              resetForm()
+              setShowModal(true)
+            }}
             className="inline-flex items-center gap-1 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
           >
             <Plus className="h-4 w-4" /> إضافة موظف
@@ -221,8 +357,16 @@ export default function PersonnelPage() {
         )}
       </header>
 
-      {error && !showModal && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
-      {success && <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">{success}</div>}
+      {error && !showModal && !editStaff && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+          {success}
+        </div>
+      )}
 
       <div className="mb-6">
         <div className="relative max-w-md">
@@ -250,11 +394,17 @@ export default function PersonnelPage() {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {filtered.length === 0 ? (
-              <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">لا يوجد موظفون</td></tr>
+              <tr>
+                <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
+                  لا يوجد موظفون
+                </td>
+              </tr>
             ) : (
               filtered.map((s) => {
                 const Icon = getTypeIcon(s.type)
-                const isSecretaire = s.type === 'secretaire' || (s.type === 'admin' && s.custom_type === 'Secrétaire')
+                const isSecretaire =
+                  s.type === 'secretaire' ||
+                  (s.type === 'admin' && s.custom_type === 'Secrétaire')
                 return (
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{s.full_name}</td>
@@ -265,20 +415,33 @@ export default function PersonnelPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{s.phone || '-'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">{s.salary_amount} DH</td>
+                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">
+                      <span dir="ltr">{s.salary_amount} DH</span>
+                    </td>
                     <td className="px-6 py-4 text-sm">
                       <div className="flex items-center gap-1">
                         {isSecretaire && (
                           <button
-                            onClick={() => handleResetPassword(s.full_name)}
-                            className="p-1 text-amber-600 hover:bg-amber-50 rounded"
+                            onClick={() => handleResetPassword(s)}
+                            disabled={resetting}
+                            className="p-1 text-amber-600 hover:bg-amber-50 rounded disabled:opacity-50"
                             title="إعادة تعيين كلمة المرور"
                           >
                             <KeyRound className="h-4 w-4" />
                           </button>
                         )}
+
+                        {/* ✅ زر Edit جديد */}
                         <button
-                          onClick={() => handleDelete(s.id)}
+                          onClick={() => openEdit(s)}
+                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                          title="تعديل"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          onClick={() => handleDelete(s)}
                           className="p-1 text-red-600 hover:bg-red-50 rounded"
                           title="حذف"
                         >
@@ -294,13 +457,18 @@ export default function PersonnelPage() {
         </table>
       </div>
 
-      {/* Modal Ajouter */}
+      {/* ═══════════════════════════════════════════════════
+          Modal: Ajouter staff
+      ═══════════════════════════════════════════════════ */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">إضافة موظف جديد</h3>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -330,7 +498,9 @@ export default function PersonnelPage() {
                   className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 >
                   {STAFF_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -358,11 +528,35 @@ export default function PersonnelPage() {
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full h-10 px-3 border border-gray-300 rounded-lg"
                   placeholder="0612345678"
+                  dir="ltr"
                 />
               </div>
 
+              {selectedType?.hasAccount && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    البريد الإلكتروني للموظف{' '}
+                    <span className="text-slate-400 font-normal">(اختياري)</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={personalEmail}
+                    onChange={(e) => setPersonalEmail(e.target.value)}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg"
+                    placeholder="ahmed@gmail.com"
+                    dir="ltr"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    💡 سترسل معلومات الدخول إلى هذا البريد تلقائياً. إذا تركته فارغاً، ستظهر لك
+                    بيانات الدخول على الشاشة لترسلها يدوياً.
+                  </p>
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">الراتب الشهري (DH)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الراتب الشهري (DH)
+                </label>
                 <input
                   type="number"
                   min="0"
@@ -371,25 +565,22 @@ export default function PersonnelPage() {
                   onChange={(e) => setSalaryAmount(e.target.value)}
                   className="w-full h-10 px-3 border border-gray-300 rounded-lg"
                   placeholder="3000"
+                  dir="ltr"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">تاريخ التوظيف</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  تاريخ التوظيف
+                </label>
                 <DateInput value={hireDate} onChange={setHireDate} className="h-10" />
               </div>
 
-              {selectedType?.hasAccount && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 flex items-start gap-2">
-                  <ShieldCheck className="h-5 w-5 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <strong>سيتم إنشاء حساب دخول تلقائياً</strong>
-                    <p className="text-xs mt-1">سيتم إنشاء بريد إلكتروني وكلمة مرور خاصين بالموظف، وستظهر لك مرة واحدة فقط.</p>
-                  </div>
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {error}
                 </div>
               )}
-
-              {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>}
 
               <div className="flex gap-2 justify-end pt-4 border-t">
                 <button
@@ -412,7 +603,9 @@ export default function PersonnelPage() {
         </div>
       )}
 
-      {/* Modal Credentials */}
+      {/* ═══════════════════════════════════════════════════
+          Modal: Credentials (ملي كيتخلق حساب جديد)
+      ═══════════════════════════════════════════════════ */}
       {credentials && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-6">
@@ -422,36 +615,64 @@ export default function PersonnelPage() {
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">تم إنشاء الحساب</h3>
-                <p className="text-sm text-gray-500">{credentials.full_name} • {credentials.role}</p>
+                <p className="text-sm text-gray-500">
+                  {credentials.full_name} • {credentials.role}
+                </p>
               </div>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-800">
-              ⚠️ <strong>مهم:</strong> هذه المعلومات ستظهر <strong>مرة واحدة فقط</strong>. انسخها الآن وشاركها مع الموظف.
-            </div>
+            {credentials.emailSent ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-4 text-sm text-emerald-800">
+                ✅ <strong>تم إرسال البيانات تلقائياً</strong> إلى البريد{' '}
+                <strong dir="ltr">{credentials.email}</strong>
+                <p className="text-xs mt-1">احتفظ بنسخة احتياطية في حال لم يصل الإيميل.</p>
+              </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-800">
+                ⚠️ <strong>مهم:</strong> هذه المعلومات ستظهر{' '}
+                <strong>مرة واحدة فقط</strong>. انسخها الآن وشاركها مع الموظف.
+              </div>
+            )}
 
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">البريد الإلكتروني</label>
                 <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-3">
-                  <code className="flex-1 text-sm font-mono text-gray-800 break-all">{credentials.email}</code>
+                  <code
+                    className="flex-1 text-sm font-mono text-gray-800 break-all"
+                    dir="ltr"
+                  >
+                    {credentials.email}
+                  </code>
                 </div>
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">كلمة المرور</label>
                 <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-3">
-                  <code className="flex-1 text-sm font-mono text-gray-800">{credentials.password}</code>
+                  <code className="flex-1 text-sm font-mono text-gray-800" dir="ltr">
+                    {credentials.password}
+                  </code>
                 </div>
               </div>
             </div>
 
             <button
-              onClick={() => {
-                copyToClipboard(`البريد: ${credentials.email}\nكلمة المرور: ${credentials.password}`)
-              }}
+              onClick={() =>
+                copyToClipboard(
+                  `البريد: ${credentials.email}\nكلمة المرور: ${credentials.password}`,
+                )
+              }
               className="w-full mt-4 h-11 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2 font-medium"
             >
-              {copied ? <><CheckCircle2 className="h-4 w-4" /> تم النسخ</> : <><Copy className="h-4 w-4" /> نسخ المعلومات</>}
+              {copied ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4" /> تم النسخ
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4" /> نسخ المعلومات
+                </>
+              )}
             </button>
             <button
               onClick={() => setCredentials(null)}
@@ -463,7 +684,131 @@ export default function PersonnelPage() {
         </div>
       )}
 
-      {/* Modal Reset Password */}
+      {/* ═══════════════════════════════════════════════════
+          Modal: Edit Staff (🆕)
+      ═══════════════════════════════════════════════════ */}
+      {editStaff && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Pencil className="h-5 w-5 text-blue-600" />
+                تعديل الموظف
+              </h3>
+              <button
+                onClick={() => setEditStaff(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الاسم الكامل <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={eName}
+                  onChange={(e) => setEName(e.target.value)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {editStaff.type === 'autre' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    نوع الموظف
+                  </label>
+                  <input
+                    type="text"
+                    value={eCustomType}
+                    onChange={(e) => setECustomType(e.target.value)}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الهاتف
+                </label>
+                <input
+                  type="tel"
+                  value={ePhone}
+                  onChange={(e) => setEPhone(e.target.value)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الراتب الشهري (DH)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={eSalary}
+                  onChange={(e) => setESalary(e.target.value)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  تاريخ التوظيف
+                </label>
+                <DateInput
+                  value={eHireDate}
+                  onChange={setEHireDate}
+                  className="h-10"
+                />
+              </div>
+
+              {editStaff.user_id && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-800">
+                    💡 هذا الموظف عندو حساب دخول. تغيير الاسم غادي يتزامن مع
+                    <strong> /users</strong> و <strong>Supabase Auth</strong>.
+                  </p>
+                </div>
+              )}
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={savingEdit}
+                  className="h-10 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 inline-flex items-center gap-2 font-medium"
+                >
+                  {savingEdit && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {savingEdit ? 'جارٍ...' : 'حفظ التعديلات'}
+                </button>
+                <button
+                  onClick={() => setEditStaff(null)}
+                  disabled={savingEdit}
+                  className="h-10 px-6 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════
+          Modal: Reset Password (fallback إلا فشل الإيميل)
+      ═══════════════════════════════════════════════════ */}
       {resetData && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-6">
@@ -477,15 +822,29 @@ export default function PersonnelPage() {
               </div>
             </div>
 
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-800">
+              ⚠️ فشل إرسال الإيميل. المرجو إعطاء كلمة المرور يدوياً للموظف.
+            </div>
+
             <div className="bg-gray-50 rounded-lg p-3 mb-4">
-              <code className="text-lg font-mono text-gray-800">{resetData.password}</code>
+              <code className="text-lg font-mono text-gray-800" dir="ltr">
+                {resetData.password}
+              </code>
             </div>
 
             <button
               onClick={() => copyToClipboard(resetData.password)}
               className="w-full h-11 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2 font-medium"
             >
-              {copied ? <><CheckCircle2 className="h-4 w-4" /> تم النسخ</> : <><Copy className="h-4 w-4" /> نسخ كلمة المرور</>}
+              {copied ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4" /> تم النسخ
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4" /> نسخ كلمة المرور
+                </>
+              )}
             </button>
             <button
               onClick={() => setResetData(null)}
