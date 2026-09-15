@@ -13,25 +13,29 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value),
+          )
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, options),
           )
         },
       },
-    }
+    },
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   const path = request.nextUrl.pathname
 
-  // ===== 1. Protection générale =====
   if (
     !user &&
     (path.startsWith('/dashboard') ||
       path.startsWith('/admin') ||
       path.startsWith('/parent') ||
+      path.startsWith('/teacher') ||
       path.startsWith('/pending'))
   ) {
     const url = request.nextUrl.clone()
@@ -41,7 +45,6 @@ export async function proxy(request: NextRequest) {
 
   if (!user) return supabaseResponse
 
-  // ===== 2. Jib role + establishment =====
   const { data: adminData } = await supabase
     .from('admin_users')
     .select('user_id')
@@ -57,11 +60,16 @@ export async function proxy(request: NextRequest) {
     .maybeSingle()
 
   const roleName = ((profile?.roles as any)?.name || '').toLowerCase()
-  const isDirecteur = roleName.includes('directeur') || roleName.includes('مدير')
+  const isDirecteur =
+    roleName.includes('directeur') || roleName.includes('مدير')
   const isSecretaire = roleName.includes('secr')
+  const isEnseignant =
+    roleName.includes('enseignant') ||
+    roleName.includes('teacher') ||
+    roleName.includes('prof') ||
+    roleName.includes('أستاذ')
   const isParent = roleName.includes('parent')
 
-  // ===== 3. Check status dyal establishment (pending/active) =====
   let establishmentStatus: string | null = null
   if (profile?.establishment_id) {
     const { data: est } = await supabase
@@ -72,9 +80,8 @@ export async function proxy(request: NextRequest) {
     establishmentStatus = est?.status || null
   }
 
-  // ===== 4. Super Admin =====
   if (isSuperAdmin) {
-    if (path.startsWith('/parent')) {
+    if (path.startsWith('/parent') || path.startsWith('/teacher')) {
       const url = request.nextUrl.clone()
       url.pathname = '/admin'
       return NextResponse.redirect(url)
@@ -82,23 +89,28 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse
   }
 
-  // ===== 5. Ila establishment pending → redirect l /pending =====
   if (establishmentStatus === 'pending' && !path.startsWith('/pending')) {
     const url = request.nextUrl.clone()
     url.pathname = '/pending'
     return NextResponse.redirect(url)
   }
 
-  // ===== 6. Ila active w kaydir /pending → redirect l /dashboard =====
   if (path === '/pending' && establishmentStatus === 'active') {
     const url = request.nextUrl.clone()
-    url.pathname = isParent ? '/parent/dashboard' : '/dashboard'
+    if (isParent) url.pathname = '/parent/dashboard'
+    else if (isEnseignant) url.pathname = '/teacher/dashboard'
+    else if (isSecretaire) url.pathname = '/dashboard/secretary'
+    else url.pathname = '/dashboard'
     return NextResponse.redirect(url)
   }
 
-  // ===== 7. Directeur =====
   if (isDirecteur) {
-    if (path.startsWith('/parent') || path.startsWith('/dashboard/secretary') || path.startsWith('/admin')) {
+    if (
+      path.startsWith('/parent') ||
+      path.startsWith('/dashboard/secretary') ||
+      path.startsWith('/admin') ||
+      path.startsWith('/teacher')
+    ) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)
@@ -106,36 +118,41 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse
   }
 
-  // ===== 8. Secrétaire =====
-  // ===== 8. Secrétaire =====
-// ===== 8. Secrétaire =====
-if (isSecretaire) {
-  const allowedPaths = [
-    '/dashboard/secretary',
-    '/dashboard/payments',
-    '/dashboard/expenses',
-    '/dashboard/students',
-    '/dashboard/families',
-    '/dashboard/installments',
-    '/dashboard/caisse',
-    '/dashboard/caisse/transfers',
-    '/dashboard/caisse/transfer',
-    '/dashboard/messages',    // 🆕 الرسائل
-    '/dashboard/notifications', // 🆕 الإشعارات
-    '/dashboard/profile',
-    '/pending',
-  ]
-  const isAllowed = allowedPaths.some((p) => path.startsWith(p))
+  if (isSecretaire) {
+    const allowedPaths = [
+      '/dashboard/secretary',
+      '/dashboard/payments',
+      '/dashboard/expenses',
+      '/dashboard/students',
+      '/dashboard/families',
+      '/dashboard/installments',
+      '/dashboard/caisse',
+      '/dashboard/caisse/transfers',
+      '/dashboard/caisse/transfer',
+      '/dashboard/messages',
+      '/dashboard/notifications',
+      '/dashboard/profile',
+      '/pending',
+    ]
+    const isAllowed = allowedPaths.some((p) => path.startsWith(p))
 
-  if (!isAllowed) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard/secretary'
-    return NextResponse.redirect(url)
+    if (!isAllowed) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard/secretary'
+      return NextResponse.redirect(url)
+    }
+    return supabaseResponse
   }
-  return supabaseResponse
-}
 
-  // ===== 9. Parent =====
+  if (isEnseignant) {
+    if (!path.startsWith('/teacher') && !path.startsWith('/pending')) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/teacher/dashboard'
+      return NextResponse.redirect(url)
+    }
+    return supabaseResponse
+  }
+
   if (isParent) {
     if (!path.startsWith('/parent') && !path.startsWith('/pending')) {
       const url = request.nextUrl.clone()
@@ -145,12 +162,20 @@ if (isSecretaire) {
     return supabaseResponse
   }
 
-  // ===== 10. Fallback =====
+  if (path.startsWith('/pending')) {
+    return supabaseResponse
+  }
   const url = request.nextUrl.clone()
   url.pathname = '/login'
   return NextResponse.redirect(url)
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/admin/:path*', '/parent/:path*', '/pending'],
+  matcher: [
+    '/dashboard/:path*',
+    '/admin/:path*',
+    '/parent/:path*',
+    '/teacher/:path*',
+    '/pending',
+  ],
 }

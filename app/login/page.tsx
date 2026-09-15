@@ -1,14 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, GraduationCap, Loader2, LockKeyhole, Mail, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useSettings } from '@/lib/SettingsContext'
 
 export default function Login() {
-  const router = useRouter()
   const settings = useSettings()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -21,53 +19,78 @@ export default function Login() {
     setLoading(true)
     setError('')
 
-    const supabase = createClient()
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    try {
+      const supabase = createClient()
 
-    if (signInError) {
-      setError('البريد الإلكتروني أو كلمة المرور غير صحيحة.')
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (signInError) {
+        setError('البريد الإلكتروني أو كلمة المرور غير صحيحة.')
+        setLoading(false)
+        return
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        setError('خطأ في تسجيل الدخول')
+        setLoading(false)
+        return
+      }
+
+      const { data: adminData } = await supabase
+        .from('admin_users')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (adminData) {
+        window.location.href = '/admin'
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('roles(name)')
+        .eq('user_id', user.id)
+        .single()
+
+      const roleName = ((profile?.roles as any)?.name || '').toLowerCase()
+
+      let target = ''
+
+      if (roleName.includes('directeur') || roleName.includes('مدير')) {
+        target = '/dashboard'
+      } else if (roleName.includes('secr')) {
+        target = '/dashboard/secretary'
+      } else if (
+        roleName.includes('enseignant') ||
+        roleName.includes('teacher') ||
+        roleName.includes('prof') ||
+        roleName.includes('أستاذ')
+      ) {
+        target = '/teacher/dashboard'
+      } else if (roleName.includes('parent')) {
+        target = '/parent/dashboard'
+      }
+
+      if (!target) {
+        setError('الدور غير معروف. تواصل مع الإدارة.')
+        setLoading(false)
+        return
+      }
+
+      window.location.href = target
+    } catch (e: any) {
+      console.error('[login]', e)
+      setError('خطأ: ' + (e?.message || 'unknown'))
       setLoading(false)
-      return
     }
-
-    // 1. Jib l'user
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      setError('خطأ في تسجيل الدخول')
-      setLoading(false)
-      return
-    }
-
-    // 2. Super Admin ?
-    const { data: adminData } = await supabase
-      .from('admin_users')
-      .select('user_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (adminData) {
-      router.push('/admin')
-      router.refresh()
-      return
-    }
-
-    // 3. Role mn user_profiles
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('roles(name)')
-      .eq('user_id', user.id)
-      .single()
-
-    const roleName = ((profile?.roles as any)?.name || '').toLowerCase()
-
-    if (roleName.includes('secr')) {
-      router.push('/dashboard/secretary')
-    } else if (roleName.includes('parent')) {
-      router.push('/parent/dashboard')
-    } else {
-      router.push('/dashboard')
-    }
-    router.refresh()
   }
 
   return (
@@ -95,7 +118,10 @@ export default function Login() {
 
       <section className="flex items-center justify-center p-5 sm:p-10">
         <div className="w-full max-w-md">
-          <Link href="/" className="mb-10 flex items-center gap-2 text-sm font-bold text-emerald-700 lg:hidden">
+          <Link
+            href="/"
+            className="mb-10 flex items-center gap-2 text-sm font-bold text-emerald-700 lg:hidden"
+          >
             <GraduationCap className="h-5 w-5" />
             {platformName}
           </Link>
@@ -110,6 +136,8 @@ export default function Login() {
               <div className="relative mt-2">
                 <Mail className="absolute right-3 top-3 h-5 w-5 text-slate-400" />
                 <input
+                  id="login-email"
+                  name="email"
                   className="auth-input pr-11"
                   type="email"
                   autoComplete="email"
@@ -125,6 +153,8 @@ export default function Login() {
               <div className="relative mt-2">
                 <LockKeyhole className="absolute right-3 top-3 h-5 w-5 text-slate-400" />
                 <input
+                  id="login-password"
+                  name="password"
                   className="auth-input pr-11"
                   type="password"
                   autoComplete="current-password"
@@ -158,7 +188,10 @@ export default function Login() {
           </form>
           <p className="mt-6 text-center text-sm text-slate-500">
             ليس لديك حساب؟{' '}
-            <Link href="/register" className="font-bold text-emerald-700 hover:text-emerald-900">
+            <Link
+              href="/register"
+              className="font-bold text-emerald-700 hover:text-emerald-900"
+            >
               سجّل مؤسستك
             </Link>
           </p>
