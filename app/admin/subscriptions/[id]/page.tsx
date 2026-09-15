@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { sendInvoiceEmailById } from '@/lib/send-invoice-email';
 import {
   ArrowRight, Building2, Users, TrendingUp, FileText, AlertCircle,
   CheckCircle2, Calendar, CreditCard, Download, Plus, X, Save,
@@ -19,21 +18,6 @@ const calcAmount = (students: number) => {
   return Math.round(billable * PRICE_PER_STUDENT * 100) / 100
 }
 
-// من بعد ما تخلق الفاتورة:
-const { data: invoice } = await supabaseAdmin
-  .from('subscription_invoices')
-  .insert({ /* ... */ })
-  .select('id')
-  .single();
-
-// ✅ صيفط الإيميل (ما كتسناش باش ما يطيحش الـ request)
-if (invoice?.id) {
-  try {
-    await sendInvoiceEmailById(invoice.id);
-  } catch (e) {
-    console.error('[invoice-create] email failed', e);
-  }
-}
 const formatMoney = (n: number) =>
   n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -128,51 +112,72 @@ export default function SubscriptionDetailPage() {
     setLoading(false)
   }
 
-  const handleCreateInvoice = async () => {
-    if (!sub) return
-    setSaving(true)
-    setError('')
-    const supabase = createClient()
+ const handleCreateInvoice = async () => {
+  if (!sub) return
+  setSaving(true)
+  setError('')
+  const supabase = createClient()
 
-    try {
-      // Generate invoice number
-      const { count } = await supabase
-        .from('subscription_invoices')
-        .select('id', { count: 'exact', head: true })
+  try {
+    // رقم الفاتورة
+    const { count } = await supabase
+      .from('subscription_invoices')
+      .select('id', { count: 'exact', head: true })
 
-      const num = String((count || 0) + 1).padStart(4, '0')
-      const invoiceNumber = `F-${invYear}-${num}`
+    const num = String((count || 0) + 1).padStart(4, '0')
+    const invoiceNumber = `F-${invYear}-${num}`
 
-      const { error: insErr } = await supabase
-        .from('subscription_invoices')
-        .insert({
-          establishment_id: sub.establishment_id,
-          invoice_number: invoiceNumber,
-          period_month: invMonth,
-          period_year: invYear,
-          students_count: studentsCount,
-          price_per_student: PRICE_PER_STUDENT,
-          amount: invAmount,
-          status: 'draft',
-          due_date: invDueDate || null,
-          payment_method: 'bank_transfer',
-          notes: invNotes.trim() || null,
+    // ═══ 1) صاوب الفاتورة ═══
+    const { data: newInvoice, error: insErr } = await supabase
+      .from('subscription_invoices')
+      .insert({
+        establishment_id: sub.establishment_id,
+        invoice_number: invoiceNumber,
+        period_month: invMonth,
+        period_year: invYear,
+        students_count: studentsCount,
+        price_per_student: PRICE_PER_STUDENT,
+        amount: invAmount,
+        status: 'draft',
+        due_date: invDueDate || null,
+        payment_method: 'bank_transfer',
+        notes: invNotes.trim() || null,
+      })
+      .select('id')
+      .single()
+
+    if (insErr) throw insErr
+
+    // ═══ 2) صيفط الإيميل ═══
+    if (newInvoice?.id) {
+      try {
+        // ناديو الـ API route (service_role فالسيرفر)
+        const res = await fetch('/api/admin/send-invoice-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoiceId: newInvoice.id }),
         })
-
-      if (insErr) throw insErr
-
-      setSuccess(`تم إصدار الفاتورة ${invoiceNumber}`)
-      setTimeout(() => setSuccess(''), 3000)
-      setShowInvModal(false)
-      setInvNotes('')
-      setInvDueDate('')
-      await loadAll()
-    } catch (err: any) {
-      setError(err.message || 'حدث خطأ')
-    } finally {
-      setSaving(false)
+        const json = await res.json()
+        if (!json.ok) {
+          console.warn('[invoice-create] email failed:', json.error)
+        }
+      } catch (e) {
+        console.error('[invoice-create] email failed', e)
+      }
     }
+
+    setSuccess(`تم إصدار الفاتورة ${invoiceNumber} وإرسال الإيميل للمدير`)
+    setTimeout(() => setSuccess(''), 4000)
+    setShowInvModal(false)
+    setInvNotes('')
+    setInvDueDate('')
+    await loadAll()
+  } catch (err: any) {
+    setError(err.message || 'حدث خطأ')
+  } finally {
+    setSaving(false)
   }
+}
 
   const handleMarkPaid = async (invId: string, ref: string) => {
     const refValue = prompt('رقم التحويل البنكي (référence)?', '')
