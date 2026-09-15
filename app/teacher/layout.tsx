@@ -9,13 +9,15 @@ import { useLanguage } from '@/lib/LanguageContext'
 import {
   LayoutDashboard, Calendar, BookOpen, ClipboardList, UserCheck,
   BarChart3, MessageSquare, User, Bell, LogOut, School, Check,
-  CheckCheck, GraduationCap,
+  CheckCheck, GraduationCap, FileText, NotebookPen,
 } from 'lucide-react'
 
 const menuItems = [
   { href: '/teacher/dashboard', key: 'dashboard', icon: LayoutDashboard, label: 'Tableau de bord' },
   { href: '/teacher/timetable', key: 'timetable', icon: Calendar, label: 'Emploi du temps' },
   { href: '/teacher/classes', key: 'classes', icon: BookOpen, label: 'Mes Classes' },
+  { href: '/teacher/cahier', key: 'cahier', icon: NotebookPen, label: 'دفتر النصوص' },
+  { href: '/teacher/devoirs', key: 'devoirs', icon: FileText, label: 'الفروض' },
   { href: '/teacher/grades', key: 'grades', icon: ClipboardList, label: 'Saisie des notes' },
   { href: '/teacher/attendance', key: 'attendance', icon: UserCheck, label: 'Mes Présences' },
   { href: '/teacher/stats', key: 'stats', icon: BarChart3, label: 'Mes Statistiques' },
