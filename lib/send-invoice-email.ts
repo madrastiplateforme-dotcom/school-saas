@@ -1,86 +1,102 @@
 // lib/send-invoice-email.ts
-import { createAdminClient } from './supabase-admin'
-import { sendEmail } from './email'
-import { invoiceEmail, monthLabelAR } from './email-templates'
+// Helper: يجيب بيانات الفاتورة + المؤسسة + المدير، ومن بعد كيصيفط الإيميل
 
-export type SendInvoiceResult = {
-  success: boolean
-  skipped?: boolean
-  reason?: string
-  error?: string
-}
+import { createAdminClient } from '@/lib/supabase-admin'
+import { sendEmail } from '@/lib/email'
+import { invoiceEmail, monthLabelAR } from '@/lib/email-templates'
 
 export async function sendInvoiceEmailById(invoiceId: string) {
-  const supabaseAdmin = createAdminClient()
+  const admin = createAdminClient()
+
   // 1) الفاتورة
-  const { data: invoice, error: invErr } = await supabaseAdmin
+  const { data: invoice, error: invErr } = await admin
     .from('subscription_invoices')
-    .select(
-      'id, establishment_id, invoice_number, period_month, period_year, students_count, amount, due_date, status',
-    )
+    .select('*')
     .eq('id', invoiceId)
-    .single()
+    .maybeSingle()
 
   if (invErr || !invoice) {
-    throw new Error('الفاتورة غير موجودة')
+    console.warn('[send-invoice-email] invoice not found', invoiceId, invErr?.message)
+    return { ok: false, error: 'الفاتورة غير موجودة' }
   }
 
-  // 2) المدرسة
-  const { data: est, error: estErr } = await supabaseAdmin
+  // 2) المؤسسة
+  const { data: establishment } = await admin
     .from('establishments')
-    .select('id, name, email, director_email, logo_url')
+    .select('id, name, email, logo_url')
     .eq('id', invoice.establishment_id)
-    .single()
+    .maybeSingle()
 
-  if (estErr || !est) {
-    throw new Error('المدرسة غير موجودة')
+  if (!establishment) {
+    return { ok: false, error: 'المؤسسة غير موجودة' }
   }
 
-  const to = est.director_email || est.email
-  if (!to) {
-    throw new Error('لا يوجد بريد إلكتروني مسجل للمدرسة')
+  // 3) المدير — أول user_profiles بعلاقة roles(name) = directeur فهاد المؤسسة
+  const { data: director } = await admin
+    .from('user_profiles')
+    .select('full_name, user_id, roles(name), auth_users:user_id(email)')
+    .eq('establishment_id', invoice.establishment_id)
+    .eq('roles.name', 'Directeur')
+    .limit(1)
+    .maybeSingle()
+
+  // Fallback: جيب أي user_profiles من هاد المؤسسة مع الدور
+  let directorEmail: string | null = null
+  let directorName: string | null = null
+
+  if (director) {
+    directorName = director.full_name || null
+    directorEmail = (director as any).auth_users?.email || null
   }
 
-  // 3) بناء الـ template
-  const periodLabel = monthLabelAR(invoice.period_month ?? 1, invoice.period_year)
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+  // إلا ما لقيناش الإيميل، جربو من establishments.email
+  if (!directorEmail) {
+    directorEmail = establishment.email || null
+  }
 
-  const tpl = invoiceEmail({
-    schoolName: est.name,
+  if (!directorEmail) {
+    return { ok: false, error: 'لا يوجد إيميل للمدير' }
+  }
+
+  // 4) بناء الإيميل
+  const periodLabel = monthLabelAR(
+    invoice.period_month,
+    invoice.period_year,
+  )
+
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+
+  const emailContent = invoiceEmail({
+    schoolName: establishment.name,
+    directorName,
     invoiceNumber: invoice.invoice_number,
     periodLabel,
     studentsCount: invoice.students_count,
     amount: Number(invoice.amount),
-    dueDate: invoice.due_date ?? null,
+    dueDate: invoice.due_date
+      ? new Date(invoice.due_date).toLocaleDateString('fr-FR')
+      : null,
     billingUrl: `${siteUrl}/dashboard/billing`,
-    logoUrl: est.logo_url ?? null,
+    logoUrl: establishment.logo_url || null,
   })
 
-  // 4) الإرسال (sendEmail كتسجل بوحدها فـ email_log)
+  // 5) صيفط
   const result = await sendEmail({
-    to,
-    subject: tpl.subject,
-    html: tpl.html,
-    text: tpl.text,
-    replyTo: est.email ?? null,
-    establishmentId: est.id,
+    to: directorEmail,
+    subject: emailContent.subject,
+    html: emailContent.html,
+    text: emailContent.text,
+    replyTo: establishment.email || undefined,
+    establishmentId: establishment.id,
     template: 'invoice',
     metadata: {
-      invoice_id: invoice.id,
-      invoice_number: invoice.invoice_number,
+      invoiceId,
+      invoiceNumber: invoice.invoice_number,
+      establishmentId: establishment.id,
+      amount: invoice.amount,
     },
   })
 
-  // 5) بدل الحالة من draft → sent
-  if (result.ok && invoice.status === 'draft') {
-    await supabaseAdmin
-      .from('subscription_invoices')
-      .update({
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-      })
-      .eq('id', invoice.id)
-  }
-
-  return { success: result.ok, error: result.error }
+  return result
 }

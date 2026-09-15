@@ -1,127 +1,244 @@
 'use client'
 
 import {
-  Document, Page, Text, View, StyleSheet, Font, Image,
+  Document,
+  Page,
+  Text,
+  View,
+  StyleSheet,
+  Font,
+  Image,
 } from '@react-pdf/renderer'
+import path from 'path'
+
+// ═══════════════════════════════════════════════════
+// Fonts — Cairo (4 variants)
+// ═══════════════════════════════════════════════════
+const FONTS_DIR = path.resolve(process.cwd(), 'public', 'fonts')
 
 Font.register({
   family: 'Cairo',
   fonts: [
-    { src: '/fonts/Cairo-Regular.ttf' },
-    { src: '/fonts/Cairo-Bold.ttf', fontWeight: 'bold' },
+    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'normal' },
+    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'italic' },
+    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'normal' },
+    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'italic' },
   ],
 })
 
-const PRIMARY = '#4F46E5'
-const SLATE_600 = '#475569'
-const SLATE_400 = '#94a3b8'
-const SLATE_200 = '#e2e8f0'
-const SLATE_100 = '#f1f5f9'
+Font.registerHyphenationCallback((word) => [word])
+
+// ═══════════════════════════════════════════════════
+// Palette — même que SchoolCertificate
+// ═══════════════════════════════════════════════════
+const C = {
+  navy: '#1e3a5f',
+  gold: '#b8860b',
+  lightGold: '#f5ecd7',
+  gray: '#555',
+  dark: '#1a1a1a',
+  line: '#d4c9a8',
+}
+
 const EMERALD = '#059669'
 const ORANGE = '#ea580c'
-const ROSE = '#e11d48'
+const ROSE = '#dc2626'
 const AMBER = '#d97706'
 
 const styles = StyleSheet.create({
   page: {
-    padding: 20,
+    padding: 0,
     fontFamily: 'Cairo',
     fontSize: 9,
-    backgroundColor: '#ffffff',
+    direction: 'rtl',
   },
+
+  outerFrame: {
+    position: 'absolute',
+    top: 18,
+    left: 18,
+    right: 18,
+    bottom: 18,
+    borderWidth: 2.5,
+    borderColor: C.navy,
+    borderRadius: 4,
+  },
+  innerFrame: {
+    position: 'absolute',
+    top: 25,
+    left: 25,
+    right: 25,
+    bottom: 25,
+    borderWidth: 0.8,
+    borderColor: C.gold,
+    borderRadius: 2,
+  },
+
+  content: {
+    padding: 40,
+    paddingTop: 35,
+  },
+
+  // ─── Header ───
   header: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: 8,
+    paddingBottom: 10,
     borderBottomWidth: 2,
-    borderBottomColor: PRIMARY,
-    marginBottom: 10,
+    borderBottomColor: C.navy,
+    marginBottom: 12,
   },
   logoBox: {
-    width: 55,
-    height: 55,
+    width: 50,
+    height: 50,
     borderRadius: 6,
-    backgroundColor: SLATE_100,
+    backgroundColor: C.lightGold,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.gold,
   },
   logoImg: {
-    width: 55,
-    height: 55,
+    width: 50,
+    height: 50,
     borderRadius: 6,
   },
-  schoolBlock: {
+  logoPlaceholder: {
+    fontSize: 20,
+    color: C.navy,
+    fontWeight: 'bold',
+  },
+  headerCenter: {
     flex: 1,
+    textAlign: 'center',
     paddingHorizontal: 12,
   },
-  schoolName: {
-    fontSize: 14,
+  kingdomAr: {
+    fontSize: 11,
     fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 2,
+    color: C.navy,
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
-  schoolMeta: {
-    fontSize: 7,
-    color: SLATE_600,
+  kingdomFr: {
+    fontSize: 8.5,
+    fontWeight: 'bold',
+    color: C.navy,
+    textAlign: 'center',
     marginTop: 1,
   },
-  metaBox: {
-    alignItems: 'flex-end',
-  },
-  metaText: {
-    fontSize: 8,
-    color: SLATE_600,
-    marginBottom: 2,
-  },
-  metaStrong: {
-    fontSize: 8,
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  title: {
+  schoolAr: {
     fontSize: 13,
     fontWeight: 'bold',
-    color: PRIMARY,
+    color: C.gold,
     textAlign: 'center',
-    marginBottom: 10,
-    paddingVertical: 5,
-    backgroundColor: '#eef2ff',
-    borderRadius: 5,
+    marginTop: 5,
   },
+  schoolFr: {
+    fontSize: 9,
+    color: C.gray,
+    textAlign: 'center',
+    marginTop: 0.5,
+    fontStyle: 'italic',
+  },
+  schoolMeta: {
+    fontSize: 8,
+    color: C.gray,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  headerRight: {
+    width: 130,
+    textAlign: 'left',
+  },
+  headerRightLine: {
+    fontSize: 8,
+    color: C.gray,
+    textAlign: 'left',
+    marginBottom: 2,
+  },
+  headerRightStrong: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: C.navy,
+  },
+
+  // ─── Title ───
+  titleBox: {
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  titleAr: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: C.navy,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  titleFr: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: C.gold,
+    textAlign: 'center',
+    letterSpacing: 1.5,
+    marginTop: 2,
+  },
+  titleDivider: {
+    width: 160,
+    height: 1.5,
+    backgroundColor: C.gold,
+    marginTop: 6,
+  },
+
+  // ─── Student box ───
   studentBox: {
-    flexDirection: 'row',
-    backgroundColor: SLATE_100,
-    borderRadius: 5,
+    flexDirection: 'row-reverse',
+    backgroundColor: C.lightGold,
+    borderLeftWidth: 3,
+    borderLeftColor: C.gold,
+    borderRadius: 3,
     padding: 8,
     marginBottom: 10,
     flexWrap: 'wrap',
   },
   studentItem: {
-    width: '33%',
-    paddingVertical: 2,
+    width: '33.33%',
+    paddingVertical: 3,
+    paddingHorizontal: 4,
   },
   studentLabel: {
-    fontSize: 7,
-    color: SLATE_400,
+    fontSize: 7.5,
+    color: C.gray,
+    textAlign: 'right',
+    marginBottom: 1,
+  },
+  studentLabelFr: {
+    fontSize: 6.5,
+    color: C.gray,
+    textAlign: 'right',
   },
   studentValue: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: 'bold',
-    color: '#1e293b',
-    marginTop: 1,
+    color: C.navy,
+    marginTop: 1.5,
+    textAlign: 'right',
   },
+
+  // ─── Table ───
   table: {
     borderWidth: 1,
-    borderColor: SLATE_200,
-    borderRadius: 5,
+    borderColor: C.navy,
+    borderRadius: 3,
     overflow: 'hidden',
     marginBottom: 10,
   },
   tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#1e293b',
-    paddingVertical: 5,
+    flexDirection: 'row-reverse',
+    backgroundColor: C.navy,
+    paddingVertical: 6,
   },
   tableHeaderCell: {
     color: '#ffffff',
@@ -131,142 +248,190 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: SLATE_200,
-    paddingVertical: 4,
+    flexDirection: 'row-reverse',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e5e5e5',
+    borderBottomStyle: 'dotted',
+    paddingVertical: 5,
     alignItems: 'center',
   },
   tableRowAlt: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#fafafa',
   },
   cellSubject: {
     flex: 2.2,
     textAlign: 'right',
-    paddingHorizontal: 5,
+    paddingHorizontal: 6,
     fontSize: 9,
     fontWeight: 'bold',
+    color: C.navy,
   },
   cellCenter: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 8,
+    fontSize: 8.5,
     paddingHorizontal: 3,
+    color: C.gray,
   },
   cellMoy: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: 'bold',
     paddingHorizontal: 3,
   },
   totalRow: {
-    flexDirection: 'row',
-    backgroundColor: '#eef2ff',
-    paddingVertical: 5,
+    flexDirection: 'row-reverse',
+    backgroundColor: C.lightGold,
+    paddingVertical: 6,
     alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: C.gold,
   },
+
+  // ─── Summary cards ───
   summaryGrid: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     gap: 6,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   summaryCard: {
     flex: 1,
-    borderRadius: 5,
-    padding: 8,
-    backgroundColor: SLATE_100,
+    borderRadius: 3,
+    padding: 7,
+    backgroundColor: '#fafafa',
     borderLeftWidth: 3,
-    borderLeftColor: PRIMARY,
+    borderLeftColor: C.navy,
   },
-  summaryLabel: {
-    fontSize: 7,
-    color: SLATE_400,
-    marginBottom: 2,
+  summaryLabelAr: {
+    fontSize: 7.5,
+    color: C.gray,
+    marginBottom: 1,
+    textAlign: 'right',
+  },
+  summaryLabelFr: {
+    fontSize: 6.5,
+    color: C.gray,
+    marginBottom: 3,
+    textAlign: 'right',
+    fontStyle: 'italic',
   },
   summaryValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
-    color: '#1e293b',
+    color: C.navy,
+    textAlign: 'right',
   },
   summaryUnit: {
-    fontSize: 8,
-    color: SLATE_400,
+    fontSize: 7.5,
+    color: C.gray,
     fontWeight: 'normal',
   },
+
+  // ─── Decision ───
   decisionBox: {
-    flexDirection: 'row',
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    borderRadius: 5,
-    padding: 10,
+    flexDirection: 'row-reverse',
+    borderRadius: 3,
+    padding: 8,
     marginBottom: 8,
     alignItems: 'center',
+    borderWidth: 1,
   },
-  decisionLabel: {
+  decisionLabelAr: {
     fontSize: 9,
-    color: SLATE_600,
+    color: C.gray,
     marginLeft: 6,
+  },
+  decisionLabelFr: {
+    fontSize: 7,
+    color: C.gray,
+    marginLeft: 6,
+    fontStyle: 'italic',
   },
   decisionValue: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: EMERALD,
   },
+
+  // ─── Comment ───
   commentBox: {
     borderWidth: 1,
-    borderColor: SLATE_200,
-    borderRadius: 5,
+    borderColor: C.line,
+    borderStyle: 'dashed',
+    borderRadius: 3,
     padding: 8,
-    minHeight: 40,
-    marginBottom: 10,
+    minHeight: 42,
+    marginBottom: 8,
+    backgroundColor: '#fdfdf9',
   },
-  commentLabel: {
-    fontSize: 7,
-    color: SLATE_400,
+  commentLabelAr: {
+    fontSize: 7.5,
+    color: C.gray,
+    marginBottom: 1,
+    textAlign: 'right',
+  },
+  commentLabelFr: {
+    fontSize: 6.5,
+    color: C.gray,
     marginBottom: 3,
+    textAlign: 'right',
+    fontStyle: 'italic',
   },
   commentText: {
     fontSize: 9,
-    color: '#334155',
-    lineHeight: 1.4,
+    color: C.dark,
+    lineHeight: 1.5,
+    textAlign: 'right',
   },
+
+  // ─── Footer ───
   footer: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginTop: 10,
+    marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: SLATE_200,
+    borderTopColor: C.gold,
   },
   footerBlock: {
     alignItems: 'center',
     width: '30%',
   },
-  footerLabel: {
+  footerLabelAr: {
     fontSize: 8,
-    color: SLATE_600,
+    color: C.navy,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 1,
+    textAlign: 'center',
+  },
+  footerLabelFr: {
+    fontSize: 6.5,
+    color: C.gray,
+    marginBottom: 22,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   footerLine: {
     fontSize: 7,
-    color: SLATE_400,
+    color: C.gray,
+    textAlign: 'center',
   },
+
   pageNumber: {
     position: 'absolute',
-    bottom: 8,
-    left: 20,
-    right: 20,
+    bottom: 12,
+    left: 30,
+    right: 30,
     textAlign: 'center',
     fontSize: 7,
-    color: SLATE_400,
+    color: C.gray,
   },
 })
 
-// ============ TYPES ============
+// ═══════════════════════════════════════════════════
+// TYPES (same as before)
+// ═══════════════════════════════════════════════════
 export type BulletinSubjectRow = {
   subjectId: string
   subjectName: string
@@ -324,12 +489,18 @@ type Props = {
 const formatDate = (d?: string | null) => {
   if (!d) return '—'
   try {
-    const date = new Date(d)
-    return date.toLocaleDateString('fr-FR')
+    return new Date(d).toLocaleDateString('fr-FR')
   } catch {
     return d
   }
 }
+
+const MONTHS_FR = [
+  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+]
+const formatDateFr = (d: Date) =>
+  `${d.getDate()} ${MONTHS_FR[d.getMonth()]} ${d.getFullYear()}`
 
 const autoDecision = (avg: number | null, gradeMax: number): string => {
   if (avg == null) return '—'
@@ -339,7 +510,15 @@ const autoDecision = (avg: number | null, gradeMax: number): string => {
   return 'يكرر السنة'
 }
 
-// ============ SINGLE PAGE ============
+const decisionFrMap: Record<string, string> = {
+  'مقبول': 'ADMIS',
+  'استدراك': 'RATTRAPAGE',
+  'يكرر السنة': 'REDOUBLE',
+}
+
+// ═══════════════════════════════════════════════════
+// SINGLE PAGE
+// ═══════════════════════════════════════════════════
 function BulletinPage({
   establishment,
   yearName,
@@ -353,239 +532,333 @@ function BulletinPage({
   const pass = gradeMax / 2
   const overallPass = overall != null && overall >= pass
   const decision = bulletin.decision || autoDecision(overall, gradeMax)
+  const decisionFr = decisionFrMap[decision] || decision
+
+  const today = new Date()
+  const todayAr = today.toLocaleDateString('fr-FR')
+  const todayFr = formatDateFr(today)
 
   return (
     <Page size="A4" style={styles.page}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.logoBox}>
-          {establishment.logo_url ? (
-            // eslint-disable-next-line jsx-a11y/alt-text
-            <Image src={establishment.logo_url} style={styles.logoImg} />
-          ) : (
-            <Text style={{ fontSize: 20, color: PRIMARY, fontWeight: 'bold' }}>
-              {establishment.name.charAt(0)}
+      {/* Cadres décoratifs */}
+      <View style={styles.outerFrame} />
+      <View style={styles.innerFrame} />
+
+      <View style={styles.content}>
+        {/* ═══════ HEADER ═══════ */}
+        <View style={styles.header}>
+          <View style={styles.logoBox}>
+            {establishment.logo_url ? (
+              // eslint-disable-next-line jsx-a11y/alt-text
+              <Image src={establishment.logo_url} style={styles.logoImg} />
+            ) : (
+              <Text style={styles.logoPlaceholder}>
+                {establishment.name.charAt(0)}
+              </Text>
+            )}
+          </View>
+
+          <View style={styles.headerCenter}>
+            <Text style={styles.kingdomAr}>المملكة المغربية</Text>
+            <Text style={styles.kingdomFr}>Royaume du Maroc</Text>
+            <Text style={styles.schoolAr}>{establishment.name}</Text>
+            {establishment.address && (
+              <Text style={styles.schoolMeta}>{establishment.address}</Text>
+            )}
+            <Text style={styles.schoolMeta}>
+              {[establishment.city, establishment.phone].filter(Boolean).join(' · ')}
             </Text>
-          )}
+          </View>
+
+          <View style={styles.headerRight}>
+            <Text style={styles.headerRightLine}>
+              <Text style={styles.headerRightStrong}>السنة الدراسية: </Text>
+              {yearName}
+            </Text>
+            <Text style={styles.headerRightLine}>
+              <Text style={styles.headerRightStrong}>الفصل: </Text>
+              {termName}
+            </Text>
+            <Text style={styles.headerRightLine}>
+              <Text style={styles.headerRightStrong}>التاريخ: </Text>
+              {todayAr}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.schoolBlock}>
-          <Text style={styles.schoolName}>{establishment.name}</Text>
-          {establishment.address && (
-            <Text style={styles.schoolMeta}>{establishment.address}</Text>
-          )}
-          <Text style={styles.schoolMeta}>
-            {[establishment.city, establishment.phone].filter(Boolean).join(' · ')}
-          </Text>
+        {/* ═══════ TITLE ═══════ */}
+        <View style={styles.titleBox}>
+          <Text style={styles.titleAr}>كشف نقط التلميذ(ة)</Text>
+          <Text style={styles.titleFr}>BULLETIN DE NOTES</Text>
+          <View style={styles.titleDivider} />
         </View>
 
-        <View style={styles.metaBox}>
-          <Text style={styles.metaText}>
-            <Text style={styles.metaStrong}>السنة الدراسية: </Text>
-            {yearName}
-          </Text>
-          <Text style={styles.metaText}>
-            <Text style={styles.metaStrong}>الفصل: </Text>
-            {termName}
-          </Text>
-          <Text style={styles.metaText}>
-            <Text style={styles.metaStrong}>التاريخ: </Text>
-            {new Date().toLocaleDateString('fr-FR')}
-          </Text>
-        </View>
-      </View>
-
-      {/* Title */}
-      <Text style={styles.title}>كشف نقط التلميذ</Text>
-
-      {/* Student info */}
-      <View style={styles.studentBox}>
-        <View style={styles.studentItem}>
-          <Text style={styles.studentLabel}>الاسم الكامل</Text>
-          <Text style={styles.studentValue}>{student.fullName}</Text>
-        </View>
-        <View style={styles.studentItem}>
-          <Text style={styles.studentLabel}>رقم مسار</Text>
-          <Text style={styles.studentValue}>{student.massarCode || '—'}</Text>
-        </View>
-        <View style={styles.studentItem}>
-          <Text style={styles.studentLabel}>تاريخ الميلاد</Text>
-          <Text style={styles.studentValue}>{formatDate(student.birthDate)}</Text>
-        </View>
-        <View style={styles.studentItem}>
-          <Text style={styles.studentLabel}>القسم</Text>
-          <Text style={styles.studentValue}>{className}</Text>
-        </View>
-        <View style={styles.studentItem}>
-          <Text style={styles.studentLabel}>المستوى</Text>
-          <Text style={styles.studentValue}>{levelName || '—'}</Text>
-        </View>
-        <View style={styles.studentItem}>
-          <Text style={styles.studentLabel}>الجنس</Text>
-          <Text style={styles.studentValue}>{student.gender || '—'}</Text>
-        </View>
-      </View>
-
-      {/* Table */}
-      <View style={styles.table}>
-        <View style={styles.tableHeader}>
-          <Text style={[styles.tableHeaderCell, { flex: 2.2, textAlign: 'right' }]}>المادة</Text>
-          <Text style={styles.tableHeaderCell}>المعامل</Text>
-          <Text style={styles.tableHeaderCell}>نقطة التلميذ</Text>
-          <Text style={styles.tableHeaderCell}>معدل القسم</Text>
-          <Text style={styles.tableHeaderCell}>ن × م</Text>
+        {/* ═══════ STUDENT ═══════ */}
+        <View style={styles.studentBox}>
+          <View style={styles.studentItem}>
+            <Text style={styles.studentLabel}>الاسم الكامل</Text>
+            <Text style={styles.studentLabelFr}>Nom complet</Text>
+            <Text style={styles.studentValue}>{student.fullName}</Text>
+          </View>
+          <View style={styles.studentItem}>
+            <Text style={styles.studentLabel}>رقم مسار</Text>
+            <Text style={styles.studentLabelFr}>Code Massar</Text>
+            <Text style={styles.studentValue}>{student.massarCode || '—'}</Text>
+          </View>
+          <View style={styles.studentItem}>
+            <Text style={styles.studentLabel}>تاريخ الميلاد</Text>
+            <Text style={styles.studentLabelFr}>Date de naissance</Text>
+            <Text style={styles.studentValue}>{formatDate(student.birthDate)}</Text>
+          </View>
+          <View style={styles.studentItem}>
+            <Text style={styles.studentLabel}>القسم</Text>
+            <Text style={styles.studentLabelFr}>Classe</Text>
+            <Text style={styles.studentValue}>{className}</Text>
+          </View>
+          <View style={styles.studentItem}>
+            <Text style={styles.studentLabel}>المستوى</Text>
+            <Text style={styles.studentLabelFr}>Niveau</Text>
+            <Text style={styles.studentValue}>{levelName || '—'}</Text>
+          </View>
+          <View style={styles.studentItem}>
+            <Text style={styles.studentLabel}>الجنس</Text>
+            <Text style={styles.studentLabelFr}>Genre</Text>
+            <Text style={styles.studentValue}>{student.gender || '—'}</Text>
+          </View>
         </View>
 
-        {subjects.map((s, idx) => {
-          const isPass = s.studentAverage != null && s.studentAverage >= pass
-          return (
-            <View
-              key={s.subjectId}
-              style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}
-            >
-              <Text style={[styles.cellSubject, { color: s.subjectColor }]}>
-                {s.subjectName}
-              </Text>
-              <Text style={styles.cellCenter}>{s.coefficient}</Text>
-              <Text
-                style={[
-                  styles.cellMoy,
-                  { color: s.studentAverage == null ? SLATE_400 : isPass ? EMERALD : ORANGE },
-                ]}
+        {/* ═══════ TABLE ═══════ */}
+        <View style={styles.table}>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderCell, { flex: 2.2, textAlign: 'right' }]}>
+              المادة / Matière
+            </Text>
+            <Text style={styles.tableHeaderCell}>المعامل{'\n'}Coef</Text>
+            <Text style={styles.tableHeaderCell}>نقطة التلميذ{'\n'}Note élève</Text>
+            <Text style={styles.tableHeaderCell}>معدل القسم{'\n'}Moy. classe</Text>
+            <Text style={styles.tableHeaderCell}>ن × م{'\n'}N × C</Text>
+          </View>
+
+          {subjects.map((s, idx) => {
+            const isPass = s.studentAverage != null && s.studentAverage >= pass
+            return (
+              <View
+                key={s.subjectId}
+                style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}
               >
-                {s.studentAverage != null ? s.studentAverage.toFixed(2) : '—'}
-              </Text>
-              <Text style={[styles.cellCenter, { color: SLATE_600 }]}>
-                {s.classAverage != null ? s.classAverage.toFixed(2) : '—'}
-              </Text>
-              <Text style={styles.cellCenter}>
-                {s.weightedValue != null ? s.weightedValue.toFixed(2) : '—'}
-              </Text>
-            </View>
-          )
-        })}
+                <Text style={[styles.cellSubject, { color: s.subjectColor || C.navy }]}>
+                  {s.subjectName}
+                </Text>
+                <Text style={styles.cellCenter}>{s.coefficient}</Text>
+                <Text
+                  style={[
+                    styles.cellMoy,
+                    {
+                      color:
+                        s.studentAverage == null
+                          ? C.gray
+                          : isPass
+                          ? EMERALD
+                          : ORANGE,
+                    },
+                  ]}
+                >
+                  {s.studentAverage != null ? s.studentAverage.toFixed(2) : '—'}
+                </Text>
+                <Text style={styles.cellCenter}>
+                  {s.classAverage != null ? s.classAverage.toFixed(2) : '—'}
+                </Text>
+                <Text style={styles.cellCenter}>
+                  {s.weightedValue != null ? s.weightedValue.toFixed(2) : '—'}
+                </Text>
+              </View>
+            )
+          })}
 
-        {/* Totals */}
-        <View style={styles.totalRow}>
-          <Text style={[styles.cellSubject, { color: '#1e293b' }]}>المجموع</Text>
-          <Text style={[styles.cellCenter, { fontWeight: 'bold', color: '#1e293b' }]}>
-            {totalCoef}
-          </Text>
-          <Text style={styles.cellCenter}>—</Text>
-          <Text style={styles.cellCenter}>—</Text>
-          <Text style={[styles.cellMoy, { color: PRIMARY }]}>
-            {totalWeighted.toFixed(2)}
-          </Text>
+          <View style={styles.totalRow}>
+            <Text style={[styles.cellSubject, { color: C.navy }]}>
+              المجموع / Total
+            </Text>
+            <Text style={[styles.cellCenter, { fontWeight: 'bold', color: C.navy }]}>
+              {totalCoef}
+            </Text>
+            <Text style={styles.cellCenter}>—</Text>
+            <Text style={styles.cellCenter}>—</Text>
+            <Text style={[styles.cellMoy, { color: C.navy }]}>
+              {totalWeighted.toFixed(2)}
+            </Text>
+          </View>
         </View>
-      </View>
 
-      {/* Summary cards */}
-      <View style={styles.summaryGrid}>
+        {/* ═══════ SUMMARY ═══════ */}
+        <View style={styles.summaryGrid}>
+          <View
+            style={[
+              styles.summaryCard,
+              {
+                borderLeftColor: overallPass ? EMERALD : ORANGE,
+                backgroundColor: overallPass ? '#f0fdf4' : '#fff7ed',
+              },
+            ]}
+          >
+            <Text style={styles.summaryLabelAr}>المعدل العام</Text>
+            <Text style={styles.summaryLabelFr}>Moyenne générale</Text>
+            <Text
+              style={[
+                styles.summaryValue,
+                { color: overallPass ? EMERALD : ORANGE },
+              ]}
+            >
+              {overall != null ? overall.toFixed(2) : '—'}
+              <Text style={styles.summaryUnit}> / {gradeMax}</Text>
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.summaryCard,
+              { borderLeftColor: AMBER, backgroundColor: '#fffbeb' },
+            ]}
+          >
+            <Text style={styles.summaryLabelAr}>الرتبة في القسم</Text>
+            <Text style={styles.summaryLabelFr}>Rang en classe</Text>
+            <Text style={[styles.summaryValue, { color: AMBER }]}>
+              {rank != null ? rank : '—'}
+              <Text style={styles.summaryUnit}> / {classSize}</Text>
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.summaryCard,
+              { borderLeftColor: C.gray, backgroundColor: '#fafafa' },
+            ]}
+          >
+            <Text style={styles.summaryLabelAr}>الغيابات (مبررة / غير مبررة)</Text>
+            <Text style={styles.summaryLabelFr}>Absences (just. / non just.)</Text>
+            <Text style={[styles.summaryValue, { color: C.gray }]}>
+              {bulletin.absencesJustified}
+              <Text style={styles.summaryUnit}> / </Text>
+              {bulletin.absencesUnjustified}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.summaryCard,
+              { borderLeftColor: C.gray, backgroundColor: '#fafafa' },
+            ]}
+          >
+            <Text style={styles.summaryLabelAr}>التأخيرات</Text>
+            <Text style={styles.summaryLabelFr}>Retards</Text>
+            <Text style={[styles.summaryValue, { color: C.gray }]}>
+              {bulletin.lates}
+            </Text>
+          </View>
+        </View>
+
+        {/* ═══════ DECISION ═══════ */}
         <View
           style={[
-            styles.summaryCard,
+            styles.decisionBox,
             {
-              borderLeftColor: overallPass ? EMERALD : ORANGE,
-              backgroundColor: overallPass ? '#f0fdf4' : '#fff7ed',
+              backgroundColor:
+                decision === 'مقبول'
+                  ? '#f0fdf4'
+                  : decision === 'استدراك'
+                  ? '#fff7ed'
+                  : '#fef2f2',
+              borderColor:
+                decision === 'مقبول'
+                  ? '#bbf7d0'
+                  : decision === 'استدراك'
+                  ? '#fed7aa'
+                  : '#fecaca',
             },
           ]}
         >
-          <Text style={styles.summaryLabel}>المعدل العام</Text>
-          <Text style={[styles.summaryValue, { color: overallPass ? EMERALD : ORANGE }]}>
-            {overall != null ? overall.toFixed(2) : '—'}
-            <Text style={styles.summaryUnit}> / {gradeMax}</Text>
+          <Text style={styles.decisionLabelAr}>القرار:</Text>
+          <Text style={styles.decisionLabelFr}>Décision :</Text>
+          <Text
+            style={[
+              styles.decisionValue,
+              {
+                color:
+                  decision === 'مقبول'
+                    ? EMERALD
+                    : decision === 'استدراك'
+                    ? ORANGE
+                    : ROSE,
+              },
+            ]}
+          >
+            {decision}
+          </Text>
+          <Text
+            style={[
+              styles.decisionValue,
+              {
+                fontSize: 10,
+                marginLeft: 6,
+                color:
+                  decision === 'مقبول'
+                    ? EMERALD
+                    : decision === 'استدراك'
+                    ? ORANGE
+                    : ROSE,
+              },
+            ]}
+          >
+            ({decisionFr})
+          </Text>
+
+          {bulletin.behavior && (
+            <>
+              <Text style={[styles.decisionLabelAr, { marginLeft: 14 }]}>السلوك:</Text>
+              <Text style={[styles.decisionValue, { color: C.gray, fontSize: 10 }]}>
+                {bulletin.behavior}
+              </Text>
+            </>
+          )}
+        </View>
+
+        {/* ═══════ COMMENT ═══════ */}
+        <View style={styles.commentBox}>
+          <Text style={styles.commentLabelAr}>ملاحظات المدير(ة)</Text>
+          <Text style={styles.commentLabelFr}>Commentaires du Directeur</Text>
+          <Text style={styles.commentText}>
+            {bulletin.directorComment?.trim() ||
+              bulletin.decisionNotes?.trim() ||
+              ' '}
           </Text>
         </View>
 
-        <View style={[styles.summaryCard, { borderLeftColor: AMBER, backgroundColor: '#fffbeb' }]}>
-          <Text style={styles.summaryLabel}>الرتبة في القسم</Text>
-          <Text style={[styles.summaryValue, { color: AMBER }]}>
-            {rank != null ? rank : '—'}
-            <Text style={styles.summaryUnit}> / {classSize}</Text>
-          </Text>
-        </View>
-
-        <View style={[styles.summaryCard, { borderLeftColor: SLATE_600, backgroundColor: SLATE_100 }]}>
-          <Text style={styles.summaryLabel}>الغيابات (مبررة / غير مبررة)</Text>
-          <Text style={[styles.summaryValue, { color: SLATE_600 }]}>
-            {bulletin.absencesJustified}
-            <Text style={styles.summaryUnit}> / </Text>
-            {bulletin.absencesUnjustified}
-          </Text>
-        </View>
-
-        <View style={[styles.summaryCard, { borderLeftColor: SLATE_600, backgroundColor: SLATE_100 }]}>
-          <Text style={styles.summaryLabel}>التأخيرات</Text>
-          <Text style={[styles.summaryValue, { color: SLATE_600 }]}>
-            {bulletin.lates}
-          </Text>
-        </View>
-      </View>
-
-      {/* Decision */}
-      <View
-        style={[
-          styles.decisionBox,
-          {
-            backgroundColor:
-              decision === 'مقبول' ? '#f0fdf4' : decision === 'استدراك' ? '#fff7ed' : '#fef2f2',
-            borderColor:
-              decision === 'مقبول' ? '#bbf7d0' : decision === 'استدراك' ? '#fed7aa' : '#fecaca',
-          },
-        ]}
-      >
-        <Text style={styles.decisionLabel}>القرار:</Text>
-        <Text
-          style={[
-            styles.decisionValue,
-            {
-              color:
-                decision === 'مقبول' ? EMERALD : decision === 'استدراك' ? ORANGE : ROSE,
-            },
-          ]}
-        >
-          {decision}
-        </Text>
-        {bulletin.behavior && (
-          <>
-            <Text style={[styles.decisionLabel, { marginLeft: 16 }]}>السلوك:</Text>
-            <Text style={[styles.decisionValue, { color: SLATE_600 }]}>
-              {bulletin.behavior}
-            </Text>
-          </>
-        )}
-      </View>
-
-      {/* Comment */}
-      <View style={styles.commentBox}>
-        <Text style={styles.commentLabel}>ملاحظات المدير:</Text>
-        <Text style={styles.commentText}>
-          {bulletin.directorComment?.trim() ||
-            bulletin.decisionNotes?.trim() ||
-            ' '}
-        </Text>
-      </View>
-
-      {/* Footer */}
-      <View style={styles.footer}>
-        <View style={styles.footerBlock}>
-          <Text style={styles.footerLabel}>التاريخ</Text>
-          <Text style={styles.footerLine}>{new Date().toLocaleDateString('fr-FR')}</Text>
-        </View>
-        <View style={styles.footerBlock}>
-          <Text style={styles.footerLabel}>خاتم المدرسة</Text>
-          <Text style={styles.footerLine}> </Text>
-        </View>
-        <View style={styles.footerBlock}>
-          <Text style={styles.footerLabel}>توقيع المدير</Text>
-          <Text style={styles.footerLine}> </Text>
+        {/* ═══════ FOOTER ═══════ */}
+        <View style={styles.footer}>
+          <View style={styles.footerBlock}>
+            <Text style={styles.footerLabelAr}>التاريخ</Text>
+            <Text style={styles.footerLabelFr}>Date</Text>
+            <Text style={styles.footerLine}>{todayFr}</Text>
+          </View>
+          <View style={styles.footerBlock}>
+            <Text style={styles.footerLabelAr}>خاتم المدرسة</Text>
+            <Text style={styles.footerLabelFr}>Cachet de l'école</Text>
+            <Text style={styles.footerLine}> </Text>
+          </View>
+          <View style={styles.footerBlock}>
+            <Text style={styles.footerLabelAr}>توقيع المدير(ة)</Text>
+            <Text style={styles.footerLabelFr}>Signature du Directeur</Text>
+            <Text style={styles.footerLine}> </Text>
+          </View>
         </View>
       </View>
     </Page>
   )
 }
 
-// ============ MAIN DOCUMENT ============
+// ═══════════════════════════════════════════════════
+// MAIN DOCUMENT
+// ═══════════════════════════════════════════════════
 export default function BulletinPDF({
   establishment,
   yearName,

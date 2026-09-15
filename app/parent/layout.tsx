@@ -15,7 +15,10 @@ const menuItems = [
   { href: '/parent/dashboard/bulletins', key: 'bulletins', icon: Award, label: 'الكشوف' },
   { href: '/parent/dashboard/timetable', key: 'timetable', icon: Calendar, label: 'جدول الحصص' },
   { href: '/parent/dashboard/attendance', key: 'attendance', icon: ClipboardList, label: 'الغيابات' },
+  { href: '/parent/dashboard/cahier', key: 'cahier', icon: BookOpen, label: 'دفتر النصوص' },
+  { href: '/parent/dashboard/devoirs', key: 'devoirs', icon: FileText, label: 'الفروض المنزلية' },
   { href: '/parent/dashboard/payments', key: 'payments', icon: CreditCard, label: 'المدفوعات' },
+  { href: '/parent/dashboard/certificates', key: 'certificates', icon: Award, label: 'الشهادات' },
   { href: '/parent/dashboard/messages', key: 'messages', icon: MessageSquare, label: 'الرسائل' },
   { href: '/parent/dashboard/profile', key: 'profile', icon: User, label: 'حسابي' },
 ]

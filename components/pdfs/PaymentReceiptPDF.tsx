@@ -10,15 +10,36 @@ import {
 } from '@react-pdf/renderer'
 import path from 'path'
 
+// ═══════════════════════════════════════════════════
+// Fonts — Cairo (4 variants)
+// ═══════════════════════════════════════════════════
+const FONTS_DIR = path.resolve(process.cwd(), 'public', 'fonts')
+
 Font.register({
   family: 'Cairo',
   fonts: [
-    { src: path.join(process.cwd(), 'public', 'fonts', 'Cairo-Regular.ttf') },
-    { src: path.join(process.cwd(), 'public', 'fonts', 'Cairo-Bold.ttf'), fontWeight: 'bold' },
+    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'normal' },
+    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'italic' },
+    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'normal' },
+    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'italic' },
   ],
 })
 
 Font.registerHyphenationCallback((word) => [word])
+
+// ═══════════════════════════════════════════════════
+// Palette
+// ═══════════════════════════════════════════════════
+const C = {
+  navy: '#1e3a5f',
+  gold: '#b8860b',
+  lightGold: '#f5ecd7',
+  gray: '#555',
+  dark: '#1a1a1a',
+  line: '#d4c9a8',
+}
+
+const EMERALD = '#059669'
 
 type ReceiptData = {
   receiptNumber: string
@@ -37,228 +58,381 @@ type ReceiptData = {
 
 const styles = StyleSheet.create({
   page: {
-    padding: 40,
+    padding: 0,
     fontSize: 11,
     fontFamily: 'Cairo',
     backgroundColor: '#ffffff',
+    direction: 'rtl',
   },
+
+  outerFrame: {
+    position: 'absolute',
+    top: 18,
+    left: 18,
+    right: 18,
+    bottom: 18,
+    borderWidth: 2.5,
+    borderColor: C.navy,
+    borderRadius: 4,
+  },
+  innerFrame: {
+    position: 'absolute',
+    top: 25,
+    left: 25,
+    right: 25,
+    bottom: 25,
+    borderWidth: 0.8,
+    borderColor: C.gold,
+    borderRadius: 2,
+  },
+
+  content: {
+    padding: 42,
+    paddingTop: 38,
+  },
+
+  // ─── Header ───
   header: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    paddingBottom: 12,
     borderBottomWidth: 2,
-    borderBottomColor: '#4F46E5',
-    paddingBottom: 15,
-    marginBottom: 20,
+    borderBottomColor: C.navy,
+    marginBottom: 12,
   },
   logoBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    backgroundColor: '#EEF2FF',
+    width: 55,
+    height: 55,
+    borderRadius: 6,
+    backgroundColor: C.lightGold,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: C.gold,
   },
-  logo: {
-    width: 60,
-    height: 60,
-    objectFit: 'contain',
-  },
+  logo: { width: 55, height: 55, borderRadius: 6 },
   logoPlaceholder: {
-    fontSize: 24,
-    color: '#4F46E5',
+    fontSize: 22,
+    color: C.navy,
     fontWeight: 'bold',
   },
-  schoolInfo: {
+  headerCenter: {
     flex: 1,
-    marginLeft: 15,
+    textAlign: 'center',
+    paddingHorizontal: 12,
   },
-  schoolName: {
-    fontSize: 18,
+  kingdomAr: {
+    fontSize: 11,
     fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 3,
+    color: C.navy,
+    textAlign: 'center',
+  },
+  kingdomFr: {
+    fontSize: 8.5,
+    fontWeight: 'bold',
+    color: C.navy,
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  schoolAr: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: C.gold,
+    textAlign: 'center',
+    marginTop: 6,
   },
   schoolSub: {
-    fontSize: 10,
-    color: '#64748B',
+    fontSize: 8.5,
+    color: C.gray,
+    textAlign: 'center',
+    marginTop: 2,
   },
   receiptBadge: {
-    backgroundColor: '#4F46E5',
+    backgroundColor: C.navy,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 4,
+    minWidth: 100,
+    alignItems: 'center',
   },
   receiptBadgeText: {
     color: '#ffffff',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
-  title: {
+
+  // ─── Title ───
+  titleBox: {
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 16,
+  },
+  titleAr: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: C.navy,
     textAlign: 'center',
-    marginBottom: 5,
+    letterSpacing: 0.5,
   },
-  subtitle: {
+  titleFr: {
     fontSize: 12,
-    color: '#64748B',
+    fontWeight: 'bold',
+    color: C.gold,
     textAlign: 'center',
-    marginBottom: 25,
+    letterSpacing: 2,
+    marginTop: 3,
   },
+  titleDivider: {
+    width: 180,
+    height: 2,
+    backgroundColor: C.gold,
+    marginTop: 8,
+  },
+
+  // ─── Info Grid ───
   infoGrid: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     flexWrap: 'wrap',
-    marginBottom: 20,
+    marginBottom: 15,
+    backgroundColor: '#fafafa',
+    borderRadius: 3,
+    padding: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: C.gold,
   },
   infoItem: {
     width: '50%',
-    marginBottom: 12,
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
-  infoLabel: {
-    fontSize: 9,
-    color: '#64748B',
+  infoLabelAr: {
+    fontSize: 8,
+    color: C.gray,
+    marginBottom: 1,
+    textAlign: 'right',
+  },
+  infoLabelFr: {
+    fontSize: 7,
+    color: C.gray,
     marginBottom: 3,
-    textTransform: 'uppercase',
+    textAlign: 'right',
+    fontStyle: 'italic',
   },
   infoValue: {
-    fontSize: 12,
-    color: '#1E293B',
+    fontSize: 11,
+    color: C.dark,
     fontWeight: 'bold',
+    textAlign: 'right',
   },
+
   divider: {
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    marginVertical: 15,
+    borderBottomColor: C.line,
+    borderBottomStyle: 'dashed',
+    marginVertical: 12,
   },
+
+  // ─── Amount Box ───
   amountBox: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    borderRadius: 10,
+    backgroundColor: C.lightGold,
+    borderWidth: 2,
+    borderColor: C.gold,
+    borderRadius: 6,
     padding: 20,
     alignItems: 'center',
     marginVertical: 15,
   },
-  amountLabel: {
+  amountLabelAr: {
     fontSize: 10,
-    color: '#166534',
-    marginBottom: 5,
+    color: C.navy,
+    marginBottom: 2,
+    fontWeight: 'bold',
+  },
+  amountLabelFr: {
+    fontSize: 8,
+    color: C.gray,
+    marginBottom: 8,
+    fontStyle: 'italic',
   },
   amountValue: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
-    color: '#166534',
+    color: C.navy,
   },
+  amountUnit: {
+    fontSize: 14,
+    color: C.gold,
+    fontWeight: 'bold',
+  },
+
+  // ─── Table ───
   table: {
     marginTop: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
+    borderColor: C.navy,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   tableHeader: {
-    backgroundColor: '#F8FAFC',
-    flexDirection: 'row',
-    paddingVertical: 8,
+    backgroundColor: C.navy,
+    flexDirection: 'row-reverse',
+    paddingVertical: 7,
     paddingHorizontal: 12,
   },
   tableRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopWidth: 0.5,
+    borderTopColor: '#e5e5e5',
+    borderTopStyle: 'dotted',
   },
-  tableColLeft: {
-    flex: 1,
-    fontSize: 10,
-    color: '#1E293B',
+  tableRowAlt: {
+    backgroundColor: '#fafafa',
   },
   tableColRight: {
-    width: 120,
+    flex: 1,
     fontSize: 10,
-    color: '#1E293B',
+    color: C.dark,
     textAlign: 'right',
+    fontWeight: 'bold',
+  },
+  tableColLeft: {
+    width: 130,
+    fontSize: 10,
+    color: C.dark,
+    textAlign: 'left',
+    fontWeight: 'bold',
   },
   tableHeaderText: {
     fontSize: 9,
-    color: '#64748B',
+    color: '#ffffff',
     fontWeight: 'bold',
     textTransform: 'uppercase',
   },
-  // ✅ Caisse info box
+
+  // ─── Cashier ───
   cashierBox: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: '#fffbeb',
     borderWidth: 1,
-    borderColor: '#FCD34D',
-    borderRadius: 8,
+    borderColor: '#fcd34d',
+    borderRadius: 4,
     padding: 12,
     marginTop: 15,
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  cashierLabel: {
-    fontSize: 9,
-    color: '#92400E',
+  cashierLabelAr: {
+    fontSize: 8.5,
+    color: '#92400e',
     marginBottom: 2,
+    textAlign: 'right',
+  },
+  cashierLabelFr: {
+    fontSize: 7,
+    color: '#92400e',
+    textAlign: 'right',
+    fontStyle: 'italic',
   },
   cashierValue: {
     fontSize: 12,
-    color: '#78350F',
+    color: '#78350f',
+    fontWeight: 'bold',
+    textAlign: 'right',
+    marginTop: 2,
+  },
+  cashierStamp: {
+    backgroundColor: EMERALD,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 3,
+  },
+  cashierStampText: {
+    color: '#ffffff',
+    fontSize: 8,
     fontWeight: 'bold',
   },
+
+  // ─── Stamp (PAGE) ───
+  stamp: {
+    position: 'absolute',
+    top: 130,
+    right: 55,
+    borderWidth: 2.5,
+    borderColor: EMERALD,
+    borderRadius: 60,
+    width: 90,
+    height: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: 'rotate(-18deg)',
+    opacity: 0.85,
+  },
+  stampAr: {
+    fontSize: 11,
+    color: EMERALD,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  stampFr: {
+    fontSize: 9,
+    color: EMERALD,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 2,
+    letterSpacing: 1,
+  },
+
+  // ─── Footer ───
   footer: {
     position: 'absolute',
-    bottom: 40,
-    left: 40,
-    right: 40,
+    bottom: 42,
+    left: 42,
+    right: 42,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: C.gold,
     paddingTop: 15,
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     justifyContent: 'space-between',
   },
   signatureBox: {
-    width: 150,
+    width: 160,
     alignItems: 'center',
+  },
+  signatureLabelAr: {
+    fontSize: 9,
+    color: C.navy,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  signatureLabelFr: {
+    fontSize: 7,
+    color: C.gray,
+    textAlign: 'center',
+    marginBottom: 40,
+    fontStyle: 'italic',
   },
   signatureLine: {
     borderTopWidth: 1,
-    borderTopColor: '#94A3B8',
+    borderTopColor: C.navy,
     width: 150,
-    marginTop: 40,
-    paddingTop: 5,
+    marginTop: 15,
+    paddingTop: 4,
   },
   signatureText: {
-    fontSize: 9,
-    color: '#64748B',
+    fontSize: 8,
+    color: C.gray,
+    textAlign: 'center',
   },
   footerNote: {
-    fontSize: 8,
-    color: '#94A3B8',
+    fontSize: 7.5,
+    color: C.gray,
     textAlign: 'center',
-    marginTop: 5,
-  },
-  stamp: {
-    position: 'absolute',
-    top: 100,
-    right: 50,
-    borderWidth: 2,
-    borderColor: '#86EFAC',
-    borderRadius: 50,
-    width: 80,
-    height: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: 'rotate(-15deg)',
-  },
-  stampText: {
-    fontSize: 10,
-    color: '#166534',
-    fontWeight: 'bold',
-    textAlign: 'center',
+    marginTop: 12,
+    fontStyle: 'italic',
   },
 })
 
@@ -275,13 +449,13 @@ function formatDate(dateStr: string): string {
 }
 
 const methodLabels: Record<string, string> = {
-  cash: 'Espèces / نقدا',
-  bank_transfer: 'Virement / تحويل بنكي',
-  transfer: 'Virement / تحويل بنكي',
-  check: 'Chèque / شيك',
-  cheque: 'Chèque / شيك',
-  card: 'Carte / بطاقة',
-  other: 'Autre / أخرى',
+  cash: 'نقداً / Espèces',
+  bank_transfer: 'تحويل بنكي / Virement',
+  transfer: 'تحويل بنكي / Virement',
+  check: 'شيك / Chèque',
+  cheque: 'شيك / Chèque',
+  card: 'بطاقة / Carte',
+  other: 'أخرى / Autre',
 }
 
 export default function PaymentReceiptPDF({ data }: { data: ReceiptData }) {
@@ -290,136 +464,174 @@ export default function PaymentReceiptPDF({ data }: { data: ReceiptData }) {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+        {/* Cadres décoratifs */}
+        <View style={styles.outerFrame} />
+        <View style={styles.innerFrame} />
 
-        {/* HEADER */}
-        <View style={styles.header}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+        <View style={styles.content}>
+          {/* ═══════ HEADER ═══════ */}
+          <View style={styles.header}>
             <View style={styles.logoBox}>
               {data.schoolLogo ? (
+                // eslint-disable-next-line jsx-a11y/alt-text
                 <Image src={data.schoolLogo} style={styles.logo} />
               ) : (
                 <Text style={styles.logoPlaceholder}>
-                  {data.schoolName.charAt(0)}
+                  {data.schoolName?.charAt(0) || 'م'}
                 </Text>
               )}
             </View>
-            <View style={styles.schoolInfo}>
-              <Text style={styles.schoolName}>{data.schoolName}</Text>
-              {data.schoolAddress && <Text style={styles.schoolSub}>{data.schoolAddress}</Text>}
-              {data.schoolPhone && <Text style={styles.schoolSub}>📞 {data.schoolPhone}</Text>}
+
+            <View style={styles.headerCenter}>
+              <Text style={styles.kingdomAr}>المملكة المغربية</Text>
+              <Text style={styles.kingdomFr}>Royaume du Maroc</Text>
+              <Text style={styles.schoolAr}>{data.schoolName}</Text>
+              {data.schoolAddress && (
+                <Text style={styles.schoolSub}>{data.schoolAddress}</Text>
+              )}
+              {data.schoolPhone && (
+                <Text style={styles.schoolSub}>📞 {data.schoolPhone}</Text>
+              )}
             </View>
-          </View>
-          <View style={styles.receiptBadge}>
-            <Text style={styles.receiptBadgeText}>N° {data.receiptNumber}</Text>
-          </View>
-        </View>
 
-        {/* TITLE */}
-        <Text style={styles.title}>REÇU DE PAIEMENT</Text>
-        <Text style={styles.subtitle}>وصل الدفع</Text>
-
-        {/* INFO GRID */}
-        <View style={styles.infoGrid}>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Date de paiement</Text>
-            <Text style={styles.infoValue}>{formatDate(data.paymentDate)}</Text>
-          </View>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>N° Reçu</Text>
-            <Text style={styles.infoValue}>{data.receiptNumber}</Text>
-          </View>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Élève / التلميذ</Text>
-            <Text style={styles.infoValue}>{data.studentName || '—'}</Text>
-          </View>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Mode de paiement</Text>
-            <Text style={styles.infoValue}>{methodLabel}</Text>
-          </View>
-          {data.reference && (
-            <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Référence</Text>
-              <Text style={styles.infoValue}>{data.reference}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.divider} />
-
-        {/* AMOUNT */}
-        <View style={styles.amountBox}>
-          <Text style={styles.amountLabel}>MONTANT PAYÉ / المبلغ المدفوع</Text>
-          <Text style={styles.amountValue}>
-            {data.amount.toFixed(2)} DH
-          </Text>
-        </View>
-
-        {/* DETAILS TABLE */}
-        <View style={styles.table}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableColLeft, styles.tableHeaderText]}>
-              Description
-            </Text>
-            <Text style={[styles.tableColRight, styles.tableHeaderText]}>
-              Montant
-            </Text>
-          </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.tableColLeft}>
-              {data.description || 'Frais de scolarité'}
-            </Text>
-            <Text style={styles.tableColRight}>
-              {data.amount.toFixed(2)} DH
-            </Text>
-          </View>
-          <View style={[styles.tableRow, { backgroundColor: '#F8FAFC' }]}>
-            <Text style={[styles.tableColLeft, { fontWeight: 'bold' }]}>
-              Total
-            </Text>
-            <Text style={[styles.tableColRight, { fontWeight: 'bold' }]}>
-              {data.amount.toFixed(2)} DH
-            </Text>
-          </View>
-        </View>
-
-        {/* ✅ CASHIER BOX */}
-        {data.cashierName && (
-          <View style={styles.cashierBox}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cashierLabel}>تم استلام المبلغ من طرف</Text>
-              <Text style={styles.cashierValue}>{data.cashierName}</Text>
-            </View>
-            <Text style={{ fontSize: 9, color: '#92400E' }}>
-              ✅ موقّع
-            </Text>
-          </View>
-        )}
-
-        {/* STAMP */}
-        <View style={styles.stamp}>
-          <Text style={styles.stampText}>PAYÉ{'\n'}مدفوع</Text>
-        </View>
-
-        {/* FOOTER */}
-        <View style={styles.footer}>
-          <View style={styles.signatureBox}>
-            <View style={styles.signatureLine}>
-              <Text style={styles.signatureText}>
-                {data.cashierName ? `توقيع ${data.cashierName.split('(')[0].trim()}` : 'Signature École'}
+            <View style={styles.receiptBadge}>
+              <Text style={styles.receiptBadgeText}>
+                N° {data.receiptNumber}
               </Text>
             </View>
           </View>
-          <View style={styles.signatureBox}>
-            <View style={styles.signatureLine}>
-              <Text style={styles.signatureText}>توقيع ولي الأمر</Text>
+
+          {/* ═══════ TITLE ═══════ */}
+          <View style={styles.titleBox}>
+            <Text style={styles.titleAr}>وصل الدفع</Text>
+            <Text style={styles.titleFr}>REÇU DE PAIEMENT</Text>
+            <View style={styles.titleDivider} />
+          </View>
+
+          {/* ═══════ INFO GRID ═══════ */}
+          <View style={styles.infoGrid}>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabelAr}>التلميذ(ة)</Text>
+              <Text style={styles.infoLabelFr}>Élève</Text>
+              <Text style={styles.infoValue}>
+                {data.studentName || '—'}
+              </Text>
             </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabelAr}>رقم الوصل</Text>
+              <Text style={styles.infoLabelFr}>N° Reçu</Text>
+              <Text style={styles.infoValue}>{data.receiptNumber}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabelAr}>تاريخ الدفع</Text>
+              <Text style={styles.infoLabelFr}>Date de paiement</Text>
+              <Text style={styles.infoValue}>
+                {formatDate(data.paymentDate)}
+              </Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabelAr}>طريقة الدفع</Text>
+              <Text style={styles.infoLabelFr}>Mode de paiement</Text>
+              <Text style={styles.infoValue}>{methodLabel}</Text>
+            </View>
+            {data.reference && (
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabelAr}>المرجع</Text>
+                <Text style={styles.infoLabelFr}>Référence</Text>
+                <Text style={styles.infoValue}>{data.reference}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* ═══════ AMOUNT ═══════ */}
+          <View style={styles.amountBox}>
+            <Text style={styles.amountLabelAr}>المبلغ المدفوع</Text>
+            <Text style={styles.amountLabelFr}>Montant payé</Text>
+            <Text style={styles.amountValue}>
+              {data.amount.toFixed(2)}
+              <Text style={styles.amountUnit}> DH</Text>
+            </Text>
+          </View>
+
+          {/* ═══════ DETAILS TABLE ═══════ */}
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableColRight, styles.tableHeaderText]}>
+                البيان
+              </Text>
+              <Text style={[styles.tableColLeft, styles.tableHeaderText]}>
+                المبلغ / Montant
+              </Text>
+            </View>
+            <View style={styles.tableRow}>
+              <Text style={styles.tableColRight}>
+                {data.description || 'الرسوم الدراسية / Frais de scolarité'}
+              </Text>
+              <Text style={styles.tableColLeft}>
+                {data.amount.toFixed(2)} DH
+              </Text>
+            </View>
+            <View style={[styles.tableRow, styles.tableRowAlt]}>
+              <Text style={[styles.tableColRight, { color: C.navy }]}>
+                المجموع / Total
+              </Text>
+              <Text style={[styles.tableColLeft, { color: C.navy }]}>
+                {data.amount.toFixed(2)} DH
+              </Text>
+            </View>
+          </View>
+
+          {/* ═══════ CASHIER BOX ═══════ */}
+          {data.cashierName && (
+            <View style={styles.cashierBox}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cashierLabelAr}>
+                  تم استلام المبلغ من طرف
+                </Text>
+                <Text style={styles.cashierLabelFr}>
+                  Montant reçu par
+                </Text>
+                <Text style={styles.cashierValue}>{data.cashierName}</Text>
+              </View>
+              <View style={styles.cashierStamp}>
+                <Text style={styles.cashierStampText}>موقّع ✓</Text>
+              </View>
+            </View>
+          )}
+
+          {/* ═══════ STAMP ═══════ */}
+          <View style={styles.stamp}>
+            <Text style={styles.stampAr}>مدفوع</Text>
+            <Text style={styles.stampFr}>PAYÉ</Text>
+          </View>
+        </View>
+
+        {/* ═══════ FOOTER ═══════ */}
+        <View style={styles.footer}>
+          <View style={styles.signatureBox}>
+            <Text style={styles.signatureLabelAr}>
+              {data.cashierName
+                ? `توقيع ${data.cashierName.split('(')[0].trim()}`
+                : 'توقيع المدرسة'}
+            </Text>
+            <Text style={styles.signatureLabelFr}>
+              Signature de l'école
+            </Text>
+            <View style={styles.signatureLine} />
+          </View>
+
+          <View style={styles.signatureBox}>
+            <Text style={styles.signatureLabelAr}>توقيع ولي الأمر</Text>
+            <Text style={styles.signatureLabelFr}>
+              Signature du parent
+            </Text>
+            <View style={styles.signatureLine} />
           </View>
         </View>
 
         <Text style={styles.footerNote} fixed>
-          Ce reçu est généré automatiquement par {data.schoolName} — Merci de conserver ce document.
+          وصل تم إنشاؤه تلقائياً — {data.schoolName} · Reçu généré automatiquement
         </Text>
-
       </Page>
     </Document>
   )
