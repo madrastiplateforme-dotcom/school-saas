@@ -13,25 +13,30 @@ import {
   ClipboardList, ShieldCheck, Mail, MessageSquare, CreditCard,
 } from 'lucide-react'
 
+// ═══════════════════════════════════════════════════
+// Menu sections
+// ═══════════════════════════════════════════════════
 const menuSections = [
   {
     title: 'PRINCIPAL',
     items: [
       { href: '/dashboard', key: 'dashboard', icon: LayoutDashboard, label: 'Tableau de bord' },
       { href: '/dashboard/enroll', key: 'enroll', icon: UserPlus, label: 'Inscription' },
-       { href: '/dashboard/users', key: 'users', icon: Users, label: 'Utilisateurs' },
+      { href: '/dashboard/users', key: 'users', icon: Users, label: 'Utilisateurs' },
       { href: '/dashboard/messages', key: 'messages', icon: MessageSquare, label: 'Messages' },
     ],
   },
- {
+{
   title: 'SCOLARITÉ',
   items: [
     { href: '/dashboard/students', key: 'students', icon: Users, label: 'Élèves' },
     { href: '/dashboard/families', key: 'families', icon: Users, label: 'Familles' },
     { href: '/dashboard/attendance', key: 'attendance', icon: CheckCircle2, label: 'Absences' },
-    { href: '/dashboard/attendance/reports', key: 'attendanceReports', icon: FileText, label: ' Rapport des absences' },
-    { href: '/dashboard/evaluations', key: 'evaluations', icon: ClipboardList, label: 'Évaluations & Notes' }, // ← زيد
-    { href: '/dashboard/bulletins', key: 'bulletins', icon: FileText, label: 'Bulletins' }, // ← زيد
+    { href: '/dashboard/attendance/reports', key: 'attendanceReports', icon: FileText, label: 'Rapport des absences' },
+    { href: '/dashboard/discipline', key: 'discipline', icon: Shield, label: 'Discipline' },
+    { href: '/dashboard/meetings', key: 'meetings', icon: Users, label: 'Réunions parents' },  // ← جديد
+    { href: '/dashboard/evaluations', key: 'evaluations', icon: ClipboardList, label: 'Évaluations & Notes' },
+    { href: '/dashboard/bulletins', key: 'bulletins', icon: FileText, label: 'Bulletins' },
   ],
 },
   {
@@ -56,16 +61,34 @@ const settingsItems = [
   { href: '/dashboard/subjects', key: 'subjects', icon: BookOpen, label: 'Matières' },
   { href: '/dashboard/teacher-subjects', key: 'teacherSubjects', icon: Link2, label: 'Enseignants ↔ Matières' },
   { href: '/dashboard/timetable', key: 'timetable', icon: Calendar, label: 'Emploi du temps' },
-  { href: '/dashboard/evaluation-types', key: 'evalTypes', icon: ClipboardList, label: 'Types d\'évaluation' }, // ← زيد
+  { href: '/dashboard/evaluation-types', key: 'evalTypes', icon: ClipboardList, label: "Types d'évaluation" },
   { href: '/dashboard/services', key: 'services', icon: Wrench, label: 'Services' },
   { href: '/dashboard/personnel', key: 'personnel', icon: Users, label: 'Personnel' },
   { href: '/dashboard/school-settings', key: 'schoolSettings', icon: Settings, label: 'Gestion de durée' },
-  { href: '/dashboard/billing', key: 'billing', icon: CreditCard, label: 'Abbonnements' },
+  { href: '/dashboard/billing', key: 'billing', icon: CreditCard, label: 'Abonnements' },
   { href: '/dashboard/settings/email', key: 'email', icon: Mail, label: 'Email' },
   { href: '/dashboard/roles', key: 'roles', icon: Shield, label: 'Rôles' },
   { href: '/dashboard/settings', key: 'settings', icon: Settings, label: 'Paramètres' },
   { href: '/dashboard/settings/privacy', key: 'privacy', icon: ShieldCheck, label: 'الخصوصية' },
 ]
+
+// ═══════════════════════════════════════════════════
+// All sections unified
+// ═══════════════════════════════════════════════════
+const allSections = [
+  ...menuSections,
+  { title: 'PARAMÈTRES', items: settingsItems },
+]
+
+const DEFAULT_OPEN: Record<string, boolean> = {
+  PRINCIPAL: true,
+  SCOLARITÉ: true,
+  FINANCE: true,
+  PARAMÈTRES: false,
+}
+
+const STORAGE_KEY = 'dashboard_menu_sections'
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -74,7 +97,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [userEmail, setUserEmail] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [assistanceName, setAssistanceName] = useState<string | null>(null)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // ─── Menu sections state ───
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(DEFAULT_OPEN)
+  const prevActiveRef = useRef<string | null>(null)
 
   // Notifications
   const [notifications, setNotifications] = useState<any[]>([])
@@ -82,10 +108,50 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
 
+  // ─── Load saved sections state ───
   useEffect(() => {
-    const isInSettings = settingsItems.some((item) => pathname.startsWith(item.href))
-    if (isInSettings) setSettingsOpen(true)
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        setOpenSections({ ...DEFAULT_OPEN, ...parsed })
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  // ─── Auto-open section containing active page (only on section change) ───
+  useEffect(() => {
+    const activeSection = allSections.find((sec) =>
+      sec.items.some((item) => {
+        if (item.href === '/dashboard') return pathname === item.href
+        return pathname.startsWith(item.href)
+      }),
+    )
+    if (activeSection && activeSection.title !== prevActiveRef.current) {
+      prevActiveRef.current = activeSection.title
+      setOpenSections((prev) => {
+        if (prev[activeSection.title]) return prev
+        const next = { ...prev, [activeSection.title]: true }
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+        } catch {}
+        return next
+      })
+    }
   }, [pathname])
+
+  // ─── Toggle section ───
+  const toggleSection = (title: string) => {
+    setOpenSections((prev) => {
+      const next = { ...prev, [title]: !prev[title] }
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }
 
   // Close bell mli tclicki berra
   useEffect(() => {
@@ -109,7 +175,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
       setUserEmail(user.email || '')
 
-      // Jib notifications (bla realtime)
       loadNotifications(user.id)
 
       if (assistId) {
@@ -203,6 +268,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return pathname.startsWith(href)
   }
 
+  const sectionHasActive = (items: any[]) =>
+    items.some((item) => {
+      if (item.href === '/dashboard') return pathname === item.href
+      return pathname.startsWith(item.href)
+    })
+
   const formatTime = (dateStr: string) => {
     const d = new Date(dateStr)
     const now = new Date()
@@ -250,61 +321,63 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </p>
           </div>
 
-          <nav className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
-            {menuSections.map((section) => (
-              <div key={section.title}>
-                <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[.18em] text-emerald-300/60">
-                  {section.title}
-                </p>
-                <div className="space-y-0.5">
-                  {section.items.map((item) => {
-                    const active = isActive(item.href)
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        style={active ? { backgroundColor: '#34d399', color: '#082c27' } : undefined}
-                        className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition ${
-                          active ? 'shadow-lg shadow-emerald-950/20' : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                        }`}
-                      >
-                        <item.icon className="h-5 w-5 flex-shrink-0" />
-                        <span className="truncate">{item.label}</span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
+          <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-5">
+            {allSections.map((section) => {
+              const isOpen = openSections[section.title] ?? false
+              const hasActive = sectionHasActive(section.items)
 
-            <div>
-              <button
-                onClick={() => setSettingsOpen(!settingsOpen)}
-                className="w-full flex items-center justify-between px-3 pb-2 text-[10px] font-bold uppercase tracking-[.18em] text-emerald-300/60 hover:text-emerald-300 transition"
-              >
-                <span>PARAMÈTRES</span>
-                <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${settingsOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              <div className={`space-y-0.5 overflow-hidden transition-all duration-300 ${settingsOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                {settingsItems.map((item) => {
-                  const active = isActive(item.href)
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      style={active ? { backgroundColor: '#34d399', color: '#082c27' } : undefined}
-                      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition ${
-                        active ? 'shadow-lg shadow-emerald-950/20' : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              return (
+                <div key={section.title}>
+                  <button
+                    onClick={() => toggleSection(section.title)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-[.18em] text-emerald-300/60 hover:text-emerald-300 transition"
+                  >
+                    <span className="flex items-center gap-2">
+                      {section.title}
+                      {hasActive && !isOpen && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      )}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform duration-200 ${
+                        isOpen ? 'rotate-180' : ''
                       }`}
-                    >
-                      <item.icon className="h-5 w-5 flex-shrink-0" />
-                      <span className="truncate">{item.label}</span>
-                    </Link>
-                  )
-                })}
-              </div>
-            </div>
+                    />
+                  </button>
+
+                  <div
+                    className={`space-y-0.5 overflow-hidden transition-all duration-300 ${
+                      isOpen
+                        ? 'max-h-[800px] opacity-100 mt-1'
+                        : 'max-h-0 opacity-0 pointer-events-none'
+                    }`}
+                  >
+                    {section.items.map((item) => {
+                      const active = isActive(item.href)
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          style={
+                            active
+                              ? { backgroundColor: '#34d399', color: '#082c27' }
+                              : undefined
+                          }
+                          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition ${
+                            active
+                              ? 'shadow-lg shadow-emerald-950/20'
+                              : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          <item.icon className="h-5 w-5 flex-shrink-0" />
+                          <span className="truncate">{item.label}</span>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
           </nav>
 
           <div className="space-y-2 border-t border-white/10 p-4">

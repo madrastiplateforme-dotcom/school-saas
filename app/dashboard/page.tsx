@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import DirectorWidgets from '@/components/dashboard/DirectorWidgets'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LineChart, Line, CartesianGrid,
@@ -334,7 +335,7 @@ export default function DashboardPage() {
 
   if (loading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
   if (!isDirector && !isSecretary) return <div className="p-6">ليس لديك صلاحية</div>
-
+  
   return (
     <div className="p-6 space-y-6" dir="rtl">
 
@@ -530,7 +531,7 @@ export default function DashboardPage() {
           </div>
         </button>
       </div>
-
+<DirectorWidgets />
       {/* CAISSES SECTION - CLICKABLE */}
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-center justify-between mb-4">

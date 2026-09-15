@@ -7,6 +7,7 @@ import {
   Sparkles, Users, Wallet, Calendar, FileText, MessageSquare, Lock,
   TrendingUp, Clock, BookOpen, Star, Phone, Mail, MapPin, Globe,
   UserCog, HeartHandshake, Zap, PlayCircle,
+  Smartphone, ClipboardCheck, Gavel, UserCheck, Send, Palette,
 } from 'lucide-react'
 
 // ============ TRANSLATIONS ============
@@ -62,6 +63,21 @@ const T = {
         { title: 'أمان وحماية البيانات', text: 'توافق مع القانون 09-08، تشفير، ونسخ احتياطي تلقائي.' },
       ],
     },
+    advanced: {
+      kicker: 'حلول متكاملة',
+      title: 'كل منصة في مكان واحد',
+      desc: 'من القسم إلى ولي الأمر، من الهاتف إلى المكتب — كل ما تحتاجه مدرستك في منصة واحدة.',
+      items: [
+        { title: 'لوحة الأستاذ', text: 'تسجيل النقط، الحضور، جدول الحصص، والرسائل — من الهاتف مباشرة.' },
+        { title: 'فضاء الأولياء', text: 'نقط، غيابات، أقساط، كشوف، شهادات، دفتر النصوص، والفروض — كل شي في التطبيق.' },
+        { title: 'الانضباط والسلوك', text: 'تسجيل المخالفات، إشعار الأولياء، ومتابعة السلوك لكل تلميذ.' },
+        { title: 'لقاءات الأولياء', text: 'حجز مواعيد اللقاء مع الأساتذة، تأكيد تلقائي وتذكيرات بالإيميل.' },
+        { title: 'لوحة ذكية + Widgets', text: 'معلومات فورية: فرض قادم، قسط جاي، غياب اليوم، إشعارات، وأرقام حيّة.' },
+        { title: 'تطبيق على الهاتف', text: 'ثبّت المنصة على هاتفك مباشرة كتطبيق (PWA) — بلا متجر.' },
+        { title: 'إيميلات تلقائية', text: 'رسائل آلية ب AR/FR: ترحيب، تسجيل دخول، غياب، مخالفة، فاتورة، ومواعيد.' },
+        { title: 'PDF احترافي ب AR/FR', text: '6 قوالب PDF رسمية: كشوف، عقود، وصولات، تسويات، جداول، وشهادات.' },
+      ],
+    },
     roles: {
       kicker: 'مصمم للجميع',
       title: 'واجهة خاصة لكل مستخدم',
@@ -82,57 +98,57 @@ const T = {
         { name: 'الأستاذ يوسف', role: 'مدير إعدادية - مراكش', text: 'أفضل استثمار قمت به لإدارتي. الدعم سريع والمنصة تتطور باستمرار.' },
       ],
     },
-   pricing: {
-  kicker: 'أسعار واضحة',
-  title: 'ادفع حسب عدد تلاميذك',
-  desc: 'ابدأ بـ 20 تلميذاً مجاناً. ثم 1.5 درهم فقط لكل تلميذ إضافي في الشهر.',
-  currency: 'د.م / تلميذ / شهر',
-  popular: 'الأكثر اختياراً',
-  footer: '20 تلميذاً مجاناً · بدون التزام · إلغاء في أي وقت',
-  plans: [
-    {
-      name: 'تجريبية',
-      description: 'للتجربة والانطلاق',
-      items: ['حتى 20 تلميذاً', 'كل الوظائف الأساسية', 'دعم عبر البريد', 'بدون بطاقة بنكية'],
-      cta: 'ابدأ مجاناً',
+    pricing: {
+      kicker: 'أسعار واضحة',
+      title: 'ادفع حسب عدد تلاميذك',
+      desc: 'ابدأ بـ 20 تلميذاً مجاناً. ثم 1.5 درهم فقط لكل تلميذ إضافي في الشهر.',
+      currency: 'د.م / تلميذ / شهر',
+      popular: 'الأكثر اختياراً',
+      footer: '20 تلميذاً مجاناً · بدون التزام · إلغاء في أي وقت',
+      plans: [
+        {
+          name: 'تجريبية',
+          description: 'للتجربة والانطلاق',
+          items: ['حتى 20 تلميذاً', 'كل الوظائف الأساسية', 'دعم عبر البريد', 'بدون بطاقة بنكية'],
+          cta: 'ابدأ مجاناً',
+        },
+        {
+          name: 'قياسية',
+          description: 'للمدارس النامية',
+          items: [
+            'كل الوظائف الكاملة',
+            'المالية، النقط، جدول الحصص',
+            'الرسائل والإشعارات',
+            'دعم بالأولوية',
+          ],
+          examples: [
+            { students: '100 تلميذ', price: '120 د.م / شهر' },
+            { students: '300 تلميذ', price: '420 د.م / شهر' },
+          ],
+          cta: 'ابدأ الآن',
+        },
+        {
+          name: 'احترافية',
+          description: 'للمؤسسات الكبيرة',
+          items: [
+            'كل ما في القياسية',
+            'إشعارات بريد متقدمة (قوالب مخصصة)',
+            'دعم متعدد المدارس',
+            'مدير حساب مخصص',
+          ],
+          examples: [
+            { students: '500 تلميذ', price: '720 د.م / شهر' },
+            { students: '1000 تلميذ', price: '1470 د.م / شهر' },
+          ],
+          cta: 'اختر الاحترافية',
+        },
+      ],
     },
-    {
-      name: 'قياسية',
-      description: 'للمدارس النامية',
-      items: [
-        'كل الوظائف الكاملة',
-        'المالية، النقط، جدول الحصص',
-        'الرسائل والإشعارات',
-        'دعم بالأولوية',
-      ],
-      examples: [
-        { students: '100 تلميذ', price: '120 د.م / شهر' },
-        { students: '300 تلميذ', price: '420 د.م / شهر' },
-      ],
-      cta: 'ابدأ الآن',
-    },
-    {
-      name: 'احترافية',
-      description: 'للمؤسسات الكبيرة',
-      items: [
-        'كل ما في القياسية',
-        'إشعارات بريد متقدمة (قوالب مخصصة)',
-        'دعم متعدد المدارس',
-        'مدير حساب مخصص',
-      ],
-      examples: [
-        { students: '500 تلميذ', price: '720 د.م / شهر' },
-        { students: '1000 تلميذ', price: '1470 د.م / شهر' },
-      ],
-      cta: 'اختر الاحترافية',
-    },
-  ],
-},
     faq: {
       kicker: 'أسئلة شائعة',
       title: 'لديك سؤال؟ عندنا الجواب',
       items: [
-       { q: 'هل المنصة مجانية حقاً؟', a: 'نعم، 20 تلميذاً مجاناً إلى الأبد. من بعد، تدفع 1.5 درهم فقط لكل تلميذ إضافي في الشهر. مثال: 100 تلميذ = 120 درهم شهرياً.' },
+        { q: 'هل المنصة مجانية حقاً؟', a: 'نعم، 20 تلميذاً مجاناً إلى الأبد. من بعد، تدفع 1.5 درهم فقط لكل تلميذ إضافي في الشهر. مثال: 100 تلميذ = 120 درهم شهرياً.' },
         { q: 'هل بياناتي آمنة؟', a: 'بياناتك مشفّرة ومحفوظة على خوادم آمنة. نتوافق مع القانون المغربي 09-08 لحماية المعطيات الشخصية، مع نسخ احتياطي يومي.' },
         { q: 'هل يمكنني إلغاء الاشتراك في أي وقت؟', a: 'بالتأكيد. لا توجد أي التزامات طويلة الأمد. يمكنك الإلغاء بنقرة واحدة من لوحة التحكم.' },
         { q: 'هل تدعم المنصة Massar؟', a: 'قريباً، خطة الاحترافية ستشمل التكامل مع منظومة Massar لتبادل معلومات التلاميذ بسهولة.' },
@@ -212,6 +228,21 @@ const T = {
         { title: 'Sécurité & protection', text: 'Conformité loi 09-08, chiffrement et sauvegarde automatique.' },
       ],
     },
+    advanced: {
+      kicker: 'Solutions intégrées',
+      title: 'Tout-en-un. Pour toute votre école.',
+      desc: 'De la classe au parent, du téléphone au bureau — tout ce dont votre école a besoin en une plateforme.',
+      items: [
+        { title: 'Espace Enseignant', text: 'Saisie des notes, présence, emploi du temps et messages — directement depuis le téléphone.' },
+        { title: 'Espace Parent complet', text: 'Notes, absences, paiements, bulletins, certificats, cahier de textes et devoirs — tout dans l\'app.' },
+        { title: 'Discipline & Sanctions', text: 'Enregistrez les infractions, notifiez les parents et suivez le comportement de chaque élève.' },
+        { title: 'Réunions parents-profs', text: 'Réservation de créneaux en ligne, confirmation automatique et rappels par email.' },
+        { title: 'Widgets intelligents', text: 'Infos instantanées : devoir à venir, paiement, absence du jour, notifications et données en direct.' },
+        { title: 'Application mobile', text: 'Installez la plateforme sur votre téléphone comme une vraie app (PWA) — sans store.' },
+        { title: 'Emails automatiques', text: 'Messages bilingues AR/FR : bienvenue, identifiants, absence, discipline, facture et rendez-vous.' },
+        { title: 'PDF pro AR/FR', text: '6 modèles PDF officiels : bulletins, contrats, reçus, régularisations, emplois du temps et certificats.' },
+      ],
+    },
     roles: {
       kicker: 'Pensé pour tous',
       title: 'Une interface pour chaque utilisateur',
@@ -233,56 +264,56 @@ const T = {
       ],
     },
     pricing: {
-  kicker: 'Tarifs transparents',
-  title: 'Payez selon votre nombre d\'élèves',
-  desc: 'Commencez avec 20 élèves gratuits. Ensuite, seulement 1,5 DH par élève supplémentaire par mois.',
-  currency: 'DH / élève / mois',
-  popular: 'Le plus choisi',
-  footer: '20 élèves gratuits · Sans engagement · Annulation à tout moment',
-  plans: [
-    {
-      name: 'Gratuit',
-      description: 'Pour tester',
-      items: ['Jusqu\'à 20 élèves', 'Toutes les fonctions de base', 'Support par email', 'Sans carte bancaire'],
-      cta: 'Commencer gratuitement',
+      kicker: 'Tarifs transparents',
+      title: 'Payez selon votre nombre d\'élèves',
+      desc: 'Commencez avec 20 élèves gratuits. Ensuite, seulement 1,5 DH par élève supplémentaire par mois.',
+      currency: 'DH / élève / mois',
+      popular: 'Le plus choisi',
+      footer: '20 élèves gratuits · Sans engagement · Annulation à tout moment',
+      plans: [
+        {
+          name: 'Gratuit',
+          description: 'Pour tester',
+          items: ['Jusqu\'à 20 élèves', 'Toutes les fonctions de base', 'Support par email', 'Sans carte bancaire'],
+          cta: 'Commencer gratuitement',
+        },
+        {
+          name: 'Standard',
+          description: 'Écoles en croissance',
+          items: [
+            'Toutes les fonctions complètes',
+            'Finances, notes, emploi du temps',
+            'Messages et notifications',
+            'Support prioritaire',
+          ],
+          examples: [
+            { students: '100 élèves', price: '120 DH / mois' },
+            { students: '300 élèves', price: '420 DH / mois' },
+          ],
+          cta: 'Commencer maintenant',
+        },
+        {
+          name: 'Pro',
+          description: 'Grands établissements',
+          items: [
+            'Tout Standard inclus',
+            'Notifications email avancées (modèles personnalisés)',
+            'Multi-écoles',
+            'Gestionnaire dédié',
+          ],
+          examples: [
+            { students: '500 élèves', price: '720 DH / mois' },
+            { students: '1000 élèves', price: '1470 DH / mois' },
+          ],
+          cta: 'Choisir Pro',
+        },
+      ],
     },
-    {
-      name: 'Standard',
-      description: 'Écoles en croissance',
-      items: [
-        'Toutes les fonctions complètes',
-        'Finances, notes, emploi du temps',
-        'Messages et notifications',
-        'Support prioritaire',
-      ],
-      examples: [
-        { students: '100 élèves', price: '120 DH / mois' },
-        { students: '300 élèves', price: '420 DH / mois' },
-      ],
-      cta: 'Commencer maintenant',
-    },
-    {
-      name: 'Pro',
-      description: 'Grands établissements',
-      items: [
-        'Tout Standard inclus',
-        'Notifications email avancées (modèles personnalisés)',
-        'Multi-écoles',
-        'Gestionnaire dédié',
-      ],
-      examples: [
-        { students: '500 élèves', price: '720 DH / mois' },
-        { students: '1000 élèves', price: '1470 DH / mois' },
-      ],
-      cta: 'Choisir Pro',
-    },
-  ],
-},
     faq: {
       kicker: 'FAQ',
       title: 'Une question ? Nous avons la réponse',
       items: [
-       { q: 'La plateforme est-elle vraiment gratuite ?', a: 'Oui, 20 élèves gratuits à vie. Ensuite, seulement 1,5 DH par élève supplémentaire par mois. Exemple : 100 élèves = 120 DH/mois.' },
+        { q: 'La plateforme est-elle vraiment gratuite ?', a: 'Oui, 20 élèves gratuits à vie. Ensuite, seulement 1,5 DH par élève supplémentaire par mois. Exemple : 100 élèves = 120 DH/mois.' },
         { q: 'Mes données sont-elles sécurisées ?', a: 'Vos données sont chiffrées et hébergées sur des serveurs sécurisés. Conformité à la loi marocaine 09-08, avec sauvegarde quotidienne.' },
         { q: 'Puis-je résilier à tout moment ?', a: 'Absolument. Aucun engagement à long terme. Résiliation en un clic depuis le tableau de bord.' },
         { q: 'La plateforme supporte-t-elle Massar ?', a: 'Bientôt, l\'offre Pro inclura l\'intégration avec Massar pour échanger les informations élèves.' },
@@ -381,7 +412,6 @@ export default function Home() {
           </nav>
 
           <div className="flex items-center gap-2">
-            {/* Language switcher */}
             <div className="flex items-center rounded-xl border border-white/20 bg-white/5 p-0.5">
               <button
                 onClick={() => setLang('ar')}
@@ -485,11 +515,11 @@ export default function Home() {
 
               <div className="mt-4 rounded-2xl bg-slate-50 p-4">
                 <div className="mb-4 flex items-center justify-between text-sm">
-  <span className="font-bold">{t.mockup.collect}</span>
-  <span className="text-emerald-700">
-    <Num>+12.5%</Num>
-  </span>
-</div>
+                  <span className="font-bold">{t.mockup.collect}</span>
+                  <span className="text-emerald-700">
+                    <Num>+12.5%</Num>
+                  </span>
+                </div>
                 <div className="flex h-24 items-end gap-2">
                   {[38, 58, 46, 76, 63, 92, 82].map((height, i) => (
                     <span
@@ -502,7 +532,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Floating cards */}
             <div className={`absolute ${lang === 'ar' ? '-left-8' : '-right-8'} top-32 hidden lg:block`}>
               <div className="rounded-2xl bg-white p-3 shadow-xl">
                 <div className="flex items-center gap-2">
@@ -512,8 +541,8 @@ export default function Home() {
                   <div>
                     <p className="text-[10px] text-slate-500">{t.mockup.remaining}</p>
                     <p className="text-xs font-bold text-rose-600">
-  <Num>2 500 DH</Num>
-</p>
+                      <Num>2 500 DH</Num>
+                    </p>
                   </div>
                 </div>
               </div>
@@ -528,8 +557,8 @@ export default function Home() {
                   <div>
                     <p className="text-[10px] text-slate-500">{t.mockup.success}</p>
                     <p className="text-xs font-bold text-emerald-600">
-  <Num>87%</Num>
-</p> 
+                      <Num>87%</Num>
+                    </p>
                   </div>
                 </div>
               </div>
@@ -541,13 +570,13 @@ export default function Home() {
         <div className="border-t border-white/10 bg-black/20 backdrop-blur-sm">
           <div className="mx-auto grid max-w-7xl grid-cols-2 gap-6 px-5 py-8 lg:grid-cols-4 lg:px-8">
             {t.stats.map(s => (
-  <div key={s.label} className="text-center">
-    <p className="text-3xl font-black text-white">
-      <Num>{s.value}</Num>
-    </p>
-    <p className="mt-1 text-xs text-white/60">{s.label}</p>
-  </div>
-))}
+              <div key={s.label} className="text-center">
+                <p className="text-3xl font-black text-white">
+                  <Num>{s.value}</Num>
+                </p>
+                <p className="mt-1 text-xs text-white/60">{s.label}</p>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -616,206 +645,248 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ============ ROLES ============ */}
-      <section id="roles" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+      {/* ============ ADVANCED MODULES ============ */}
+      <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
-          <p className="page-kicker">{t.roles.kicker}</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.roles.title}</h2>
-          <p className="mt-4 leading-7 text-slate-500">{t.roles.desc}</p>
+          <p className="page-kicker">{t.advanced.kicker}</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
+            {t.advanced.title}
+          </h2>
+          <p className="mt-4 leading-7 text-slate-500">{t.advanced.desc}</p>
         </div>
 
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {t.roles.items.map((r, i) => {
-            const Icon = roleIcons[i]
-            const gradient = roleGradients[i]
+          {t.advanced.items.map((adv, i) => {
+            const icons = [ClipboardCheck, Users, Gavel, Calendar, BarChart3, Smartphone, Send, Palette]
+            const Icon = icons[i]
+            const gradients = [
+              'from-sky-500 to-sky-700',
+              'from-indigo-500 to-indigo-700',
+              'from-rose-500 to-rose-700',
+              'from-emerald-500 to-emerald-700',
+              'from-amber-500 to-amber-700',
+              'from-violet-500 to-violet-700',
+              'from-cyan-500 to-cyan-700',
+              'from-orange-500 to-orange-700',
+            ]
+            const gradient = gradients[i]
             return (
-              <div
+              <article
                 key={i}
-                className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:shadow-xl"
+                className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-xl"
               >
                 <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-l ${gradient}`} />
-                <span className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md`}>
+                <span
+                  className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md`}
+                >
                   <Icon className="h-6 w-6" />
                 </span>
-                <h3 className="mt-5 text-lg font-extrabold">{r.title}</h3>
-                <p className="mt-2 text-sm leading-7 text-slate-500">{r.text}</p>
-              </div>
+                <h3 className="mt-5 text-base font-extrabold">{adv.title}</h3>
+                <p className="mt-2 text-sm leading-7 text-slate-500">{adv.text}</p>
+              </article>
             )
           })}
         </div>
       </section>
 
-      {/* ============ TESTIMONIALS ============ */}
-      <section className="border-y border-slate-100 bg-white py-20">
+      {/* ============ ROLES ============ */}
+      <section id="roles" className="border-y border-slate-100 bg-white py-20">
         <div className="mx-auto max-w-7xl px-5 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="page-kicker">{t.testimonials.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-              {t.testimonials.title}
-            </h2>
+            <p className="page-kicker">{t.roles.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.roles.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.roles.desc}</p>
           </div>
 
-          <div className="mt-12 grid gap-5 md:grid-cols-3">
-            {t.testimonials.items.map((tst, i) => (
-              <div key={i} className="rounded-2xl border border-slate-100 bg-slate-50/40 p-6">
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: 5 }).map((_, k) => (
-                    <Star key={k} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                  ))}
-                </div>
-                <p className="mt-4 text-sm leading-7 text-slate-700">"{tst.text}"</p>
-                <div className="mt-5 flex items-center gap-3 border-t border-slate-200 pt-4">
-                  <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 font-bold text-emerald-700">
-                    {tst.name.charAt(0)}
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {t.roles.items.map((r, i) => {
+              const Icon = roleIcons[i]
+              const gradient = roleGradients[i]
+              return (
+                <div
+                  key={i}
+                  className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:shadow-xl"
+                >
+                  <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-l ${gradient}`} />
+                  <span className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md`}>
+                    <Icon className="h-6 w-6" />
                   </span>
-                  <div>
-                    <p className="text-sm font-bold">{tst.name}</p>
-                    <p className="text-xs text-slate-500">{tst.role}</p>
-                  </div>
+                  <h3 className="mt-5 text-lg font-extrabold">{r.title}</h3>
+                  <p className="mt-2 text-sm leading-7 text-slate-500">{r.text}</p>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </section>
-{/* ============ PRICING ============ */}
-<section id="pricing" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-  <div className="text-center">
-    <p className="page-kicker">{t.pricing.kicker}</p>
-    <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.pricing.title}</h2>
-    <p className="mt-4 leading-7 text-slate-500">{t.pricing.desc}</p>
-  </div>
 
-  <div className="mt-12 grid gap-5 lg:grid-cols-3">
-    {t.pricing.plans.map((plan, i) => {
-      const featured = i === 1
-      const isGratuit = i === 0
+      {/* ============ TESTIMONIALS ============ */}
+      <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+        <div className="mx-auto max-w-2xl text-center">
+          <p className="page-kicker">{t.testimonials.kicker}</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
+            {t.testimonials.title}
+          </h2>
+        </div>
 
-      return (
-        <article
-          key={i}
-          className={`relative rounded-[1.35rem] border p-7 transition ${
-            featured
-              ? 'border-emerald-600 bg-[#0b4c42] text-white shadow-2xl shadow-emerald-900/25 lg:scale-105'
-              : 'border-slate-200 bg-white hover:border-emerald-200'
-          }`}
-        >
-          {featured && (
-            <span className="absolute -top-3 right-6 rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-amber-950">
-              {t.pricing.popular}
-            </span>
-          )}
+        <div className="mt-12 grid gap-5 md:grid-cols-3">
+          {t.testimonials.items.map((tst, i) => (
+            <div key={i} className="rounded-2xl border border-slate-100 bg-slate-50/40 p-6">
+              <div className="flex items-center gap-1">
+                {Array.from({ length: 5 }).map((_, k) => (
+                  <Star key={k} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                ))}
+              </div>
+              <p className="mt-4 text-sm leading-7 text-slate-700">"{tst.text}"</p>
+              <div className="mt-5 flex items-center gap-3 border-t border-slate-200 pt-4">
+                <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 font-bold text-emerald-700">
+                  {tst.name.charAt(0)}
+                </span>
+                <div>
+                  <p className="text-sm font-bold">{tst.name}</p>
+                  <p className="text-xs text-slate-500">{tst.role}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
-          <p className={`font-bold ${featured ? 'text-emerald-200' : 'text-emerald-700'}`}>
-            {plan.name}
-          </p>
-          <p className={`mt-2 text-sm ${featured ? 'text-emerald-100/80' : 'text-slate-400'}`}>
-            {plan.description}
-          </p>
-
-          {/* Price */}
-          <div className="mt-6 flex items-end gap-2 flex-wrap">
-            {isGratuit ? (
-              <>
-                <span className="text-4xl font-black">
-                  <Num>0</Num>
-                </span>
-                <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
-                  درهم
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="text-4xl font-black">
-                  <Num>1.5</Num>
-                </span>
-                <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
-                  {t.pricing.currency}
-                </span>
-              </>
-            )}
+      {/* ============ PRICING ============ */}
+      <section id="pricing" className="border-y border-slate-100 bg-white py-20">
+        <div className="mx-auto max-w-7xl px-5 lg:px-8">
+          <div className="text-center">
+            <p className="page-kicker">{t.pricing.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.pricing.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.pricing.desc}</p>
           </div>
 
-          {/* Examples */}
-          {!isGratuit && (plan as any).examples && (
-            <div className={`mt-4 rounded-xl p-3 space-y-1.5 ${
-              featured ? 'bg-white/10' : 'bg-slate-50'
-            }`}>
-              {(plan as any).examples.map((ex: any, k: number) => (
-                <div
-                  key={k}
-                  className={`flex items-center justify-between text-xs ${
-                    featured ? 'text-emerald-100' : 'text-slate-600'
+          <div className="mt-12 grid gap-5 lg:grid-cols-3">
+            {t.pricing.plans.map((plan, i) => {
+              const featured = i === 1
+              const isGratuit = i === 0
+
+              return (
+                <article
+                  key={i}
+                  className={`relative rounded-[1.35rem] border p-7 transition ${
+                    featured
+                      ? 'border-emerald-600 bg-[#0b4c42] text-white shadow-2xl shadow-emerald-900/25 lg:scale-105'
+                      : 'border-slate-200 bg-white hover:border-emerald-200'
                   }`}
                 >
-                  <span>{ex.students}</span>
-                  <span className="font-bold">
-                    <Num>{ex.price}</Num>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+                  {featured && (
+                    <span className="absolute -top-3 right-6 rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-amber-950">
+                      {t.pricing.popular}
+                    </span>
+                  )}
 
-          {/* Features */}
-          <ul className="mt-6 space-y-3">
-            {plan.items.map((item, k) => (
-              <li
-                key={k}
-                className={`flex items-center gap-2 text-sm ${
-                  featured ? 'text-white/90' : 'text-slate-600'
-                }`}
-              >
-                <Check className="h-4 w-4 shrink-0 text-emerald-400" />
-                {item}
-              </li>
-            ))}
-          </ul>
+                  <p className={`font-bold ${featured ? 'text-emerald-200' : 'text-emerald-700'}`}>
+                    {plan.name}
+                  </p>
+                  <p className={`mt-2 text-sm ${featured ? 'text-emerald-100/80' : 'text-slate-400'}`}>
+                    {plan.description}
+                  </p>
 
-          <Link
-            href="/register"
-            className={`mt-8 flex items-center justify-center rounded-xl px-4 py-3 text-sm font-bold transition ${
-              featured
-                ? 'bg-white text-[#0b4c42] hover:bg-emerald-50'
-                : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-            }`}
-          >
-            {plan.cta}
-          </Link>
-        </article>
-      )
-    })}
-  </div>
+                  <div className="mt-6 flex items-end gap-2 flex-wrap">
+                    {isGratuit ? (
+                      <>
+                        <span className="text-4xl font-black">
+                          <Num>0</Num>
+                        </span>
+                        <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
+                          درهم
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-4xl font-black">
+                          <Num>1.5</Num>
+                        </span>
+                        <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
+                          {t.pricing.currency}
+                        </span>
+                      </>
+                    )}
+                  </div>
 
-  <p className="mt-8 text-center text-sm text-slate-500">{t.pricing.footer}</p>
-</section>
+                  {!isGratuit && (plan as any).examples && (
+                    <div className={`mt-4 rounded-xl p-3 space-y-1.5 ${
+                      featured ? 'bg-white/10' : 'bg-slate-50'
+                    }`}>
+                      {(plan as any).examples.map((ex: any, k: number) => (
+                        <div
+                          key={k}
+                          className={`flex items-center justify-between text-xs ${
+                            featured ? 'text-emerald-100' : 'text-slate-600'
+                          }`}
+                        >
+                          <span>{ex.students}</span>
+                          <span className="font-bold">
+                            <Num>{ex.price}</Num>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <ul className="mt-6 space-y-3">
+                    {plan.items.map((item, k) => (
+                      <li
+                        key={k}
+                        className={`flex items-center gap-2 text-sm ${
+                          featured ? 'text-white/90' : 'text-slate-600'
+                        }`}
+                      >
+                        <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <Link
+                    href="/register"
+                    className={`mt-8 flex items-center justify-center rounded-xl px-4 py-3 text-sm font-bold transition ${
+                      featured
+                        ? 'bg-white text-[#0b4c42] hover:bg-emerald-50'
+                        : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                    }`}
+                  >
+                    {plan.cta}
+                  </Link>
+                </article>
+              )
+            })}
+          </div>
+
+          <p className="mt-8 text-center text-sm text-slate-500">{t.pricing.footer}</p>
+        </div>
+      </section>
 
       {/* ============ FAQ ============ */}
-      <section id="faq" className="border-y border-slate-100 bg-white py-20">
-        <div className="mx-auto max-w-3xl px-5 lg:px-8">
-          <div className="text-center">
-            <p className="page-kicker">{t.faq.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.faq.title}</h2>
-          </div>
+      <section id="faq" className="mx-auto max-w-3xl px-5 py-20 lg:px-8">
+        <div className="text-center">
+          <p className="page-kicker">{t.faq.kicker}</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.faq.title}</h2>
+        </div>
 
-          <div className="mt-12 space-y-3">
-            {t.faq.items.map((f, i) => (
-              <details
-                key={i}
-                className="group rounded-2xl border border-slate-200 bg-white transition open:border-emerald-300 open:bg-emerald-50/30"
-              >
-                <summary className="flex cursor-pointer items-center justify-between gap-4 p-5 font-bold text-slate-800 transition hover:text-emerald-700">
-                  {f.q}
-                  <ChevronLeft
-                    className={`h-5 w-5 shrink-0 transition group-open:-rotate-90 ${
-                      lang === 'fr' ? 'rotate-180' : ''
-                    }`}
-                  />
-                </summary>
-                <p className="px-5 pb-5 text-sm leading-7 text-slate-600">{f.a}</p>
-              </details>
-            ))}
-          </div>
+        <div className="mt-12 space-y-3">
+          {t.faq.items.map((f, i) => (
+            <details
+              key={i}
+              className="group rounded-2xl border border-slate-200 bg-white transition open:border-emerald-300 open:bg-emerald-50/30"
+            >
+              <summary className="flex cursor-pointer items-center justify-between gap-4 p-5 font-bold text-slate-800 transition hover:text-emerald-700">
+                {f.q}
+                <ChevronLeft
+                  className={`h-5 w-5 shrink-0 transition group-open:-rotate-90 ${
+                    lang === 'fr' ? 'rotate-180' : ''
+                  }`}
+                />
+              </summary>
+              <p className="px-5 pb-5 text-sm leading-7 text-slate-600">{f.a}</p>
+            </details>
+          ))}
         </div>
       </section>
 
@@ -858,7 +929,6 @@ export default function Home() {
       <footer className="bg-[#0b2f35] text-slate-300">
         <div className="mx-auto max-w-7xl px-5 py-14 lg:px-8">
           <div className="grid gap-10 lg:grid-cols-4">
-            {/* Brand */}
             <div className="lg:col-span-1">
               <Link href="/" className="flex items-center gap-3">
                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400 text-[#0b2f35]">
@@ -869,7 +939,6 @@ export default function Home() {
               <p className="mt-4 text-sm leading-7 text-slate-400">{t.footer.desc}</p>
 
               <div className="mt-5 flex gap-2">
-                {/* Inline SVG social icons */}
                 <a
                   href="#"
                   className="grid h-9 w-9 place-items-center rounded-lg bg-white/5 text-white/70 transition hover:bg-emerald-500 hover:text-white"
@@ -900,7 +969,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Product */}
             <div>
               <p className="text-sm font-bold text-white">{t.footer.product}</p>
               <ul className="mt-4 space-y-2.5 text-sm">
@@ -911,7 +979,6 @@ export default function Home() {
               </ul>
             </div>
 
-            {/* Legal */}
             <div>
               <p className="text-sm font-bold text-white">{t.footer.legal}</p>
               <ul className="mt-4 space-y-2.5 text-sm">
@@ -922,7 +989,6 @@ export default function Home() {
               </ul>
             </div>
 
-            {/* Contact */}
             <div>
               <p className="text-sm font-bold text-white">{t.footer.contact}</p>
               <ul className="mt-4 space-y-3 text-sm">
@@ -961,6 +1027,7 @@ export default function Home() {
     </main>
   )
 }
+
 // Renders numbers with LTR direction to prevent flipping in RTL
 function Num({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -969,6 +1036,7 @@ function Num({ children, className }: { children: React.ReactNode; className?: s
     </span>
   )
 }
+
 // ============ SUB-COMPONENT ============
 function Metric({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (

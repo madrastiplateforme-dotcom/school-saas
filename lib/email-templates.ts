@@ -373,3 +373,188 @@ export function passwordResetEmail(params: {
     text: `[${schoolName}] كلمة مرورك الجديدة: ${newPassword}\nالدخول: ${loginUrl}`,
   }
 }
+// ─────────────────────────────────────────────────────────
+// 6. DISCIPLINE ALERT — إشعار ولي الأمر بمخالفة
+// ─────────────────────────────────────────────────────────
+export function disciplineEmail(params: {
+  parentName: string
+  studentName: string
+  className: string
+  incidentDate: string
+  category: string
+  severity: 'low' | 'medium' | 'high'
+  title: string
+  description?: string | null
+  schoolName: string
+}) {
+  const {
+    parentName, studentName, className, incidentDate,
+    category, severity, title, description, schoolName,
+  } = params
+
+  const severityLabel = {
+    low: 'منخفضة',
+    medium: 'متوسطة',
+    high: 'عالية',
+  }[severity]
+
+  const severityColor = {
+    low: '#059669',
+    medium: '#d97706',
+    high: '#dc2626',
+  }[severity]
+
+  const categoryLabels: Record<string, string> = {
+    late: 'تأخير متكرر',
+    absence: 'غياب متكرر',
+    behavior: 'سلوك سيئ',
+    disrespect: 'عدم احترام',
+    violence: 'عنف',
+    cheating: 'غش',
+    other: 'أخرى',
+  }
+  const categoryLabel = categoryLabels[category] || category
+
+  return {
+    subject: `[${schoolName}] تنبيه سلوك — ${studentName}`,
+    html: layout(
+      `
+        <h2 style="color:#dc2626;margin:0 0 12px;font-size:20px;">⚠️ تنبيه سلوك</h2>
+        <p>عزيزي ${parentName}،</p>
+        <p>نعلمكم أنه تم تسجيل مخالفة بحق ابنكم <strong>${studentName}</strong> (${className}).</p>
+        ${infoBox(`
+          <p style="margin:0 0 8px;"><strong>التاريخ:</strong> ${incidentDate}</p>
+          <p style="margin:0 0 8px;"><strong>الفئة:</strong> ${categoryLabel}</p>
+          <p style="margin:0 0 8px;"><strong>الخطورة:</strong> <span style="color:${severityColor};font-weight:bold;">${severityLabel}</span></p>
+          <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>الوصف:</strong> ${title}</p>
+          ${description ? `<p style="margin:8px 0 0;color:#475569;font-size:13px;">${description}</p>` : ''}
+        `, '#fef2f2')}
+        <p>المرجو التواصل مع إدارة <strong>${schoolName}</strong> لمتابعة الموضوع.</p>
+      `,
+      `
+        <h2 style="color:#dc2626;margin:0 0 12px;font-size:18px;">⚠️ Alerte de discipline</h2>
+        <p>Cher ${parentName},</p>
+        <p>Une infraction a été enregistrée concernant <strong>${studentName}</strong> (${className}).</p>
+        ${infoBox(`
+          <p style="margin:0 0 8px;"><strong>Date :</strong> ${incidentDate}</p>
+          <p style="margin:0 0 8px;"><strong>Catégorie :</strong> ${categoryLabel}</p>
+          <p style="margin:0 0 8px;"><strong>Sévérité :</strong> <span style="color:${severityColor};font-weight:bold;">${severityLabel}</span></p>
+          <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>Description :</strong> ${title}</p>
+          ${description ? `<p style="margin:8px 0 0;color:#475569;font-size:13px;">${description}</p>` : ''}
+        `, '#fef2f2')}
+        <p>Merci de contacter l'administration de <strong>${schoolName}</strong> pour le suivi.</p>
+      `,
+      schoolName,
+    ),
+    text: `[${schoolName}] مخالفة: ${studentName} — ${title} (${incidentDate})`,
+  }
+}
+// ─────────────────────────────────────────────────────────
+// 7. MEETING CONFIRMATION — تأكيد حجز لقاء
+// ─────────────────────────────────────────────────────────
+export function meetingConfirmationEmail(params: {
+  parentName: string
+  studentName: string
+  meetingTitle: string
+  meetingDate: string
+  startTime: string
+  endTime: string
+  location?: string | null
+  teacherName?: string | null
+  schoolName: string
+}) {
+  const {
+    parentName, studentName, meetingTitle, meetingDate,
+    startTime, endTime, location, teacherName, schoolName,
+  } = params
+
+  return {
+    subject: `[${schoolName}] تأكيد موعد اللقاء — ${meetingDate}`,
+    html: layout(
+      `
+        <h2 style="color:#059669;margin:0 0 12px;font-size:20px;">✅ تأكيد موعد اللقاء</h2>
+        <p>عزيزي ${parentName}،</p>
+        <p>تم تأكيد حجز موعدك مع الأستاذ(ة) بنجاح.</p>
+        ${infoBox(`
+          <p style="margin:0 0 8px;"><strong>📅 التاريخ:</strong> ${meetingDate}</p>
+          <p style="margin:0 0 8px;"><strong>🕐 التوقيت:</strong> من ${startTime} إلى ${endTime}</p>
+          ${teacherName ? `<p style="margin:0 0 8px;"><strong>👤 الأستاذ(ة):</strong> ${teacherName}</p>` : ''}
+          ${location ? `<p style="margin:0 0 8px;"><strong>📍 المكان:</strong> ${location}</p>` : ''}
+          <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>التلميذ(ة):</strong> ${studentName}</p>
+          <p style="margin:4px 0 0;color:#64748b;font-size:13px;">الموضوع: ${meetingTitle}</p>
+        `, '#f0fdf4')}
+        <p style="font-size:13px;color:#64748b;">⚠️ المرجو الحضور في الوقت المحدد. في حال عدم التمكن، المرجو إلغاء الحجز من التطبيق.</p>
+      `,
+      `
+        <h2 style="color:#059669;margin:0 0 12px;font-size:18px;">✅ Confirmation de rendez-vous</h2>
+        <p>Cher ${parentName},</p>
+        <p>Votre rendez-vous avec l'enseignant(e) a été confirmé.</p>
+        ${infoBox(`
+          <p style="margin:0 0 8px;"><strong>📅 Date :</strong> ${meetingDate}</p>
+          <p style="margin:0 0 8px;"><strong>🕐 Heure :</strong> de ${startTime} à ${endTime}</p>
+          ${teacherName ? `<p style="margin:0 0 8px;"><strong>👤 Enseignant(e) :</strong> ${teacherName}</p>` : ''}
+          ${location ? `<p style="margin:0 0 8px;"><strong>📍 Lieu :</strong> ${location}</p>` : ''}
+          <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>Élève :</strong> ${studentName}</p>
+          <p style="margin:4px 0 0;color:#64748b;font-size:13px;">Sujet : ${meetingTitle}</p>
+        `, '#f0fdf4')}
+        <p style="font-size:13px;color:#64748b;">⚠️ Merci d'être à l'heure. En cas d'empêchement, annulez depuis l'application.</p>
+      `,
+      schoolName,
+    ),
+    text: `[${schoolName}] موعد مؤكد: ${meetingDate} من ${startTime} إلى ${endTime} (${studentName})`,
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// 8. MEETING REMINDER — تذكير قبل 24 ساعة
+// ─────────────────────────────────────────────────────────
+export function meetingReminderEmail(params: {
+  parentName: string
+  studentName: string
+  meetingTitle: string
+  meetingDate: string
+  startTime: string
+  endTime: string
+  location?: string | null
+  teacherName?: string | null
+  schoolName: string
+}) {
+  const {
+    parentName, studentName, meetingTitle, meetingDate,
+    startTime, endTime, location, teacherName, schoolName,
+  } = params
+
+  return {
+    subject: `[${schoolName}] ⏰ تذكير: لقاء غدا — ${studentName}`,
+    html: layout(
+      `
+        <h2 style="color:#d97706;margin:0 0 12px;font-size:20px;">⏰ تذكير: لقاء غدا</h2>
+        <p>عزيزي ${parentName}،</p>
+        <p>نذكركم بموعد اللقاء المقرر <strong>غدا</strong> مع الأستاذ(ة).</p>
+        ${infoBox(`
+          <p style="margin:0 0 8px;"><strong>📅 التاريخ:</strong> ${meetingDate}</p>
+          <p style="margin:0 0 8px;"><strong>🕐 التوقيت:</strong> من ${startTime} إلى ${endTime}</p>
+          ${teacherName ? `<p style="margin:0 0 8px;"><strong>👤 الأستاذ(ة):</strong> ${teacherName}</p>` : ''}
+          ${location ? `<p style="margin:0 0 8px;"><strong>📍 المكان:</strong> ${location}</p>` : ''}
+          <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>التلميذ(ة):</strong> ${studentName}</p>
+        `, '#fffbeb')}
+        <p style="font-size:13px;color:#64748b;">المرجو الحضور في الوقت المحدد.</p>
+      `,
+      `
+        <h2 style="color:#d97706;margin:0 0 12px;font-size:18px;">⏰ Rappel : rendez-vous demain</h2>
+        <p>Cher ${parentName},</p>
+        <p>Rappel : vous avez un rendez-vous <strong>demain</strong> avec l'enseignant(e).</p>
+        ${infoBox(`
+          <p style="margin:0 0 8px;"><strong>📅 Date :</strong> ${meetingDate}</p>
+          <p style="margin:0 0 8px;"><strong>🕐 Heure :</strong> de ${startTime} à ${endTime}</p>
+          ${teacherName ? `<p style="margin:0 0 8px;"><strong>👤 Enseignant(e) :</strong> ${teacherName}</p>` : ''}
+          ${location ? `<p style="margin:0 0 8px;"><strong>📍 Lieu :</strong> ${location}</p>` : ''}
+          <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>Élève :</strong> ${studentName}</p>
+        `, '#fffbeb')}
+        <p style="font-size:13px;color:#64748b;">Merci d'être à l'heure.</p>
+      `,
+      schoolName,
+    ),
+    text: `[${schoolName}] ⏰ تذكير: لقاء غدا ${meetingDate} — ${studentName}`,
+  }
+}

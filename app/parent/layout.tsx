@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase'
 import {
   LayoutDashboard, MessageSquare, Bell, LogOut, School, Check, CheckCheck,
   User, BookOpen, Calendar, ClipboardList, FileText, CreditCard,
-  Users, Award, ChevronLeft,
+  Users, Award, ChevronLeft, Settings, Shield,
 } from 'lucide-react'
 
 const menuItems = [
@@ -15,12 +15,15 @@ const menuItems = [
   { href: '/parent/dashboard/bulletins', key: 'bulletins', icon: Award, label: 'الكشوف' },
   { href: '/parent/dashboard/timetable', key: 'timetable', icon: Calendar, label: 'جدول الحصص' },
   { href: '/parent/dashboard/attendance', key: 'attendance', icon: ClipboardList, label: 'الغيابات' },
+  { href: '/parent/dashboard/discipline', key: 'discipline', icon: Shield, label: 'الانضباط' },
+  { href: '/parent/dashboard/meetings', key: 'meetings', icon: Users, label: 'لقاءات' },  // ← جديد
   { href: '/parent/dashboard/cahier', key: 'cahier', icon: BookOpen, label: 'دفتر النصوص' },
-  { href: '/parent/dashboard/devoirs', key: 'devoirs', icon: FileText, label: 'الفروض المنزلية' },
+  { href: '/parent/dashboard/devoirs', key: 'devoirs', icon: FileText, label: 'الفروض' },
   { href: '/parent/dashboard/payments', key: 'payments', icon: CreditCard, label: 'المدفوعات' },
   { href: '/parent/dashboard/certificates', key: 'certificates', icon: Award, label: 'الشهادات' },
   { href: '/parent/dashboard/messages', key: 'messages', icon: MessageSquare, label: 'الرسائل' },
   { href: '/parent/dashboard/profile', key: 'profile', icon: User, label: 'حسابي' },
+  { href: '/parent/dashboard/settings', key: 'settings', icon: Settings, label: 'الإعدادات' },
 ]
 
 export default function ParentLayout({ children }: { children: React.ReactNode }) {

@@ -158,7 +158,19 @@ export async function POST(request: Request) {
     let failed = 0
     let skipped = 0
     const errors: any[] = []
+     // ═══ 5.b) جيب الإعدادات ديال الأولياء ═══
+const parentPrefs: Record<string, any> = {}
 
+if (parentUserIds.length > 0) {
+  const { data: profilesData } = await admin
+    .from('user_profiles')
+    .select('user_id, notification_preferences')
+    .in('user_id', parentUserIds)
+
+  ;(profilesData || []).forEach((p: any) => {
+    parentPrefs[p.user_id] = p.notification_preferences || {}
+  })
+}
     for (const student of students as any[]) {
       const family = student.families
       const parentUserId = family?.parent_user_id
@@ -189,7 +201,14 @@ export async function POST(request: Request) {
         date: formattedDate,
         schoolName,
       })
-
+// ✅ تحقق من الإعدادات
+const prefs = parentPrefs[parentUserId] || {}
+const emailPrefs = prefs.email || {}
+// إلا كان الخيار موجود وكان false → skip
+if (emailPrefs.absence === false) {
+  skipped += 1
+  continue
+}
       // إرسال
       const result = await sendEmail({
         to: parentEmail,

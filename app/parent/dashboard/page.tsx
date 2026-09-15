@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
+import ParentWidgets from '@/components/dashboard/ParentWidgets'
 import {
   Users, Wallet, TrendingUp, Calendar, MessageSquare, Bell,
   GraduationCap, ArrowLeft, AlertCircle, CheckCircle2, Award,
@@ -382,7 +383,7 @@ export default function ParentDashboardPage() {
           <div className="text-2xl font-bold text-slate-800">{totalAbsences}</div>
         </div>
       </div>
-
+<ParentWidgets />
       {/* Children list */}
       <div>
         <h2 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
