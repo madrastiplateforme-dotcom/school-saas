@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
-import { useUserRole } from '@/lib/useUserRole'
+import { useIsStaff } from '@/lib/useIsStaff'
 import {
   ClipboardList, Plus, Trash2, Pencil, X, Save, RefreshCw,
   Search, Info, GraduationCap, Calendar, Clock, BookOpen,
@@ -36,13 +36,13 @@ type Evaluation = {
 
 export default function EvaluationsPage() {
   const establishmentId = useEstablishmentId()
-  const { role, loading: roleLoading } = useUserRole()
-  const isDirector = role === 'directeur'
-
+  const { isStaff, role, loading: roleLoading } = useIsStaff()
+  const canManage = role === 'directeur' || role === 'secretaire'
   const [years, setYears] = useState<AcademicYear[]>([])
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [types, setTypes] = useState<EvaluationType[]>([])
+  const isDirector = isStaff
   const [termsCount, setTermsCount] = useState(2)
   const [termNames, setTermNames] = useState<string[]>(['الدورة 1', 'الدورة 2'])
 
@@ -330,8 +330,7 @@ export default function EvaluationsPage() {
   }, [evaluations, filterYear, filterClass, filterTerm, filterSubject, searchTerm])
 
   if (loading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
-  if (!isDirector) return <div className="p-6">ليس لديك صلاحية</div>
-
+  if (!canManage) return <div className="p-6">ليس لديك صلاحية</div>
   return (
     <div className="p-6 space-y-6" dir="rtl">
       <header className="flex items-center justify-between flex-wrap gap-3">

@@ -9,19 +9,22 @@ import { useLanguage } from '@/lib/LanguageContext'
 import {
   LayoutDashboard, Calendar, BookOpen, ClipboardList, UserCheck,
   BarChart3, MessageSquare, User, Bell, LogOut, School, Check,
-  CheckCheck, GraduationCap, FileText, NotebookPen,
+  CheckCheck, GraduationCap,
+  ShieldAlert, BookMarked, FileText, Settings,  // ← Settings جديد
 } from 'lucide-react'
-
 const menuItems = [
   { href: '/teacher/dashboard', key: 'dashboard', icon: LayoutDashboard, label: 'Tableau de bord' },
   { href: '/teacher/timetable', key: 'timetable', icon: Calendar, label: 'Emploi du temps' },
   { href: '/teacher/classes', key: 'classes', icon: BookOpen, label: 'Mes Classes' },
-  { href: '/teacher/cahier', key: 'cahier', icon: NotebookPen, label: 'دفتر النصوص' },
-  { href: '/teacher/devoirs', key: 'devoirs', icon: FileText, label: 'الفروض' },
+  { href: '/teacher/evaluations', key: 'evaluations', icon: GraduationCap, label: 'Évaluations' },
   { href: '/teacher/grades', key: 'grades', icon: ClipboardList, label: 'Saisie des notes' },
   { href: '/teacher/attendance', key: 'attendance', icon: UserCheck, label: 'Mes Présences' },
+  { href: '/teacher/discipline', key: 'discipline', icon: ShieldAlert, label: 'Discipline' },
+  { href: '/teacher/cahier', key: 'cahier', icon: BookMarked, label: 'Cahier de textes' },
+  { href: '/teacher/devoirs', key: 'devoirs', icon: FileText, label: 'Devoirs' },
   { href: '/teacher/stats', key: 'stats', icon: BarChart3, label: 'Mes Statistiques' },
   { href: '/teacher/messages', key: 'messages', icon: MessageSquare, label: 'Messages' },
+  { href: '/teacher/settings', key: 'settings', icon: Settings, label: 'Réglages' },  // ← جديد
   { href: '/teacher/profile', key: 'profile', icon: User, label: 'Mon Profil' },
 ]
 

@@ -9,27 +9,12 @@ import {
   Font,
   Image,
 } from '@react-pdf/renderer'
-import path from 'path'
+import { registerPdfFonts } from '@/lib/pdf-fonts'
+
+registerPdfFonts()
 
 // ═══════════════════════════════════════════════════
-// Fonts — Cairo (4 variants)
-// ═══════════════════════════════════════════════════
-const FONTS_DIR = path.resolve(process.cwd(), 'public', 'fonts')
-
-Font.register({
-  family: 'Cairo',
-  fonts: [
-    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'normal' },
-    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'italic' },
-    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'normal' },
-    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'italic' },
-  ],
-})
-
-Font.registerHyphenationCallback((word) => [word])
-
-// ═══════════════════════════════════════════════════
-// Palette — même que SchoolCertificate
+// Palette
 // ═══════════════════════════════════════════════════
 const C = {
   navy: '#1e3a5f',
@@ -45,392 +30,130 @@ const ORANGE = '#ea580c'
 const ROSE = '#dc2626'
 const AMBER = '#d97706'
 
-const styles = StyleSheet.create({
-  page: {
-    padding: 0,
-    fontFamily: 'Cairo',
-    fontSize: 9,
-    direction: 'rtl',
-  },
-
-  outerFrame: {
-    position: 'absolute',
-    top: 18,
-    left: 18,
-    right: 18,
-    bottom: 18,
-    borderWidth: 2.5,
-    borderColor: C.navy,
-    borderRadius: 4,
-  },
-  innerFrame: {
-    position: 'absolute',
-    top: 25,
-    left: 25,
-    right: 25,
-    bottom: 25,
-    borderWidth: 0.8,
-    borderColor: C.gold,
-    borderRadius: 2,
-  },
-
-  content: {
-    padding: 40,
-    paddingTop: 35,
-  },
-
-  // ─── Header ───
-  header: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 10,
-    borderBottomWidth: 2,
-    borderBottomColor: C.navy,
-    marginBottom: 12,
-  },
-  logoBox: {
-    width: 50,
-    height: 50,
-    borderRadius: 6,
-    backgroundColor: C.lightGold,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: C.gold,
-  },
-  logoImg: {
-    width: 50,
-    height: 50,
-    borderRadius: 6,
-  },
-  logoPlaceholder: {
-    fontSize: 20,
-    color: C.navy,
-    fontWeight: 'bold',
-  },
-  headerCenter: {
-    flex: 1,
-    textAlign: 'center',
-    paddingHorizontal: 12,
-  },
-  kingdomAr: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'center',
-    letterSpacing: 0.5,
-  },
-  kingdomFr: {
-    fontSize: 8.5,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'center',
-    marginTop: 1,
-  },
-  schoolAr: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: C.gold,
-    textAlign: 'center',
-    marginTop: 5,
-  },
-  schoolFr: {
-    fontSize: 9,
-    color: C.gray,
-    textAlign: 'center',
-    marginTop: 0.5,
-    fontStyle: 'italic',
-  },
-  schoolMeta: {
-    fontSize: 8,
-    color: C.gray,
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  headerRight: {
-    width: 130,
-    textAlign: 'left',
-  },
-  headerRightLine: {
-    fontSize: 8,
-    color: C.gray,
-    textAlign: 'left',
-    marginBottom: 2,
-  },
-  headerRightStrong: {
-    fontSize: 8,
-    fontWeight: 'bold',
-    color: C.navy,
-  },
-
-  // ─── Title ───
-  titleBox: {
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 12,
-  },
-  titleAr: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'center',
-    letterSpacing: 0.5,
-  },
-  titleFr: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: C.gold,
-    textAlign: 'center',
-    letterSpacing: 1.5,
-    marginTop: 2,
-  },
-  titleDivider: {
-    width: 160,
-    height: 1.5,
-    backgroundColor: C.gold,
-    marginTop: 6,
-  },
-
-  // ─── Student box ───
-  studentBox: {
-    flexDirection: 'row-reverse',
-    backgroundColor: C.lightGold,
-    borderLeftWidth: 3,
-    borderLeftColor: C.gold,
-    borderRadius: 3,
-    padding: 8,
-    marginBottom: 10,
-    flexWrap: 'wrap',
-  },
-  studentItem: {
-    width: '33.33%',
-    paddingVertical: 3,
-    paddingHorizontal: 4,
-  },
-  studentLabel: {
+// ═══════════════════════════════════════════════════
+// 🎯 DYNAMIC SIZING — fit 1 page if possible, else 2
+// ═══════════════════════════════════════════════════
+function getDynamicSizes(subjectCount: number) {
+  // Paliers : plus il y a de matières, plus on réduit
+  if (subjectCount <= 8) {
+    return {
+      pagePadding: 0,
+      contentPadding: 40,
+      contentPaddingTop: 35,
+      fontSize: 9,
+      tableRowPadding: 5,
+      titleSize: 20,
+      titleFrSize: 11,
+      headerMargin: 12,
+      titleMarginTop: 8,
+      titleMarginBottom: 12,
+      studentPadding: 8,
+      studentMarginBottom: 10,
+      summaryPadding: 7,
+      summaryMarginBottom: 8,
+      decisionPadding: 8,
+      decisionMarginBottom: 8,
+      commentPadding: 8,
+      commentMinHeight: 42,
+      commentMarginBottom: 8,
+      footerMarginTop: 8,
+      footerPaddingTop: 8,
+      cellSubjectFont: 9,
+      cellMoyFont: 9.5,
+      cellCenterFont: 8.5,
+      tableHeaderPadding: 6,
+    }
+  }
+  if (subjectCount <= 12) {
+    return {
+      pagePadding: 0,
+      contentPadding: 32,
+      contentPaddingTop: 28,
+      fontSize: 8.5,
+      tableRowPadding: 4,
+      titleSize: 18,
+      titleFrSize: 10,
+      headerMargin: 10,
+      titleMarginTop: 6,
+      titleMarginBottom: 10,
+      studentPadding: 6,
+      studentMarginBottom: 8,
+      summaryPadding: 6,
+      summaryMarginBottom: 6,
+      decisionPadding: 6,
+      decisionMarginBottom: 6,
+      commentPadding: 6,
+      commentMinHeight: 34,
+      commentMarginBottom: 6,
+      footerMarginTop: 6,
+      footerPaddingTop: 6,
+      cellSubjectFont: 8.5,
+      cellMoyFont: 9,
+      cellCenterFont: 8,
+      tableHeaderPadding: 5,
+    }
+  }
+  if (subjectCount <= 15) {
+    return {
+      pagePadding: 0,
+      contentPadding: 26,
+      contentPaddingTop: 22,
+      fontSize: 8,
+      tableRowPadding: 3,
+      titleSize: 16,
+      titleFrSize: 9,
+      headerMargin: 8,
+      titleMarginTop: 4,
+      titleMarginBottom: 8,
+      studentPadding: 5,
+      studentMarginBottom: 6,
+      summaryPadding: 5,
+      summaryMarginBottom: 5,
+      decisionPadding: 5,
+      decisionMarginBottom: 5,
+      commentPadding: 5,
+      commentMinHeight: 28,
+      commentMarginBottom: 5,
+      footerMarginTop: 4,
+      footerPaddingTop: 4,
+      cellSubjectFont: 8,
+      cellMoyFont: 8.5,
+      cellCenterFont: 7.5,
+      tableHeaderPadding: 4,
+    }
+  }
+  // > 15 → on accepte 2 pages
+  return {
+    pagePadding: 0,
+    contentPadding: 22,
+    contentPaddingTop: 18,
     fontSize: 7.5,
-    color: C.gray,
-    textAlign: 'right',
-    marginBottom: 1,
-  },
-  studentLabelFr: {
-    fontSize: 6.5,
-    color: C.gray,
-    textAlign: 'right',
-  },
-  studentValue: {
-    fontSize: 9.5,
-    fontWeight: 'bold',
-    color: C.navy,
-    marginTop: 1.5,
-    textAlign: 'right',
-  },
-
-  // ─── Table ───
-  table: {
-    borderWidth: 1,
-    borderColor: C.navy,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 10,
-  },
-  tableHeader: {
-    flexDirection: 'row-reverse',
-    backgroundColor: C.navy,
-    paddingVertical: 6,
-  },
-  tableHeaderCell: {
-    color: '#ffffff',
-    fontSize: 8,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    paddingHorizontal: 3,
-  },
-  tableRow: {
-    flexDirection: 'row-reverse',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#e5e5e5',
-    borderBottomStyle: 'dotted',
-    paddingVertical: 5,
-    alignItems: 'center',
-  },
-  tableRowAlt: {
-    backgroundColor: '#fafafa',
-  },
-  cellSubject: {
-    flex: 2.2,
-    textAlign: 'right',
-    paddingHorizontal: 6,
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: C.navy,
-  },
-  cellCenter: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 8.5,
-    paddingHorizontal: 3,
-    color: C.gray,
-  },
-  cellMoy: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 9.5,
-    fontWeight: 'bold',
-    paddingHorizontal: 3,
-  },
-  totalRow: {
-    flexDirection: 'row-reverse',
-    backgroundColor: C.lightGold,
-    paddingVertical: 6,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: C.gold,
-  },
-
-  // ─── Summary cards ───
-  summaryGrid: {
-    flexDirection: 'row-reverse',
-    gap: 6,
-    marginBottom: 8,
-  },
-  summaryCard: {
-    flex: 1,
-    borderRadius: 3,
-    padding: 7,
-    backgroundColor: '#fafafa',
-    borderLeftWidth: 3,
-    borderLeftColor: C.navy,
-  },
-  summaryLabelAr: {
-    fontSize: 7.5,
-    color: C.gray,
-    marginBottom: 1,
-    textAlign: 'right',
-  },
-  summaryLabelFr: {
-    fontSize: 6.5,
-    color: C.gray,
-    marginBottom: 3,
-    textAlign: 'right',
-    fontStyle: 'italic',
-  },
-  summaryValue: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'right',
-  },
-  summaryUnit: {
-    fontSize: 7.5,
-    color: C.gray,
-    fontWeight: 'normal',
-  },
-
-  // ─── Decision ───
-  decisionBox: {
-    flexDirection: 'row-reverse',
-    borderRadius: 3,
-    padding: 8,
-    marginBottom: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  decisionLabelAr: {
-    fontSize: 9,
-    color: C.gray,
-    marginLeft: 6,
-  },
-  decisionLabelFr: {
-    fontSize: 7,
-    color: C.gray,
-    marginLeft: 6,
-    fontStyle: 'italic',
-  },
-  decisionValue: {
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-
-  // ─── Comment ───
-  commentBox: {
-    borderWidth: 1,
-    borderColor: C.line,
-    borderStyle: 'dashed',
-    borderRadius: 3,
-    padding: 8,
-    minHeight: 42,
-    marginBottom: 8,
-    backgroundColor: '#fdfdf9',
-  },
-  commentLabelAr: {
-    fontSize: 7.5,
-    color: C.gray,
-    marginBottom: 1,
-    textAlign: 'right',
-  },
-  commentLabelFr: {
-    fontSize: 6.5,
-    color: C.gray,
-    marginBottom: 3,
-    textAlign: 'right',
-    fontStyle: 'italic',
-  },
-  commentText: {
-    fontSize: 9,
-    color: C.dark,
-    lineHeight: 1.5,
-    textAlign: 'right',
-  },
-
-  // ─── Footer ───
-  footer: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: C.gold,
-  },
-  footerBlock: {
-    alignItems: 'center',
-    width: '30%',
-  },
-  footerLabelAr: {
-    fontSize: 8,
-    color: C.navy,
-    fontWeight: 'bold',
-    marginBottom: 1,
-    textAlign: 'center',
-  },
-  footerLabelFr: {
-    fontSize: 6.5,
-    color: C.gray,
-    marginBottom: 22,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  footerLine: {
-    fontSize: 7,
-    color: C.gray,
-    textAlign: 'center',
-  },
-
-  pageNumber: {
-    position: 'absolute',
-    bottom: 12,
-    left: 30,
-    right: 30,
-    textAlign: 'center',
-    fontSize: 7,
-    color: C.gray,
-  },
-})
+    tableRowPadding: 2.5,
+    titleSize: 15,
+    titleFrSize: 8.5,
+    headerMargin: 6,
+    titleMarginTop: 3,
+    titleMarginBottom: 6,
+    studentPadding: 4,
+    studentMarginBottom: 5,
+    summaryPadding: 4,
+    summaryMarginBottom: 4,
+    decisionPadding: 4,
+    decisionMarginBottom: 4,
+    commentPadding: 4,
+    commentMinHeight: 24,
+    commentMarginBottom: 4,
+    footerMarginTop: 3,
+    footerPaddingTop: 3,
+    cellSubjectFont: 7.5,
+    cellMoyFont: 8,
+    cellCenterFont: 7,
+    tableHeaderPadding: 3.5,
+  }
+}
 
 // ═══════════════════════════════════════════════════
-// TYPES (same as before)
+// TYPES
 // ═══════════════════════════════════════════════════
 export type BulletinSubjectRow = {
   subjectId: string
@@ -538,18 +261,333 @@ function BulletinPage({
   const todayAr = today.toLocaleDateString('fr-FR')
   const todayFr = formatDateFr(today)
 
+  // 🎯 Calcule la taille dynamique selon le nombre de matières
+  const S = getDynamicSizes(subjects.length)
+
+  const styles = StyleSheet.create({
+    page: {
+      padding: S.pagePadding,
+      fontFamily: 'Cairo',
+      fontSize: S.fontSize,
+      direction: 'rtl',
+    },
+
+    outerFrame: {
+      position: 'absolute',
+      top: 18,
+      left: 18,
+      right: 18,
+      bottom: 18,
+      borderWidth: 2.5,
+      borderColor: C.navy,
+      borderRadius: 4,
+    },
+    innerFrame: {
+      position: 'absolute',
+      top: 25,
+      left: 25,
+      right: 25,
+      bottom: 25,
+      borderWidth: 0.8,
+      borderColor: C.gold,
+      borderRadius: 2,
+    },
+
+    content: {
+      padding: S.contentPadding,
+      paddingTop: S.contentPaddingTop,
+    },
+
+    header: {
+      flexDirection: 'row-reverse',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingBottom: 10,
+      borderBottomWidth: 2,
+      borderBottomColor: C.navy,
+      marginBottom: S.headerMargin,
+    },
+    logoBox: {
+      width: 50,
+      height: 50,
+      borderRadius: 6,
+      backgroundColor: C.lightGold,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: C.gold,
+    },
+    logoImg: { width: 50, height: 50, borderRadius: 6 },
+    logoPlaceholder: { fontSize: 20, color: C.navy, fontWeight: 'bold' },
+    headerCenter: { flex: 1, textAlign: 'center', paddingHorizontal: 12 },
+    kingdomAr: {
+      fontSize: 11,
+      fontWeight: 'bold',
+      color: C.navy,
+      textAlign: 'center',
+      letterSpacing: 0.5,
+    },
+    kingdomFr: {
+      fontSize: 8.5,
+      fontWeight: 'bold',
+      color: C.navy,
+      textAlign: 'center',
+      marginTop: 1,
+    },
+    schoolAr: {
+      fontSize: 13,
+      fontWeight: 'bold',
+      color: C.gold,
+      textAlign: 'center',
+      marginTop: 5,
+    },
+    schoolFr: {
+      fontSize: 9,
+      color: C.gray,
+      textAlign: 'center',
+      marginTop: 0.5,
+      fontStyle: 'italic',
+    },
+    schoolMeta: {
+      fontSize: 8,
+      color: C.gray,
+      textAlign: 'center',
+      marginTop: 2,
+    },
+    headerRight: { width: 130, textAlign: 'left' },
+    headerRightLine: { fontSize: 8, color: C.gray, textAlign: 'left', marginBottom: 2 },
+    headerRightStrong: { fontSize: 8, fontWeight: 'bold', color: C.navy },
+
+    titleBox: {
+      alignItems: 'center',
+      marginTop: S.titleMarginTop,
+      marginBottom: S.titleMarginBottom,
+    },
+    titleAr: {
+      fontSize: S.titleSize,
+      fontWeight: 'bold',
+      color: C.navy,
+      textAlign: 'center',
+      letterSpacing: 0.5,
+    },
+    titleFr: {
+      fontSize: S.titleFrSize,
+      fontWeight: 'bold',
+      color: C.gold,
+      textAlign: 'center',
+      letterSpacing: 1.5,
+      marginTop: 2,
+    },
+    titleDivider: {
+      width: 160,
+      height: 1.5,
+      backgroundColor: C.gold,
+      marginTop: 6,
+    },
+
+    studentBox: {
+      flexDirection: 'row-reverse',
+      backgroundColor: C.lightGold,
+      borderLeftWidth: 3,
+      borderLeftColor: C.gold,
+      borderRadius: 3,
+      padding: S.studentPadding,
+      marginBottom: S.studentMarginBottom,
+      flexWrap: 'wrap',
+    },
+    studentItem: { width: '33.33%', paddingVertical: 3, paddingHorizontal: 4 },
+    studentLabel: {
+      fontSize: 7.5,
+      color: C.gray,
+      textAlign: 'right',
+      marginBottom: 1,
+    },
+    studentLabelFr: { fontSize: 6.5, color: C.gray, textAlign: 'right' },
+    studentValue: {
+      fontSize: 9.5,
+      fontWeight: 'bold',
+      color: C.navy,
+      marginTop: 1.5,
+      textAlign: 'right',
+    },
+
+    table: {
+      borderWidth: 1,
+      borderColor: C.navy,
+      borderRadius: 3,
+      overflow: 'hidden',
+      marginBottom: 10,
+    },
+    tableHeader: {
+      flexDirection: 'row-reverse',
+      backgroundColor: C.navy,
+      paddingVertical: S.tableHeaderPadding,
+    },
+    tableHeaderCell: {
+      color: '#ffffff',
+      fontSize: 8,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      paddingHorizontal: 3,
+    },
+    tableRow: {
+      flexDirection: 'row-reverse',
+      borderBottomWidth: 0.5,
+      borderBottomColor: '#e5e5e5',
+      borderBottomStyle: 'dotted',
+      paddingVertical: S.tableRowPadding,
+      alignItems: 'center',
+    },
+    tableRowAlt: { backgroundColor: '#fafafa' },
+    cellSubject: {
+      flex: 2.2,
+      textAlign: 'right',
+      paddingHorizontal: 6,
+      fontSize: S.cellSubjectFont,
+      fontWeight: 'bold',
+      color: C.navy,
+    },
+    cellCenter: {
+      flex: 1,
+      textAlign: 'center',
+      fontSize: S.cellCenterFont,
+      paddingHorizontal: 3,
+      color: C.gray,
+    },
+    cellMoy: {
+      flex: 1,
+      textAlign: 'center',
+      fontSize: S.cellMoyFont,
+      fontWeight: 'bold',
+      paddingHorizontal: 3,
+    },
+    totalRow: {
+      flexDirection: 'row-reverse',
+      backgroundColor: C.lightGold,
+      paddingVertical: S.tableRowPadding,
+      alignItems: 'center',
+      borderTopWidth: 1,
+      borderTopColor: C.gold,
+    },
+
+    summaryGrid: {
+      flexDirection: 'row-reverse',
+      gap: 6,
+      marginBottom: S.summaryMarginBottom,
+    },
+    summaryCard: {
+      flex: 1,
+      borderRadius: 3,
+      padding: S.summaryPadding,
+      backgroundColor: '#fafafa',
+      borderLeftWidth: 3,
+      borderLeftColor: C.navy,
+    },
+    summaryLabelAr: {
+      fontSize: 7.5,
+      color: C.gray,
+      marginBottom: 1,
+      textAlign: 'right',
+    },
+    summaryLabelFr: {
+      fontSize: 6.5,
+      color: C.gray,
+      marginBottom: 3,
+      textAlign: 'right',
+      fontStyle: 'italic',
+    },
+    summaryValue: {
+      fontSize: 13,
+      fontWeight: 'bold',
+      color: C.navy,
+      textAlign: 'right',
+    },
+    summaryUnit: { fontSize: 7.5, color: C.gray, fontWeight: 'normal' },
+
+    decisionBox: {
+      flexDirection: 'row-reverse',
+      borderRadius: 3,
+      padding: S.decisionPadding,
+      marginBottom: S.decisionMarginBottom,
+      alignItems: 'center',
+      borderWidth: 1,
+    },
+    decisionLabelAr: { fontSize: 9, color: C.gray, marginLeft: 6 },
+    decisionLabelFr: {
+      fontSize: 7,
+      color: C.gray,
+      marginLeft: 6,
+      fontStyle: 'italic',
+    },
+    decisionValue: { fontSize: 12, fontWeight: 'bold' },
+
+    commentBox: {
+      borderWidth: 1,
+      borderColor: C.line,
+      borderStyle: 'dashed',
+      borderRadius: 3,
+      padding: S.commentPadding,
+      minHeight: S.commentMinHeight,
+      marginBottom: S.commentMarginBottom,
+      backgroundColor: '#fdfdf9',
+    },
+    commentLabelAr: {
+      fontSize: 7.5,
+      color: C.gray,
+      marginBottom: 1,
+      textAlign: 'right',
+    },
+    commentLabelFr: {
+      fontSize: 6.5,
+      color: C.gray,
+      marginBottom: 3,
+      textAlign: 'right',
+      fontStyle: 'italic',
+    },
+    commentText: {
+      fontSize: 9,
+      color: C.dark,
+      lineHeight: 1.5,
+      textAlign: 'right',
+    },
+
+    footer: {
+      flexDirection: 'row-reverse',
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+      marginTop: S.footerMarginTop,
+      paddingTop: S.footerPaddingTop,
+      borderTopWidth: 1,
+      borderTopColor: C.gold,
+    },
+    footerBlock: { alignItems: 'center', width: '30%' },
+    footerLabelAr: {
+      fontSize: 8,
+      color: C.navy,
+      fontWeight: 'bold',
+      marginBottom: 1,
+      textAlign: 'center',
+    },
+    footerLabelFr: {
+      fontSize: 6.5,
+      color: C.gray,
+      marginBottom: 22,
+      textAlign: 'center',
+      fontStyle: 'italic',
+    },
+    footerLine: { fontSize: 7, color: C.gray, textAlign: 'center' },
+  })
+
   return (
     <Page size="A4" style={styles.page}>
-      {/* Cadres décoratifs */}
       <View style={styles.outerFrame} />
       <View style={styles.innerFrame} />
 
       <View style={styles.content}>
-        {/* ═══════ HEADER ═══════ */}
+        {/* HEADER */}
         <View style={styles.header}>
           <View style={styles.logoBox}>
             {establishment.logo_url ? (
-              // eslint-disable-next-line jsx-a11y/alt-text
               <Image src={establishment.logo_url} style={styles.logoImg} />
             ) : (
               <Text style={styles.logoPlaceholder}>
@@ -586,14 +624,14 @@ function BulletinPage({
           </View>
         </View>
 
-        {/* ═══════ TITLE ═══════ */}
+        {/* TITLE */}
         <View style={styles.titleBox}>
           <Text style={styles.titleAr}>كشف نقط التلميذ(ة)</Text>
           <Text style={styles.titleFr}>BULLETIN DE NOTES</Text>
           <View style={styles.titleDivider} />
         </View>
 
-        {/* ═══════ STUDENT ═══════ */}
+        {/* STUDENT */}
         <View style={styles.studentBox}>
           <View style={styles.studentItem}>
             <Text style={styles.studentLabel}>الاسم الكامل</Text>
@@ -627,7 +665,7 @@ function BulletinPage({
           </View>
         </View>
 
-        {/* ═══════ TABLE ═══════ */}
+        {/* TABLE */}
         <View style={styles.table}>
           <View style={styles.tableHeader}>
             <Text style={[styles.tableHeaderCell, { flex: 2.2, textAlign: 'right' }]}>
@@ -690,7 +728,7 @@ function BulletinPage({
           </View>
         </View>
 
-        {/* ═══════ SUMMARY ═══════ */}
+        {/* SUMMARY */}
         <View style={styles.summaryGrid}>
           <View
             style={[
@@ -757,7 +795,7 @@ function BulletinPage({
           </View>
         </View>
 
-        {/* ═══════ DECISION ═══════ */}
+        {/* DECISION */}
         <View
           style={[
             styles.decisionBox,
@@ -822,7 +860,7 @@ function BulletinPage({
           )}
         </View>
 
-        {/* ═══════ COMMENT ═══════ */}
+        {/* COMMENT */}
         <View style={styles.commentBox}>
           <Text style={styles.commentLabelAr}>ملاحظات المدير(ة)</Text>
           <Text style={styles.commentLabelFr}>Commentaires du Directeur</Text>
@@ -833,7 +871,7 @@ function BulletinPage({
           </Text>
         </View>
 
-        {/* ═══════ FOOTER ═══════ */}
+        {/* FOOTER */}
         <View style={styles.footer}>
           <View style={styles.footerBlock}>
             <Text style={styles.footerLabelAr}>التاريخ</Text>

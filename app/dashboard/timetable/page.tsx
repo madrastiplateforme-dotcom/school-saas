@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
-import { useUserRole } from '@/lib/useUserRole'
+import { useIsStaff } from '@/lib/useIsStaff'
 import {
   Calendar, GraduationCap, RefreshCw, ArrowLeft, CheckCircle2, Clock,
   Users, Search,
@@ -27,9 +27,9 @@ type TeacherRow = {
 
 export default function TimetableListPage() {
   const establishmentId = useEstablishmentId()
-  const { role, loading: roleLoading } = useUserRole()
-  const isDirector = role === 'directeur'
-
+  const { isStaff, role, loading: roleLoading } = useIsStaff()
+  const isDirector = isStaff
+  const canManage = role === 'directeur' || role === 'secretaire'
   const [tab, setTab] = useState<'classes' | 'teachers'>('classes')
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [teachers, setTeachers] = useState<TeacherRow[]>([])
@@ -126,7 +126,7 @@ export default function TimetableListPage() {
   }
 
   if (loading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
-  if (!isDirector) return <div className="p-6">ليس لديك صلاحية</div>
+  if (!canManage) return <div className="p-6">ليس لديك صلاحية</div>
 
   const filteredClasses = classes.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase())

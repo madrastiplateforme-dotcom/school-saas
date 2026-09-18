@@ -63,21 +63,28 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const {
-  full_name, role_type,
-  custom_type, phone, salary_amount, hire_date,
-  family_id,
-  personal_email,
-  email: emailLegacy,      // ✅ يقبل email كذلك
-  password: customPassword, // ✅ يقبل password
-} = body
+      full_name,
+      role_type,
+      custom_type,
+      phone,
+      salary_amount,
+      hire_date,
+      family_id,
+      personal_email,
+      email: emailLegacy,
+      password: customPassword,
+    } = body
 
     if (!full_name || !role_type) {
-      return NextResponse.json({ error: 'الاسم والنوع مطلوبان' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'الاسم والنوع مطلوبان' },
+        { status: 400 },
+      )
     }
 
     const adminClient = createAdminClient()
 
-    // 🔑 جيب اسم + إيميل المدرسة (للـ replyTo + الإيميل)
+    // 🔑 اسم + إيميل المدرسة
     const { data: establishment } = await adminClient
       .from('establishments')
       .select('name, email')
@@ -116,21 +123,22 @@ export async function POST(request: Request) {
     // 2. Secrétaire wla Parent → compte AUTO
     // ============================================
     const emailInput = personal_email || emailLegacy
-const isRealEmail = !!emailInput && emailInput.includes('@')
-const finalEmail = isRealEmail
-  ? emailInput.trim().toLowerCase()
-  : generateSystemEmail(full_name, role_type)
+    const isRealEmail = !!emailInput && emailInput.includes('@')
+    const finalEmail = isRealEmail
+      ? emailInput.trim().toLowerCase()
+      : generateSystemEmail(full_name, role_type)
 
-const finalPassword =
-  customPassword && customPassword.length >= 6
-    ? customPassword
-    : generatePassword()
+    const finalPassword =
+      customPassword && customPassword.length >= 6
+        ? customPassword
+        : generatePassword()
 
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-      email: finalEmail,
-      password: finalPassword,
-      email_confirm: true,
-    })
+    const { data: authData, error: authError } =
+      await adminClient.auth.admin.createUser({
+        email: finalEmail,
+        password: finalPassword,
+        email_confirm: true,
+      })
 
     if (authError || !authData.user) {
       return NextResponse.json(
@@ -142,48 +150,115 @@ const finalPassword =
     const newUserId = authData.user.id
 
     const systemRoleName = role_type === 'secretaire' ? 'Secrétaire' : 'Parent'
-    const { data: roleData, error: roleError } = await adminClient.rpc('get_or_create_role', {
-      p_establishment_id: profile.establishment_id,
-      p_role_name: systemRoleName,
-    })
+    const { data: roleData, error: roleError } = await adminClient.rpc(
+      'get_or_create_role',
+      {
+        p_establishment_id: profile.establishment_id,
+        p_role_name: systemRoleName,
+      },
+    )
 
-    if (roleError) console.error('Role error:', roleError)
+    if (roleError) console.error('Role error:', roleError?.message || roleError)
 
-    const { error: profileError } = await adminClient.from('user_profiles').insert({
-      user_id: newUserId,
-      establishment_id: profile.establishment_id,
-      role_id: roleData || null,
-      full_name,
-    })
-
-    if (profileError) {
-      await adminClient.auth.admin.deleteUser(newUserId)
-      return NextResponse.json({ error: profileError.message }, { status: 400 })
+    // ═══════════════════════════════════════════════════════════
+    // 🛡️ FONCTION HELPER : rollback complet
+    // ═══════════════════════════════════════════════════════════
+    const rollback = async (reason: string) => {
+      try {
+        await adminClient.from('user_profiles').delete().eq('user_id', newUserId)
+        await adminClient.from('staff').delete().eq('user_id', newUserId)
+        await adminClient.auth.admin.deleteUser(newUserId)
+      } catch (e: any) {
+        console.error('⚠️ Rollback failed:', e?.message || e)
+      }
+      return NextResponse.json(
+        { error: reason, code: 'ROLLBACK_DONE' },
+        { status: 400 },
+      )
     }
 
-    // Secrétaire → caisse + staff
-    if (role_type === 'secretaire') {
-      await adminClient.from('cash_registers').insert({
+    const { error: profileError } = await adminClient
+      .from('user_profiles')
+      .insert({
+        user_id: newUserId,
         establishment_id: profile.establishment_id,
-        name: `Caisse ${full_name}`,
-        type: 'secretary',
-        owner_user_id: newUserId,
-        initial_balance: 0,
+        role_id: roleData || null,
+        full_name,
       })
 
-      await adminClient.from('staff').insert({
-  establishment_id: profile.establishment_id,
-  full_name,
-  type: 'admin',
-  custom_type: 'Secrétaire',
-  phone: phone || null,
-  salary_amount: salary_amount || 0,
-  hire_date: hire_date || null,
-  user_id: newUserId,  // ✅ زيد هاد السطر
-})
+    if (profileError) {
+      return await rollback(profileError.message)
     }
 
-    // Parent → link famille
+    // ═══════════════════════════════════════════════════════════
+    // 🆕 SECRÉTAIRE : créer caisse + staff
+    // 🛡️ Avec vérification UNIQUE name + rollback
+    // ═══════════════════════════════════════════════════════════
+    if (role_type === 'secretaire') {
+      const cashRegisterName = `Caisse ${full_name}`
+
+      // 1️⃣ Vérifier si un cash_register avec le même nom existe déjà
+      const { data: existingCaisse } = await adminClient
+        .from('cash_registers')
+        .select('id, name')
+        .eq('establishment_id', profile.establishment_id)
+        .eq('name', cashRegisterName)
+        .maybeSingle()
+
+      if (existingCaisse) {
+        return await rollback(
+          `⚠️ يوجد صندوق بنفس الاسم "${cashRegisterName}" في هذه المؤسسة. المرجو إضافة اسم عائلي أو تغيير الاسم.`,
+        )
+      }
+
+      // 2️⃣ Insert cash_register
+      const { error: cashError } = await adminClient
+        .from('cash_registers')
+        .insert({
+          establishment_id: profile.establishment_id,
+          name: cashRegisterName,
+          type: 'secretary',
+          owner_user_id: newUserId,
+          initial_balance: 0,
+        })
+
+      if (cashError) {
+        // 23505 = unique_violation (race condition)
+        if (cashError.code === '23505') {
+          return await rollback(
+            `⚠️ يوجد صندوق بنفس الاسم "${cashRegisterName}". المرجو إضافة اسم عائلي أو تغيير الاسم.`,
+          )
+        }
+        return await rollback(
+          `فشل إنشاء الصندوق: ${cashError.message}`,
+        )
+      }
+
+      // 3️⃣ Insert staff
+      const { error: staffError } = await adminClient.from('staff').insert({
+        establishment_id: profile.establishment_id,
+        full_name,
+        type: 'admin',
+        custom_type: 'Secrétaire',
+        phone: phone || null,
+        salary_amount: salary_amount || 0,
+        hire_date: hire_date || null,
+        user_id: newUserId,
+      })
+
+      if (staffError) {
+        // Rollback cash_register + user
+        await adminClient
+          .from('cash_registers')
+          .delete()
+          .eq('owner_user_id', newUserId)
+        return await rollback(staffError.message)
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 3. Parent → link famille
+    // ═══════════════════════════════════════════════════════════
     if (role_type === 'parent' && family_id) {
       await adminClient
         .from('families')
@@ -193,7 +268,7 @@ const finalPassword =
     }
 
     // ============================================
-    // 3. ✅ إرسال إيميل (من SaaS، Reply-To = المدرسة)
+    // 4. ✅ إرسال إيميل
     // ============================================
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL ||
@@ -220,7 +295,7 @@ const finalPassword =
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
-        replyTo: schoolEmail,             // 🔑
+        replyTo: schoolEmail,
         establishmentId: profile.establishment_id,
         template: 'credentials',
         metadata: {
@@ -248,7 +323,10 @@ const finalPassword =
       message: 'تم إنشاء الحساب',
     })
   } catch (error: any) {
-    console.error('Create staff error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Create staff error:', error?.message || error)
+    return NextResponse.json(
+      { error: error?.message || 'خطأ داخلي' },
+      { status: 500 },
+    )
   }
 }

@@ -2,82 +2,95 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { detectRole, getDashboardUrl, type UserRole } from '@/lib/detect-role'
 
-export type UserRole =
-  | 'super_admin'
-  | 'directeur'
-  | 'secretaire'
-  | 'enseignant'
-  | 'parent'
-  | null
+export type { UserRole }
+export { getDashboardUrl }
 
 export function useUserRole() {
   const [role, setRole] = useState<UserRole>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let mounted = true
     const supabase = createClient()
 
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) {
+    const loadRole = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!mounted) return
+
+        if (!user) {
+          setRole(null)
+          setLoading(false)
+          return
+        }
+
+        // ═══ Super Admin ═══
+        const { data: admin } = await supabase
+          .from('admin_users')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (admin) {
+          const assistId =
+            typeof window !== 'undefined'
+              ? sessionStorage.getItem('assistance_establishment_id')
+              : null
+          setRole(assistId ? 'directeur' : 'super_admin')
+          setLoading(false)
+          return
+        }
+
+        // ═══ Profile + role (2 queries, R1) ═══
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('role_id')
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (!profile?.role_id) {
+          setRole(null)
+          setLoading(false)
+          return
+        }
+
+        const { data: roleData } = await supabase
+          .from('roles')
+          .select('name')
+          .eq('id', profile.role_id)
+          .maybeSingle()
+
+        if (!mounted) return
+        setRole(detectRole(roleData?.name))
         setLoading(false)
-        return
+      } catch (e: any) {
+        console.error('[useUserRole]', e?.message || e)
+        if (mounted) {
+          setRole(null)
+          setLoading(false)
+        }
       }
+    }
 
-      const { data: admin } = await supabase
-        .from('admin_users')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
+    loadRole()
 
-      if (admin) {
-        const assistId =
-          typeof window !== 'undefined'
-            ? sessionStorage.getItem('assistance_establishment_id')
-            : null
-
-        setRole(assistId ? 'directeur' : 'super_admin')
-        setLoading(false)
-        return
+    // ═══ Réagir aux changements auth (login/logout) ═══
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      if (mounted) {
+        setLoading(true)
+        loadRole()
       }
-
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('roles(name)')
-        .eq('user_id', user.id)
-        .single()
-
-      const roleName = ((profile?.roles as any)?.name || '').toLowerCase()
-
-      if (roleName.includes('directeur') || roleName.includes('مدير')) {
-        setRole('directeur')
-      } else if (roleName.includes('secr')) {
-        setRole('secretaire')
-      } else if (
-        roleName.includes('enseignant') ||
-        roleName.includes('teacher') ||
-        roleName.includes('prof') ||
-        roleName.includes('أستاذ')
-      ) {
-        setRole('enseignant')
-      } else if (roleName.includes('parent')) {
-        setRole('parent')
-      }
-
-      setLoading(false)
     })
+
+    return () => {
+      mounted = false
+      sub.subscription.unsubscribe()
+    }
   }, [])
 
   return { role, loading }
-}
-
-export function getDashboardUrl(role: UserRole): string {
-  switch (role) {
-    case 'super_admin': return '/admin/establishments'
-    case 'directeur':   return '/dashboard'
-    case 'secretaire':  return '/dashboard/secretary'
-    case 'enseignant':  return '/teacher/dashboard'
-    case 'parent':      return '/parent/dashboard'
-    default:            return '/login'
-  }
 }

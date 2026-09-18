@@ -13,7 +13,8 @@ import {
 import {
   TrendingUp, TrendingDown, Wallet, AlertCircle, Users, FileText,
   Plus, Send, Bell, Wrench, Sparkles, Building2, User as UserIcon,
-  Search, Home, GraduationCap, Calendar, CheckCircle2,
+  Search, Home, GraduationCap, Calendar, CheckCircle2, ClipboardList,
+  MessageSquare, Settings, BarChart3, Receipt, UserPlus, BookOpen,
 } from 'lucide-react'
 
 const ARABIC_MONTHS = [
@@ -22,6 +23,24 @@ const ARABIC_MONTHS = [
 ]
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']
+
+// ═══════════════════════════════════════════════════
+// Quick Actions (style secrétaire)
+// ═══════════════════════════════════════════════════
+const QUICK_ACTIONS = [
+  { href: '/dashboard/payments/new', label: 'دفعة جديدة', desc: 'تسجيل دفعة', icon: Plus, gradient: 'from-emerald-500 to-emerald-700' },
+  { href: '/dashboard/expenses', label: 'مصروف جديد', desc: 'تسجيل مصروف', icon: TrendingDown, gradient: 'from-rose-500 to-rose-700' },
+  { href: '/dashboard/enroll', label: 'تسجيل تلميذ', desc: 'تسجيل جديد', icon: UserPlus, gradient: 'from-sky-500 to-sky-700' },
+  { href: '/dashboard/students', label: 'التلاميذ', desc: 'لائحة التلاميذ', icon: Users, gradient: 'from-cyan-500 to-cyan-700' },
+  { href: '/dashboard/contracts', label: 'العقود', desc: 'إدارة العقود', icon: FileText, gradient: 'from-indigo-500 to-indigo-700' },
+  { href: '/dashboard/impayes', label: 'Impayés', desc: 'المتأخرات', icon: AlertCircle, gradient: 'from-amber-500 to-amber-700' },
+  { href: '/dashboard/caisse', label: 'الصناديق', desc: 'كشف الصناديق', icon: Wallet, gradient: 'from-violet-500 to-violet-700' },
+  { href: '/dashboard/caisse/transfers', label: 'التحويلات', desc: 'تحويلات الصندوق', icon: Send, gradient: 'from-fuchsia-500 to-fuchsia-700' },
+  { href: '/dashboard/attendance', label: 'الحضور', desc: 'متابعة الحضور', icon: CheckCircle2, gradient: 'from-teal-500 to-teal-700' },
+  { href: '/dashboard/bulletins', label: 'الكشوف', desc: 'الكشوف المدرسية', icon: GraduationCap, gradient: 'from-orange-500 to-orange-700' },
+  { href: '/dashboard/reports', label: 'التقارير', desc: 'التقارير المالية', icon: BarChart3, gradient: 'from-purple-500 to-purple-700' },
+  { href: '/dashboard/users', label: 'المستخدمون', desc: 'إدارة الفريق', icon: Settings, gradient: 'from-slate-500 to-slate-700' },
+]
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -65,15 +84,24 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    // 1. Profile
+    // 1. Profile — SANS JOIN (R1)
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('full_name, establishments(name)')
+      .select('full_name, establishment_id')
       .eq('user_id', user.id)
       .maybeSingle()
 
     setUserName(profile?.full_name || '')
-    setSchoolName((profile?.establishments as any)?.name || '')
+
+    // Nom établissement — query séparée
+    if (profile?.establishment_id) {
+      const { data: est } = await supabase
+        .from('establishments')
+        .select('name')
+        .eq('id', profile.establishment_id)
+        .maybeSingle()
+      setSchoolName(est?.name || '')
+    }
 
     // 2. Caisses
     const { data: caissesData } = await supabase
@@ -83,7 +111,7 @@ export default function DashboardPage() {
 
     setCaisses(caissesData || [])
 
-    // 3. Payments
+    // 3. Payments — ✅ FIX : filtrer deleted_at IS NULL
     const sixMonthsAgo = new Date()
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
 
@@ -91,12 +119,13 @@ export default function DashboardPage() {
       .from('payments')
       .select('id, amount, payment_date, cash_register_id, student_id, installment_id, method, notes, reference')
       .eq('establishment_id', establishmentId)
+      .is('deleted_at', null)                     // ✅ FIX
       .gte('payment_date', sixMonthsAgo.toISOString().split('T')[0])
       .order('payment_date', { ascending: false })
 
     setPayments(payData || [])
 
-    // 4. Recent payments (m3a student name)
+    // 4. Recent payments — ✅ FIX : filtrer deleted_at IS NULL
     const { data: recentData } = await supabase
       .from('payments')
       .select(`
@@ -105,6 +134,7 @@ export default function DashboardPage() {
         installments (description)
       `)
       .eq('establishment_id', establishmentId)
+      .is('deleted_at', null)                     // ✅ FIX
       .order('created_at', { ascending: false })
       .limit(10)
 
@@ -234,14 +264,24 @@ export default function DashboardPage() {
     s => s.created_at?.startsWith(thisMonth)
   ).length
 
-  // Solde dyal koul caisse
+  // ═══════════════════════════════════════════════════════════
+  // ✅ FIX PRINCIPAL : balance avec paiements actifs seulement
+  // ═══════════════════════════════════════════════════════════
   const caisseBalances = useMemo(() => {
     return caisses.map(c => {
       const initial = Number(c.initial_balance || 0)
-      const inPay = payments.filter(p => p.cash_register_id === c.id).reduce((s, p) => s + Number(p.amount), 0)
-      const outExp = expenses.filter(e => e.cash_register_id === c.id).reduce((s, e) => s + Number(e.amount), 0)
-      const inTrans = transfers.filter(t => t.to_cash_register_id === c.id).reduce((s, t) => s + Number(t.amount), 0)
-      const outTrans = transfers.filter(t => t.from_cash_register_id === c.id).reduce((s, t) => s + Number(t.amount), 0)
+      const inPay = payments
+        .filter(p => p.cash_register_id === c.id)
+        .reduce((s, p) => s + Number(p.amount), 0)
+      const outExp = expenses
+        .filter(e => e.cash_register_id === c.id)
+        .reduce((s, e) => s + Number(e.amount), 0)
+      const inTrans = transfers
+        .filter(t => t.to_cash_register_id === c.id)
+        .reduce((s, t) => s + Number(t.amount), 0)
+      const outTrans = transfers
+        .filter(t => t.from_cash_register_id === c.id)
+        .reduce((s, t) => s + Number(t.amount), 0)
       return {
         ...c,
         balance: initial + inPay - outExp + inTrans - outTrans,
@@ -305,7 +345,6 @@ export default function DashboardPage() {
     return result
   }, [services, payments, contracts, contractItems])
 
-  // Recent payments filtered by search
   const filteredRecentPayments = useMemo(() => {
     if (!searchPayment.trim()) return recentPayments
     const term = searchPayment.toLowerCase()
@@ -315,7 +354,6 @@ export default function DashboardPage() {
     })
   }, [recentPayments, searchPayment])
 
-  // Top 5 impayés
   const topImpayes = useMemo(() => {
     const studentImpayes = new Map<string, { name: string, amount: number }>()
     installments.forEach(i => {
@@ -335,14 +373,14 @@ export default function DashboardPage() {
 
   if (loading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
   if (!isDirector && !isSecretary) return <div className="p-6">ليس لديك صلاحية</div>
-  
+
   return (
     <div className="p-6 space-y-6" dir="rtl">
 
       {/* HEADER */}
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">لوحة القيادة</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">لوحة القيادة</p>
           <h1 className="text-2xl font-bold text-slate-800 mt-1">
             مرحباً {userName || 'المدير'} 👋
           </h1>
@@ -357,9 +395,44 @@ export default function DashboardPage() {
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
 
-      {/* STATS CARDS - CLICKABLE */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ═══ QUICK ACTIONS (style secrétaire) ═══ */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+        <div className="flex items-center gap-2 mb-5">
+          <Sparkles className="h-5 w-5 text-emerald-600" />
+          <h2 className="font-bold text-slate-800 text-lg">الوصول السريع</h2>
+        </div>
 
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {QUICK_ACTIONS.map((action) => {
+            const Icon = action.icon
+            return (
+              <button
+                key={action.href}
+                onClick={() => router.push(action.href)}
+                className={`group relative bg-gradient-to-br ${action.gradient} text-white rounded-2xl p-5 shadow-md hover:shadow-2xl hover:-translate-y-1.5 transition-all duration-200 overflow-hidden text-right`}
+              >
+                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-white/10 group-hover:bg-white/20 transition" />
+                <div className="absolute -bottom-10 -left-6 w-16 h-16 rounded-full bg-white/5" />
+
+                <div className="relative">
+                  <div className="w-12 h-12 rounded-xl bg-white/25 backdrop-blur-sm flex items-center justify-center mb-3 group-hover:scale-110 transition shadow-sm">
+                    <Icon className="h-6 w-6 text-white" />
+                  </div>
+                  <p className="font-extrabold text-base leading-tight text-white drop-shadow-sm">
+                    {action.label}
+                  </p>
+                  <p className="text-xs font-medium text-white/95 mt-1 leading-tight">
+                    {action.desc}
+                  </p>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* STATS CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Encaissements */}
         <button
           onClick={() => router.push('/dashboard/payments')}
@@ -409,7 +482,7 @@ export default function DashboardPage() {
           onClick={() => router.push('/dashboard/reports')}
           className={`text-right rounded-2xl p-5 border shadow-sm hover:shadow-md transition group ${
             monthlyRba7 >= 0
-              ? 'bg-gradient-to-br from-indigo-500 to-indigo-700 text-white border-indigo-600'
+              ? 'bg-gradient-to-br from-emerald-500 to-emerald-700 text-white border-emerald-600'
               : 'bg-gradient-to-br from-red-500 to-red-700 text-white border-red-600'
           }`}
         >
@@ -451,7 +524,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* QUICK STATS - CLICKABLE */}
+      {/* QUICK STATS */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <button
           onClick={() => router.push('/dashboard/students')}
@@ -531,8 +604,10 @@ export default function DashboardPage() {
           </div>
         </button>
       </div>
-<DirectorWidgets />
-      {/* CAISSES SECTION - CLICKABLE */}
+
+      <DirectorWidgets />
+
+      {/* CAISSES SECTION */}
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -662,8 +737,6 @@ export default function DashboardPage() {
 
       {/* RECENT PAYMENTS + TOP IMPAYES */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-        {/* Recent Payments */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-2">
@@ -719,7 +792,6 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Top 5 Impayés */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-100 flex items-center justify-between">
             <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -753,80 +825,34 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ACTIONS + NOTIFICATIONS */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-indigo-600" />
-            إجراءات سريعة
+      {/* NOTIFICATIONS */}
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+            <Bell className="h-4 w-4 text-indigo-600" />
+            آخر الإشعارات
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <button onClick={() => router.push('/dashboard/payments/new')} className="flex flex-col items-center justify-center gap-2 p-4 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition text-emerald-700 font-medium">
-              <Plus className="h-6 w-6" />
-              <span className="text-sm">تسجيل دفعة</span>
-            </button>
-            <button onClick={() => router.push('/dashboard/expenses')} className="flex flex-col items-center justify-center gap-2 p-4 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition text-red-700 font-medium">
-              <Plus className="h-6 w-6" />
-              <span className="text-sm">تسجيل مصروف</span>
-            </button>
-            <button onClick={() => router.push('/dashboard/contracts')} className="flex flex-col items-center justify-center gap-2 p-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition text-indigo-700 font-medium">
-              <FileText className="h-6 w-6" />
-              <span className="text-sm">عقد جديد</span>
-            </button>
-            <button onClick={() => router.push('/dashboard/impayes')} className="flex flex-col items-center justify-center gap-2 p-4 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition text-amber-700 font-medium">
-              <AlertCircle className="h-6 w-6" />
-              <span className="text-sm">المتأخرون</span>
-            </button>
-            <button onClick={() => router.push('/dashboard/caisse')} className="flex flex-col items-center justify-center gap-2 p-4 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition text-slate-700 font-medium">
-              <Wallet className="h-6 w-6" />
-              <span className="text-sm">الصناديق</span>
-            </button>
-             <button onClick={() => router.push('/dashboard/attendance')} className="flex flex-col items-center justify-center gap-2 p-4 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-xl transition text-cyan-700 font-medium">
-  <CheckCircle2 className="h-6 w-6" />
-  <span className="text-sm">الحضور</span>
-</button>
-            <button onClick={() => router.push('/dashboard/reports')} className="flex flex-col items-center justify-center gap-2 p-4 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl transition text-purple-700 font-medium">
-              <TrendingUp className="h-6 w-6" />
-              <span className="text-sm">التقارير</span>
-            </button>
-            <button 
-  onClick={() => router.push('/dashboard/attendance')} 
-  className="flex flex-col items-center justify-center gap-2 p-4 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-xl transition text-cyan-700 font-medium"
->
-  <CheckCircle2 className="h-6 w-6" />
-  <span className="text-sm">الحضور</span>
-</button>
-          </div>
+          <button onClick={() => router.push('/dashboard/notifications')} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+            عرض الكل ←
+          </button>
         </div>
-
-        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-              <Bell className="h-4 w-4 text-indigo-600" />
-              آخر الإشعارات
-            </h3>
-            <button onClick={() => router.push('/dashboard/notifications')} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-              عرض الكل ←
-            </button>
+        {notifications.length === 0 ? (
+          <div className="text-center py-8">
+            <Bell className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm text-slate-400">لا توجد إشعارات</p>
           </div>
-          {notifications.length === 0 ? (
-            <div className="text-center py-8">
-              <Bell className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-400">لا توجد إشعارات</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {notifications.slice(0, 5).map((n) => (
-                <div key={n.id} className={`p-3 rounded-lg border text-sm ${!n.read ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100'}`}>
-                  <p className={`text-xs ${!n.read ? 'font-bold text-slate-800' : 'font-medium text-slate-700'}`}>
-                    {n.title}
-                  </p>
-                  {n.message && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{n.message}</p>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {notifications.slice(0, 6).map((n) => (
+              <div key={n.id} className={`p-3 rounded-lg border text-sm ${!n.read ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100'}`}>
+                <p className={`text-xs ${!n.read ? 'font-bold text-slate-800' : 'font-medium text-slate-700'}`}>
+                  {n.title}
+                </p>
+                {n.message && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{n.message}</p>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

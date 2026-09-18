@@ -2,18 +2,10 @@ import { NextResponse } from 'next/server'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { createAdminClient } from '@/lib/supabase-admin'
 import PaymentReceiptPDF from '@/components/pdfs/PaymentReceiptPDF'
-import path from 'path'
-import { Font } from '@react-pdf/renderer'
+import { registerPdfFonts } from '@/lib/pdf-fonts'
 
-Font.register({
-  family: 'Cairo',
-  fonts: [
-    { src: path.join(process.cwd(), 'public', 'fonts', 'Cairo-Regular.ttf') },
-    { src: path.join(process.cwd(), 'public', 'fonts', 'Cairo-Bold.ttf'), fontWeight: 'bold' },
-  ],
-})
-
-Font.registerHyphenationCallback((word) => [word])
+// ✅ Enregistre les 4 variants Cairo (server + client safe)
+registerPdfFonts()
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,7 +17,10 @@ export async function GET(request: Request) {
     const installmentId = searchParams.get('installmentId')
 
     if (!paymentId && !installmentId) {
-      return NextResponse.json({ error: 'معرف الدفع أو القسط مطلوب' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'معرف الدفع أو القسط مطلوب' },
+        { status: 400 },
+      )
     }
 
     const supabaseAdmin = createAdminClient()
@@ -40,23 +35,25 @@ export async function GET(request: Request) {
         .limit(1)
 
       if (payError || !payments || payments.length === 0) {
-        return NextResponse.json({ error: 'لا توجد دفعة لهذا القسط' }, { status: 404 })
+        return NextResponse.json(
+          { error: 'لا توجد دفعة لهذا القسط' },
+          { status: 404 },
+        )
       }
       paymentIdToUse = payments[0].id
     }
 
     if (!paymentIdToUse) {
-      return NextResponse.json({ error: 'معرف الدفع غير صالح' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'معرف الدفع غير صالح' },
+        { status: 400 },
+      )
     }
 
-    // 1. Jib payment + student + establishment
+    // 1. Fetch payment + student + establishment (SANS JOIN FK fragile)
     const { data: payment, error: paymentError } = await supabaseAdmin
       .from('payments')
-      .select(`
-        *,
-        students (first_name, last_name),
-        establishments (name, logo_url, address, phone)
-      `)
+      .select('*')
       .eq('id', paymentIdToUse)
       .single()
 
@@ -64,23 +61,56 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'الدفع غير موجود' }, { status: 404 })
     }
 
-    // 2. ✅ Jib smiyt li dar paiement (created_by wla user_id)
+    // 2. Student info (query séparée)
+    let studentName = ''
+    if (payment.student_id) {
+      const { data: student } = await supabaseAdmin
+        .from('students')
+        .select('first_name, last_name')
+        .eq('id', payment.student_id)
+        .maybeSingle()
+
+      if (student) {
+        studentName = `${student.first_name || ''} ${student.last_name || ''}`.trim()
+      }
+    }
+
+    // 3. Establishment info (query séparée)
+    let establishment: any = null
+    if (payment.establishment_id) {
+      const { data: est } = await supabaseAdmin
+        .from('establishments')
+        .select('name, logo_url, address, phone')
+        .eq('id', payment.establishment_id)
+        .maybeSingle()
+      establishment = est
+    }
+
+    // 4. Cashier info (query séparée + role séparée)
     let cashierName = ''
     const cashierId = (payment as any).user_id
     if (cashierId) {
       const { data: cashierProfile } = await supabaseAdmin
         .from('user_profiles')
-        .select('full_name, roles(name)')
+        .select('full_name, role_id')
         .eq('user_id', cashierId)
         .maybeSingle()
 
       if (cashierProfile) {
-        const roleName = (cashierProfile.roles as any)?.name || ''
-        cashierName = `${cashierProfile.full_name}${roleName ? ` (${roleName})` : ''}`
+        let roleName = ''
+        if (cashierProfile.role_id) {
+          const { data: roleData } = await supabaseAdmin
+            .from('roles')
+            .select('name')
+            .eq('id', cashierProfile.role_id)
+            .maybeSingle()
+          roleName = roleData?.name || ''
+        }
+        cashierName = `${cashierProfile.full_name || ''}${roleName ? ` (${roleName})` : ''}`
       }
     }
 
-    // 3. Jib smiyt l'installment
+    // 5. Installment description (query séparée)
     let installmentDesc = ''
     if (payment.installment_id) {
       const { data: inst } = await supabaseAdmin
@@ -93,20 +123,22 @@ export async function GET(request: Request) {
 
     const receiptData = {
       receiptNumber: payment.id.slice(0, 8).toUpperCase(),
-      studentName: `${payment.students?.first_name || ''} ${payment.students?.last_name || ''}`.trim(),
+      studentName: studentName || '—',
       amount: Number(payment.amount),
       paymentDate: payment.payment_date,
       method: payment.method,
       description: installmentDesc || payment.notes || 'دفعة دراسية',
-      schoolName: payment.establishments?.name || 'المؤسسة',
-      schoolLogo: payment.establishments?.logo_url || null,
-      schoolAddress: (payment.establishments as any)?.address || null,
-      schoolPhone: (payment.establishments as any)?.phone || null,
+      schoolName: establishment?.name || 'المؤسسة',
+      schoolLogo: establishment?.logo_url || null,
+      schoolAddress: establishment?.address || null,
+      schoolPhone: establishment?.phone || null,
       cashierName,
       reference: payment.reference || null,
     }
 
-    const pdfBuffer = await renderToBuffer(PaymentReceiptPDF({ data: receiptData } as any))
+    const pdfBuffer = await renderToBuffer(
+      PaymentReceiptPDF({ data: receiptData } as any),
+    )
 
     return new NextResponse(pdfBuffer as any, {
       headers: {
@@ -115,7 +147,10 @@ export async function GET(request: Request) {
       },
     })
   } catch (error: any) {
-    console.error('PDF generation error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('PDF generation error:', error?.message || error)
+    return NextResponse.json(
+      { error: error?.message || 'خطأ' },
+      { status: 500 },
+    )
   }
 }

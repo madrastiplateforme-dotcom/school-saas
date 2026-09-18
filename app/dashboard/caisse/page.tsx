@@ -75,30 +75,55 @@ export default function CaissePage() {
 
     const allMovements: Movement[] = []
 
-    // 1. Payments
+    // ═════════════════════════════════════════════════════════════
+    // 1. Payments (exclut deleted_at SET, garde is_refunded=true)
+    // ═════════════════════════════════════════════════════════════
     const { data: payments } = await supabase
       .from('payments')
-      .select('id, amount, payment_date, cash_register_id, students(first_name, last_name)')
+      .select('id, amount, payment_date, cash_register_id, student_id, is_refunded')
       .in('cash_register_id', registerIds)
+      .is('deleted_at', null)
+
+    // Récupérer les noms des étudiants séparément (R1)
+    const studentIds = Array.from(
+      new Set((payments || []).map((p: any) => p.student_id).filter(Boolean))
+    )
+    const studentMap = new Map<string, string>()
+    if (studentIds.length > 0) {
+      const { data: studentsData } = await supabase
+        .from('students')
+        .select('id, first_name, last_name')
+        .in('id', studentIds)
+      ;(studentsData || []).forEach((s: any) => {
+        studentMap.set(s.id, `${s.first_name || ''} ${s.last_name || ''}`.trim())
+      })
+    }
 
     ;(payments || []).forEach((p: any) => {
       const reg = (cashData || []).find((c) => c.id === p.cash_register_id)
+      const studentName = p.student_id ? (studentMap.get(p.student_id) || '') : ''
+      const refundedFlag = p.is_refunded ? ' ⚠️' : ''
+
       allMovements.push({
         id: `pay-${p.id}`,
         date: p.payment_date,
-        description: `دفعة - ${p.students?.first_name || ''} ${p.students?.last_name || ''}`.trim(),
+        description: `دفعة - ${studentName}${refundedFlag}`.trim(),
         amount: Number(p.amount),
         direction: 'in',
-        type: 'Paiement',
+        type: p.is_refunded ? 'Paiement (remboursé)' : 'Paiement',
         cashRegisterId: p.cash_register_id,
         cashRegisterName: reg?.name || '-',
-        relatedTo: p.students ? `${p.students.first_name} ${p.students.last_name}` : '-',
+        relatedTo: studentName || '-',
         icon: ArrowDownLeft,
-        color: 'text-emerald-600 bg-emerald-50',
+        color: p.is_refunded
+          ? 'text-orange-600 bg-orange-50'
+          : 'text-emerald-600 bg-emerald-50',
       })
     })
 
-    // 2. Expenses (BLA staff join)
+    // ═════════════════════════════════════════════════════════════
+    // 2. Expenses
+    // ═════════════════════════════════════════════════════════════
     const { data: expenses } = await supabase
       .from('expenses')
       .select('id, amount, expense_date, cash_register_id, description, nature, category')
@@ -107,63 +132,99 @@ export default function CaissePage() {
     ;(expenses || []).forEach((e: any) => {
       const reg = (cashData || []).find((c) => c.id === e.cash_register_id)
       const isSalaire = e.nature === 'salaire'
+      const isRefund = e.nature === 'refund' || e.category === 'refund'
+
       allMovements.push({
         id: `exp-${e.id}`,
         date: e.expense_date,
-        description: e.description || (isSalaire ? 'راتب' : 'مصروف'),
+        description: e.description || (isSalaire ? 'راتب' : isRefund ? 'إرجاع دفعة' : 'مصروف'),
         amount: Number(e.amount),
         direction: 'out',
-        type: isSalaire ? 'Salaire' : 'Dépense',
+        type: isSalaire ? 'Salaire' : isRefund ? 'Remboursement' : 'Dépense',
         cashRegisterId: e.cash_register_id,
         cashRegisterName: reg?.name || '-',
         relatedTo: e.category || '-',
         icon: isSalaire ? UserIcon : TrendingDown,
-        color: isSalaire ? 'text-purple-600 bg-purple-50' : 'text-red-600 bg-red-50',
+        color: isSalaire
+          ? 'text-purple-600 bg-purple-50'
+          : isRefund
+            ? 'text-orange-600 bg-orange-50'
+            : 'text-red-600 bg-red-50',
       })
     })
 
-    // 3. Transfers
-    const { data: transfers } = await supabase
+    // ═════════════════════════════════════════════════════════════
+    // 3. Transfers — 2 queries séparées (évite le bug .or() + .in.())
+    // ═════════════════════════════════════════════════════════════
+
+    // 3a. Transfers SORTANTS (from dans nos registres)
+    const { data: transfersOut } = await supabase
       .from('cash_transfers')
       .select('id, amount, transfer_date, from_cash_register_id, to_cash_register_id, note, status')
       .eq('status', 'accepted')
-      .or(`from_cash_register_id.in.(${registerIds.join(',')}),to_cash_register_id.in.(${registerIds.join(',')})`)
+      .in('from_cash_register_id', registerIds)
 
-    ;(transfers || []).forEach((t: any) => {
+    // 3b. Transfers ENTRANTS (to dans nos registres)
+    const { data: transfersIn } = await supabase
+      .from('cash_transfers')
+      .select('id, amount, transfer_date, from_cash_register_id, to_cash_register_id, note, status')
+      .eq('status', 'accepted')
+      .in('to_cash_register_id', registerIds)
+
+    // Récupérer les noms des caisses liées
+    const linkedCaisseIds = new Set<string>()
+    ;(transfersOut || []).forEach((t: any) => {
+      linkedCaisseIds.add(t.from_cash_register_id)
+      linkedCaisseIds.add(t.to_cash_register_id)
+    })
+    ;(transfersIn || []).forEach((t: any) => {
+      linkedCaisseIds.add(t.from_cash_register_id)
+      linkedCaisseIds.add(t.to_cash_register_id)
+    })
+
+    const linkedCaisseMap = new Map<string, string>()
+    if (linkedCaisseIds.size > 0) {
+      const { data: names } = await supabase
+        .from('cash_registers')
+        .select('id, name')
+        .in('id', Array.from(linkedCaisseIds))
+      ;(names || []).forEach((n: any) => linkedCaisseMap.set(n.id, n.name))
+    }
+
+    // 3c. Push transferts sortants
+    ;(transfersOut || []).forEach((t: any) => {
       const fromReg = (cashData || []).find((c) => c.id === t.from_cash_register_id)
+      allMovements.push({
+        id: `tr-out-${t.id}`,
+        date: t.transfer_date,
+        description: t.note || 'تحويل صادر',
+        amount: Number(t.amount),
+        direction: 'out',
+        type: 'Transfert sortant',
+        cashRegisterId: t.from_cash_register_id,
+        cashRegisterName: fromReg?.name || linkedCaisseMap.get(t.from_cash_register_id) || '-',
+        relatedTo: linkedCaisseMap.get(t.to_cash_register_id) || '-',
+        icon: ArrowUpRight,
+        color: 'text-amber-600 bg-amber-50',
+      })
+    })
+
+    // 3d. Push transferts entrants
+    ;(transfersIn || []).forEach((t: any) => {
       const toReg = (cashData || []).find((c) => c.id === t.to_cash_register_id)
-
-      if (registerIds.includes(t.from_cash_register_id)) {
-        allMovements.push({
-          id: `tr-out-${t.id}`,
-          date: t.transfer_date,
-          description: t.note || 'تحويل صادر',
-          amount: Number(t.amount),
-          direction: 'out',
-          type: 'Transfert sortant',
-          cashRegisterId: t.from_cash_register_id,
-          cashRegisterName: fromReg?.name || '-',
-          relatedTo: toReg?.name || '-',
-          icon: ArrowUpRight,
-          color: 'text-amber-600 bg-amber-50',
-        })
-      }
-
-      if (registerIds.includes(t.to_cash_register_id)) {
-        allMovements.push({
-          id: `tr-in-${t.id}`,
-          date: t.transfer_date,
-          description: t.note || 'تحويل وارد',
-          amount: Number(t.amount),
-          direction: 'in',
-          type: 'Transfert entrant',
-          cashRegisterId: t.to_cash_register_id,
-          cashRegisterName: toReg?.name || '-',
-          relatedTo: fromReg?.name || '-',
-          icon: ArrowDownLeft,
-          color: 'text-blue-600 bg-blue-50',
-        })
-      }
+      allMovements.push({
+        id: `tr-in-${t.id}`,
+        date: t.transfer_date,
+        description: t.note || 'تحويل وارد',
+        amount: Number(t.amount),
+        direction: 'in',
+        type: 'Transfert entrant',
+        cashRegisterId: t.to_cash_register_id,
+        cashRegisterName: toReg?.name || linkedCaisseMap.get(t.to_cash_register_id) || '-',
+        relatedTo: linkedCaisseMap.get(t.from_cash_register_id) || '-',
+        icon: ArrowDownLeft,
+        color: 'text-blue-600 bg-blue-50',
+      })
     })
 
     allMovements.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -187,7 +248,6 @@ export default function CaissePage() {
 
   const thisMonth = new Date().toISOString().slice(0, 7)
 
-  // Total In/Out — EXCLU les transferts
   const totalIn = movements
     .filter((m) => m.direction === 'in' && m.date.startsWith(thisMonth) && !m.type.includes('Transfert'))
     .reduce((s, m) => s + m.amount, 0)

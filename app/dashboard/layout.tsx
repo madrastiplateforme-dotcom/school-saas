@@ -11,12 +11,13 @@ import {
   LayoutDashboard, LogOut, School, Settings, Shield, UserPlus, Users,
   Wallet, Wrench, ArrowLeft, BarChart3, Building2, Send, Link2,
   ClipboardList, ShieldCheck, Mail, MessageSquare, CreditCard,
+  ShieldAlert,
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════
-// Menu sections
+// ADMIN (Directeur) — Sections complètes
 // ═══════════════════════════════════════════════════
-const menuSections = [
+const adminMenuSections = [
   {
     title: 'PRINCIPAL',
     items: [
@@ -26,19 +27,19 @@ const menuSections = [
       { href: '/dashboard/messages', key: 'messages', icon: MessageSquare, label: 'Messages' },
     ],
   },
-{
-  title: 'SCOLARITÉ',
-  items: [
-    { href: '/dashboard/students', key: 'students', icon: Users, label: 'Élèves' },
-    { href: '/dashboard/families', key: 'families', icon: Users, label: 'Familles' },
-    { href: '/dashboard/attendance', key: 'attendance', icon: CheckCircle2, label: 'Absences' },
-    { href: '/dashboard/attendance/reports', key: 'attendanceReports', icon: FileText, label: 'Rapport des absences' },
-    { href: '/dashboard/discipline', key: 'discipline', icon: Shield, label: 'Discipline' },
-    { href: '/dashboard/meetings', key: 'meetings', icon: Users, label: 'Réunions parents' },  // ← جديد
-    { href: '/dashboard/evaluations', key: 'evaluations', icon: ClipboardList, label: 'Évaluations & Notes' },
-    { href: '/dashboard/bulletins', key: 'bulletins', icon: FileText, label: 'Bulletins' },
-  ],
-},
+  {
+    title: 'SCOLARITÉ',
+    items: [
+      { href: '/dashboard/students', key: 'students', icon: Users, label: 'Élèves' },
+      { href: '/dashboard/families', key: 'families', icon: Users, label: 'Familles' },
+      { href: '/dashboard/attendance', key: 'attendance', icon: CheckCircle2, label: 'Absences' },
+      { href: '/dashboard/attendance/reports', key: 'attendanceReports', icon: FileText, label: 'Rapport des absences' },
+      { href: '/dashboard/discipline', key: 'discipline', icon: Shield, label: 'Discipline' },
+      { href: '/dashboard/meetings', key: 'meetings', icon: Users, label: 'Réunions parents' },
+      { href: '/dashboard/evaluations', key: 'evaluations', icon: ClipboardList, label: 'Évaluations & Notes' },
+      { href: '/dashboard/bulletins', key: 'bulletins', icon: FileText, label: 'Bulletins' },
+    ],
+  },
   {
     title: 'FINANCE',
     items: [
@@ -54,7 +55,7 @@ const menuSections = [
   },
 ]
 
-const settingsItems = [
+const adminSettingsItems = [
   { href: '/dashboard/academic-years', key: 'academicYears', icon: Calendar, label: 'Années scolaires' },
   { href: '/dashboard/levels', key: 'levels', icon: GraduationCap, label: 'Niveaux' },
   { href: '/dashboard/classes', key: 'classes', icon: BookOpen, label: 'Classes' },
@@ -73,23 +74,80 @@ const settingsItems = [
 ]
 
 // ═══════════════════════════════════════════════════
-// All sections unified
+// SECRÉTAIRE — Sections administratives (sans settings)
 // ═══════════════════════════════════════════════════
-const allSections = [
-  ...menuSections,
-  { title: 'PARAMÈTRES', items: settingsItems },
+const secretaryMenuSections = [
+  {
+    title: 'PRINCIPAL',
+    items: [
+      { href: '/dashboard/secretary', key: 'secretary', icon: LayoutDashboard, label: 'Tableau de bord' },
+      { href: '/dashboard/enroll', key: 'enroll', icon: UserPlus, label: 'Inscription' },
+      { href: '/dashboard/messages', key: 'messages', icon: MessageSquare, label: 'Messages' },
+    ],
+  },
+  {
+    title: 'SCOLARITÉ',
+    items: [
+      { href: '/dashboard/students', key: 'students', icon: Users, label: 'Élèves' },
+      { href: '/dashboard/families', key: 'families', icon: Users, label: 'Familles' },
+      { href: '/dashboard/attendance', key: 'attendance', icon: CheckCircle2, label: 'Absences' },
+      { href: '/dashboard/discipline', key: 'discipline', icon: ShieldAlert, label: 'Discipline' },
+      { href: '/dashboard/meetings', key: 'meetings', icon: Users, label: 'Réunions parents' },
+      { href: '/dashboard/evaluations', key: 'evaluations', icon: ClipboardList, label: 'Évaluations & Notes' },
+      { href: '/dashboard/bulletins', key: 'bulletins', icon: FileText, label: 'Bulletins' },
+      { href: '/dashboard/timetable', key: 'timetable', icon: Calendar, label: 'Emploi du temps' },
+    ],
+  },
+  {
+    title: 'FINANCE',
+    items: [
+      { href: '/dashboard/contracts', key: 'contracts', icon: FileText, label: 'Contrats' },
+      { href: '/dashboard/installments', key: 'installments', icon: Calendar, label: 'Échéances' },
+      { href: '/dashboard/payments', key: 'payments', icon: Wallet, label: 'Paiements' },
+      { href: '/dashboard/impayes', key: 'impayes', icon: AlertCircle, label: 'Impayés' },
+      { href: '/dashboard/expenses', key: 'expenses', icon: Wallet, label: 'Dépenses' },
+      { href: '/dashboard/caisse', key: 'caisse', icon: Building2, label: 'صندوقي' },
+      { href: '/dashboard/caisse/transfers', key: 'transfers', icon: Send, label: 'التحويلات' },
+    ],
+  },
 ]
+
+const secretarySettingsItems = [
+  { href: '/dashboard/notifications', key: 'notifications', icon: Bell, label: 'الإشعارات' },
+]
+
+// ═══════════════════════════════════════════════════
+// Build sections helper
+// ═══════════════════════════════════════════════════
+function buildSections(isSecretaire: boolean) {
+  if (isSecretaire) {
+    return [
+      ...secretaryMenuSections,
+      { title: 'MON COMPTE', items: secretarySettingsItems },
+    ]
+  }
+  return [
+    ...adminMenuSections,
+    { title: 'PARAMÈTRES', items: adminSettingsItems },
+  ]
+}
 
 const DEFAULT_OPEN: Record<string, boolean> = {
   PRINCIPAL: true,
   SCOLARITÉ: true,
   FINANCE: true,
   PARAMÈTRES: false,
+  'MON COMPTE': true,
 }
 
-const STORAGE_KEY = 'dashboard_menu_sections'
+const STORAGE_KEY_ADMIN = 'dashboard_menu_sections_admin'
+const STORAGE_KEY_SECR = 'dashboard_menu_sections_secr'
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const { lang, setLang, t } = useLanguage()
@@ -97,9 +155,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [userEmail, setUserEmail] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [assistanceName, setAssistanceName] = useState<string | null>(null)
+  const [roleName, setRoleName] = useState<string | null>(null)
+
+  const isSecretaire = (roleName || '').toLowerCase().includes('secr')
+
+  const allSections = buildSections(isSecretaire)
+  const storageKey = isSecretaire ? STORAGE_KEY_SECR : STORAGE_KEY_ADMIN
 
   // ─── Menu sections state ───
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(DEFAULT_OPEN)
+  const [openSections, setOpenSections] =
+    useState<Record<string, boolean>>(DEFAULT_OPEN)
   const prevActiveRef = useRef<string | null>(null)
 
   // Notifications
@@ -111,7 +176,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // ─── Load saved sections state ───
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY)
+      const saved = localStorage.getItem(storageKey)
       if (saved) {
         const parsed = JSON.parse(saved)
         setOpenSections({ ...DEFAULT_OPEN, ...parsed })
@@ -119,13 +184,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     } catch {
       // ignore
     }
-  }, [])
+  }, [storageKey])
 
-  // ─── Auto-open section containing active page (only on section change) ───
+  // ─── Auto-open section containing active page ───
   useEffect(() => {
     const activeSection = allSections.find((sec) =>
       sec.items.some((item) => {
-        if (item.href === '/dashboard') return pathname === item.href
+        if (item.href === '/dashboard/secretary' || item.href === '/dashboard') {
+          return pathname === item.href
+        }
         return pathname.startsWith(item.href)
       }),
     )
@@ -135,11 +202,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (prev[activeSection.title]) return prev
         const next = { ...prev, [activeSection.title]: true }
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+          localStorage.setItem(storageKey, JSON.stringify(next))
         } catch {}
         return next
       })
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
 
   // ─── Toggle section ───
@@ -147,13 +215,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setOpenSections((prev) => {
       const next = { ...prev, [title]: !prev[title] }
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+        localStorage.setItem(storageKey, JSON.stringify(next))
       } catch {}
       return next
     })
   }
 
-  // Close bell mli tclicki berra
+  // Close bell outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
@@ -168,46 +236,61 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const supabase = createClient()
     const assistId = sessionStorage.getItem('assistance_establishment_id')
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) {
-        router.push('/login')
-        return
-      }
-      setUserEmail(user.email || '')
+    supabase.auth
+      .getUser()
+      .then(async ({ data: { user } }) => {
+        if (!user) {
+          router.push('/login')
+          return
+        }
+        setUserEmail(user.email || '')
 
-      loadNotifications(user.id)
+        loadNotifications(user.id)
 
-      if (assistId) {
-        supabase
-          .from('establishments')
-          .select('name')
-          .eq('id', assistId)
-          .single()
-          .then(({ data }) => {
-            if (data) setAssistanceName(data.name)
-          })
-        return
-      }
+        // Fetch profile + role name (query séparée pour roles)
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('establishment_id, role_id')
+          .eq('user_id', user.id)
+          .maybeSingle()
 
-      supabase
-        .from('user_profiles')
-        .select('establishment_id')
-        .eq('user_id', user.id)
-        .single()
-        .then(({ data: profile }) => {
-          if (profile?.establishment_id) {
-            supabase
-              .from('establishments')
-              .select('name')
-              .eq('id', profile.establishment_id)
-              .single()
-              .then(({ data }) => {
-                if (data) setSchoolName(data.name)
-              })
-          }
-        })
-    })
-  }, [pathname])
+        // Get role name via separate query (avoid JOIN FK issues)
+        let rName = ''
+        if (profile?.role_id) {
+          const { data: roleData } = await supabase
+            .from('roles')
+            .select('name')
+            .eq('id', profile.role_id)
+            .maybeSingle()
+          rName = roleData?.name || ''
+        }
+        setRoleName(rName)
+
+        if (assistId) {
+          supabase
+            .from('establishments')
+            .select('name')
+            .eq('id', assistId)
+            .single()
+            .then(({ data }) => {
+              if (data) setAssistanceName(data.name)
+            })
+          return
+        }
+
+        if (profile?.establishment_id) {
+          const { data: est } = await supabase
+            .from('establishments')
+            .select('name')
+            .eq('id', profile.establishment_id)
+            .single()
+          if (est) setSchoolName(est.name)
+        }
+      })
+      .catch((e) => {
+        console.error('[dashboard-layout]', e?.message || e)
+      })
+  }, [pathname, router])
 
   const loadNotifications = async (userId: string) => {
     const supabase = createClient()
@@ -225,15 +308,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const handleMarkAsRead = async (notifId: string) => {
     const supabase = createClient()
     await supabase.from('notifications').update({ read: true }).eq('id', notifId)
-    setNotifications((prev) => prev.map((n) => (n.id === notifId ? { ...n, read: true } : n)))
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notifId ? { ...n, read: true } : n)),
+    )
     setUnreadCount((prev) => Math.max(0, prev - 1))
   }
 
   const handleMarkAllRead = async () => {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return
-    await supabase.from('notifications').update({ read: true }).eq('user_id', user.id).eq('read', false)
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', user.id)
+      .eq('read', false)
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
     setUnreadCount(0)
   }
@@ -253,7 +344,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   const exitAssistance = () => {
-    const returnPath = sessionStorage.getItem('assistance_return_path') || '/dashboard/admin/establishments'
+    const returnPath =
+      sessionStorage.getItem('assistance_return_path') ||
+      '/dashboard/admin/establishments'
     sessionStorage.removeItem('assistance_establishment_id')
     sessionStorage.removeItem('assistance_return_path')
     setAssistanceName(null)
@@ -264,13 +357,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const displayName = assistanceName || schoolName
 
   const isActive = (href: string) => {
-    if (href === '/dashboard') return pathname === href
+    if (href === '/dashboard' || href === '/dashboard/secretary') {
+      return pathname === href
+    }
     return pathname.startsWith(href)
   }
 
   const sectionHasActive = (items: any[]) =>
     items.some((item) => {
-      if (item.href === '/dashboard') return pathname === item.href
+      if (item.href === '/dashboard' || item.href === '/dashboard/secretary') {
+        return pathname === item.href
+      }
       return pathname.startsWith(item.href)
     })
 
@@ -283,6 +380,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (diff < 86400) return `${Math.floor(diff / 3600)} س`
     return `${Math.floor(diff / 86400)} ي`
   }
+  // ═══ Colors based on role ═══
+  const sidebarBg = isSecretaire ? 'bg-[#3b0764]' : 'bg-[#0b2f35]'
+  const accentBg = isSecretaire ? 'bg-violet-400' : 'bg-emerald-400'
+  const accentText = isSecretaire ? 'text-[#3b0764]' : 'text-[#0b2f35]'
+  const accentTextLight = isSecretaire ? 'text-violet-200' : 'text-emerald-200'
+  const accentTextMuted = isSecretaire ? 'text-violet-300/60' : 'text-emerald-300/60'
+  const accentTextHover = isSecretaire ? 'hover:text-violet-300' : 'hover:text-emerald-300'
+  const accentDot = isSecretaire ? 'bg-violet-400' : 'bg-emerald-400'
+  const accentActiveBg = isSecretaire ? '#a78bfa' : '#34d399'
+  const accentActiveText = isSecretaire ? '#2e1065' : '#082c27'
+  const accentShadow = isSecretaire
+    ? 'shadow-violet-950/30'
+    : 'shadow-emerald-950/20'
+  const headerAccentText = isSecretaire ? 'text-violet-700' : 'text-emerald-700'
+  const avatarBg = isSecretaire
+    ? 'bg-violet-100 text-violet-800'
+    : 'bg-emerald-100 text-emerald-800'
+  const roleLabel = isSecretaire ? 'فضاء السكرتيرة' : t('administrationSpace')
 
   return (
     <div className="app-shell flex min-h-screen flex-col">
@@ -291,7 +406,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex items-center gap-3">
             <AlertCircle className="h-5 w-5 flex-shrink-0" />
             <span className="text-sm font-semibold">
-              وضع المساعدة — أنت الآن تتصفح: <strong className="underline">{assistanceName}</strong>
+              وضع المساعدة — أنت الآن تتصفح:{' '}
+              <strong className="underline">{assistanceName}</strong>
             </span>
           </div>
           <button
@@ -305,15 +421,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
 
       <div className="flex min-h-screen">
-        <aside className="hidden w-[280px] flex-shrink-0 flex-col bg-[#0b2f35] text-white lg:flex">
+        <aside
+          className={`hidden w-[280px] flex-shrink-0 flex-col ${sidebarBg} text-white lg:flex`}
+        >
           <div className="border-b border-white/10 px-6 py-6">
             <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400 text-[#0b2f35]">
+              <span
+                className={`grid h-10 w-10 place-items-center rounded-xl ${accentBg} ${accentText}`}
+              >
                 <School className="h-6 w-6" />
               </span>
               <div className="min-w-0">
-                <p className="truncate font-extrabold">{displayName || t('school')}</p>
-                <p className="mt-0.5 text-xs text-emerald-200">{t('administrationSpace')}</p>
+                <p className="truncate font-extrabold">
+                  {displayName || t('school')}
+                </p>
+                <p className={`mt-0.5 text-xs ${accentTextLight}`}>{roleLabel}</p>
               </div>
             </div>
             <p className="mt-5 truncate rounded-lg bg-white/5 px-3 py-2 text-xs text-slate-300">
@@ -330,12 +452,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div key={section.title}>
                   <button
                     onClick={() => toggleSection(section.title)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-[.18em] text-emerald-300/60 hover:text-emerald-300 transition"
+                    className={`w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-[.18em] ${accentTextMuted} ${accentTextHover} transition`}
                   >
                     <span className="flex items-center gap-2">
                       {section.title}
                       {hasActive && !isOpen && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${accentDot} animate-pulse`}
+                        />
                       )}
                     </span>
                     <ChevronDown
@@ -360,12 +484,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                           href={item.href}
                           style={
                             active
-                              ? { backgroundColor: '#34d399', color: '#082c27' }
+                              ? {
+                                  backgroundColor: accentActiveBg,
+                                  color: accentActiveText,
+                                }
                               : undefined
                           }
                           className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition ${
                             active
-                              ? 'shadow-lg shadow-emerald-950/20'
+                              ? `shadow-lg ${accentShadow}`
                               : 'text-slate-300 hover:bg-white/10 hover:text-white'
                           }`}
                         >
@@ -385,7 +512,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               href="/dashboard/profile"
               className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition ${
                 isActive('/dashboard/profile')
-                  ? 'bg-emerald-400 text-[#082c27] font-bold shadow-lg shadow-emerald-950/20'
+                  ? `${accentBg} ${accentText} font-bold shadow-lg ${accentShadow}`
                   : 'text-slate-300 hover:bg-white/10 hover:text-white'
               }`}
             >
@@ -412,20 +539,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-[#f6f8fc]/90 px-5 py-4 backdrop-blur lg:px-8">
             <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3">
               <div className="flex items-center gap-3 lg:hidden">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#0b2f35] text-emerald-300">
+                <span
+                  className={`grid h-9 w-9 place-items-center rounded-xl ${sidebarBg} ${accentTextLight}`}
+                >
                   <School className="h-5 w-5" />
                 </span>
-                <span className="max-w-40 truncate font-bold">{displayName || t('school')}</span>
+                <span className="max-w-40 truncate font-bold">
+                  {displayName || t('school')}
+                </span>
               </div>
               <div className="hidden lg:block">
-                <p className="text-xs font-bold uppercase tracking-[.14em] text-emerald-700">
-                  {t('schoolManagement')}
+                <p
+                  className={`text-xs font-bold uppercase tracking-[.14em] ${headerAccentText}`}
+                >
+                  {isSecretaire ? 'ESPACE SECRÉTAIRE' : t('schoolManagement')}
                 </p>
-                <p className="mt-0.5 text-sm text-slate-500">{t('schoolManagementSubtitle')}</p>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  {isSecretaire
+                    ? 'الفضاء الإداري'
+                    : t('schoolManagementSubtitle')}
+                </p>
               </div>
 
               <div className="flex items-center gap-3">
-                {/* BELL ICON */}
+                {/* BELL */}
                 <div className="relative" ref={bellRef}>
                   <button
                     onClick={() => setBellOpen(!bellOpen)}
@@ -440,7 +577,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </button>
 
                   {bellOpen && (
-                    <div className="absolute left-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50" dir="rtl">
+                    <div
+                      className="absolute left-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50"
+                      dir="rtl"
+                    >
                       <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="font-bold text-slate-800">الإشعارات</h3>
                         {unreadCount > 0 && (
@@ -448,7 +588,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             onClick={handleMarkAllRead}
                             className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
                           >
-                            <CheckCheck className="h-3.5 w-3.5" /> تعليم الكل كمقروء
+                            <CheckCheck className="h-3.5 w-3.5" /> تعليم الكل
+                            كمقروء
                           </button>
                         )}
                       </div>
@@ -469,16 +610,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                               }`}
                             >
                               <div className="flex gap-3">
-                                <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-indigo-500' : 'bg-transparent'}`} />
+                                <div
+                                  className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${
+                                    !n.read ? 'bg-indigo-500' : 'bg-transparent'
+                                  }`}
+                                />
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-start justify-between gap-2">
-                                    <p className={`text-sm ${!n.read ? 'font-bold text-slate-800' : 'font-medium text-slate-700'}`}>
+                                    <p
+                                      className={`text-sm ${
+                                        !n.read
+                                          ? 'font-bold text-slate-800'
+                                          : 'font-medium text-slate-700'
+                                      }`}
+                                    >
                                       {n.title}
                                     </p>
-                                    <span className="text-xs text-slate-400 whitespace-nowrap">{formatTime(n.created_at)}</span>
+                                    <span className="text-xs text-slate-400 whitespace-nowrap">
+                                      {formatTime(n.created_at)}
+                                    </span>
                                   </div>
                                   {n.message && (
-                                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">{n.message}</p>
+                                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                                      {n.message}
+                                    </p>
                                   )}
                                 </div>
                               </div>
@@ -499,23 +654,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
 
                 <span className="hidden text-right text-xs text-slate-500 sm:block">
-                  <strong className="block text-sm text-slate-700">{displayName || t('school')}</strong>
+                  <strong className="block text-sm text-slate-700">
+                    {displayName || t('school')}
+                  </strong>
                   {userEmail}
                 </span>
-                <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 font-bold text-emerald-800">
+                <span
+                  className={`grid h-10 w-10 place-items-center rounded-full font-bold ${avatarBg}`}
+                >
                   {(displayName || 'E').slice(0, 1).toUpperCase()}
                 </span>
               </div>
             </div>
 
+            {/* Mobile nav */}
             <nav className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-              {menuSections[0].items.map((item) => {
+              {allSections[0].items.map((item) => {
                 const active = isActive(item.href)
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    style={active ? { backgroundColor: '#047857', color: '#ffffff' } : { backgroundColor: '#ffffff', color: '#334155' }}
+                    style={
+                      active
+                        ? {
+                            backgroundColor: isSecretaire ? '#0e7490' : '#047857',
+                            color: '#ffffff',
+                          }
+                        : { backgroundColor: '#ffffff', color: '#334155' }
+                    }
                     className="whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold"
                   >
                     {item.label}
@@ -525,7 +692,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </nav>
           </header>
 
-          <div className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">{children}</div>
+          <div className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">
+            {children}
+          </div>
         </main>
       </div>
     </div>

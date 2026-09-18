@@ -22,7 +22,7 @@ type ClassRow = {
 export default function BulletinsListPage() {
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
-  const isDirector = role === 'directeur'
+  const canManage = role === 'directeur' || role === 'secretaire'
 
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [termsCount, setTermsCount] = useState(2)
@@ -33,6 +33,7 @@ export default function BulletinsListPage() {
   useEffect(() => {
     if (!establishmentId || !role) return
     loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [establishmentId, role])
 
   const loadData = async () => {
@@ -101,11 +102,15 @@ export default function BulletinsListPage() {
     setLoading(false)
   }
 
-  if (loading || roleLoading) return <div className="p-6 text-center">جارٍ التحميل...</div>
-  if (!isDirector) return <div className="p-6">ليس لديك صلاحية</div>
+  if (loading || roleLoading) {
+    return <div className="p-6 text-center">جارٍ التحميل...</div>
+  }
+  if (!canManage) {
+    return <div className="p-6">ليس لديك صلاحية</div>
+  }
 
-  const filtered = classes.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase())
+  const filtered = classes.filter((c) =>
+    c.name.toLowerCase().includes(search.toLowerCase()),
   )
 
   return (
@@ -128,7 +133,11 @@ export default function BulletinsListPage() {
         </button>
       </header>
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
 
       <div className="relative">
         <Search className="absolute right-3 top-3 h-5 w-5 text-gray-400" />
@@ -148,7 +157,7 @@ export default function BulletinsListPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(c => (
+          {filtered.map((c) => (
             <Link
               key={c.id}
               href={`/dashboard/bulletins/${c.id}`}
@@ -165,7 +174,9 @@ export default function BulletinsListPage() {
                   </span>
                 )}
               </div>
-              <h3 className="font-bold text-slate-800 text-lg truncate">{c.name}</h3>
+              <h3 className="font-bold text-slate-800 text-lg truncate">
+                {c.name}
+              </h3>
               <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
                 {c.level_name && (
                   <span className="flex items-center gap-1">

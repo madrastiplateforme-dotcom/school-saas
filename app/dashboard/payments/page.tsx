@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx'
 import {
   Search, Plus, FileText, RefreshCw, Filter, TrendingUp,
   Wallet, Calendar, Building2, Download, X, Eye,
-  Trash2, AlertTriangle, Lock, CheckCircle2,
+  Trash2, AlertTriangle, Lock, CheckCircle2, Archive,
 } from 'lucide-react'
 
 type Payment = {
@@ -26,6 +26,9 @@ type Payment = {
   installment_id: string | null
   cash_register_id: string | null
   user_id: string | null
+  deleted_at: string | null
+  deleted_by: string | null
+  delete_reason: string | null
   students: { first_name: string; last_name: string } | null
   installments: { description: string } | null
   cash_registers: { name: string } | null
@@ -70,6 +73,8 @@ export default function PaymentsPage() {
 
   const [currentUserId, setCurrentUserId] = useState('')
 
+  const [showDeleted, setShowDeleted] = useState(false)
+
   // Filtres
   const [searchTerm, setSearchTerm] = useState('')
   const [methodFilter, setMethodFilter] = useState('all')
@@ -87,7 +92,7 @@ export default function PaymentsPage() {
   useEffect(() => {
     if (!establishmentId || !role) return
     fetchPayments(establishmentId)
-  }, [establishmentId, role])
+  }, [establishmentId, role, showDeleted])
 
   const fetchPayments = async (sid: string) => {
     setLoading(true)
@@ -97,7 +102,7 @@ export default function PaymentsPage() {
 
     setCurrentUserId(user.id)
 
-    // 1. Jib caisses (filtered b rôle)
+    // 1. Caisses
     let caisseQuery = supabase
       .from('cash_registers')
       .select('id, name')
@@ -112,12 +117,13 @@ export default function PaymentsPage() {
 
     const caisseIds = (cashData || []).map(c => c.id)
 
-    // 2. Jib paiements
+    // 2. Payments
     let query = supabase
       .from('payments')
       .select(`
         id, amount, payment_date, method, reference, notes,
         student_id, installment_id, cash_register_id, user_id,
+        deleted_at, deleted_by, delete_reason,
         students (first_name, last_name),
         installments (description),
         cash_registers (name)
@@ -128,6 +134,12 @@ export default function PaymentsPage() {
       query = query.in('cash_register_id', caisseIds)
     }
 
+    if (showDeleted && isDirector) {
+      query = query.not('deleted_at', 'is', null)
+    } else {
+      query = query.is('deleted_at', null)
+    }
+
     const { data, error } = await query.order('created_at', { ascending: false })
 
     if (error) setError(error.message)
@@ -135,7 +147,6 @@ export default function PaymentsPage() {
     setLoading(false)
   }
 
-  // ✅ Filtrage
   const filteredPayments = useMemo(() => {
     return payments.filter((p) => {
       if (searchTerm.trim()) {
@@ -184,6 +195,8 @@ export default function PaymentsPage() {
       'الطريقة': METHOD_LABELS[p.method] || p.method,
       'المرجع': p.reference || '-',
       'الصندوق': p.cash_registers?.name || '-',
+      'الحالة': p.deleted_at ? 'محذوفة' : 'نشطة',
+      'سبب الحذف': p.delete_reason || '-',
     }))
 
     const ws = XLSX.utils.json_to_sheet(data)
@@ -192,13 +205,13 @@ export default function PaymentsPage() {
     XLSX.writeFile(wb, `payments-${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
-  // ✅ Chkoun kay9der y-annulli paiement
+  // ✅ Chkoun kay9der y-annulli
   const canCancelPayment = (p: Payment): boolean => {
+    if (p.deleted_at) return false
     if (isDirector) return true
 
     if (isSecretary) {
       if (p.user_id !== currentUserId) return false
-
       const paymentDate = new Date(p.payment_date)
       const today = new Date()
       const diffDays = Math.floor((today.getTime() - paymentDate.getTime()) / (1000 * 60 * 60 * 24))
@@ -208,10 +221,13 @@ export default function PaymentsPage() {
     return false
   }
 
-  // ✅ OPEN CANCEL
   const handleOpenCancel = (payment: Payment) => {
+    if (payment.deleted_at) {
+      alert('ℹ️ هذه الدفعة محذوفة بالفعل')
+      return
+    }
     if (!canCancelPayment(payment)) {
-      alert('❌ لا يمكنك إلغاء هذه الدفعة\n\n- السكرتيرة يمكنها إلغاء دفعاتها فقط في نفس اليوم')
+      alert('❌ لا يمكنك حذف هذه الدفعة\n\n- السكرتيرة يمكنها حذف دفعاتها فقط في نفس اليوم')
       return
     }
     setCancelPayment(payment)
@@ -219,24 +235,46 @@ export default function PaymentsPage() {
     setCancelConfirmText('')
   }
 
-  // ✅ CLOSE MODAL
   const closeCancelModal = () => {
     setCancelPayment(null)
     setCancelReason('')
     setCancelConfirmText('')
   }
 
-  // ✅ CONFIRM CANCEL
+  const triggerPaymentCancelledEmails = async (
+    paymentId: string,
+    cancelReason: string,
+  ) => {
+    try {
+      await fetch('/api/payments/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: 'cancelled',
+          paymentId,
+          establishmentId,
+          cancelledByUserId: currentUserId,
+          cancelReason,
+        }),
+      })
+    } catch (err: any) {
+      console.error('⚠️ send-email API error:', err?.message || err)
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // 🗑️ SUPPRESSION SIMPLE (soft delete + revert installment)
+  // ═════════════════════════════════════════════════════════════
   const handleConfirmCancel = async () => {
     if (!cancelPayment || !establishmentId) return
 
     if (!cancelReason.trim() || cancelReason.trim().length < 5) {
-      setError('⚠️ سبب الإلغاء مطلوب (5 أحرف على الأقل)')
+      setError('⚠️ سبب الحذف مطلوب (5 أحرف على الأقل)')
       return
     }
 
-    if (cancelConfirmText.trim().toUpperCase() !== 'إلغاء') {
-      setError('⚠️ اكتب كلمة "إلغاء" للتأكيد')
+    if (cancelConfirmText.trim().toUpperCase() !== 'حذف') {
+      setError('⚠️ اكتب كلمة "حذف" للتأكيد')
       return
     }
 
@@ -251,23 +289,7 @@ export default function PaymentsPage() {
       const installmentId = cancelPayment.installment_id
       const amount = Number(cancelPayment.amount)
 
-      // 1. LOG audit
-      await supabase.from('notifications').insert({
-        user_id: currentUserId,
-        establishment_id: establishmentId,
-        type: 'payment_cancelled',
-        title: '🗑️ تم إلغاء دفعة',
-        message: `تم إلغاء دفعة بمبلغ ${amount.toFixed(2)} DH\nالسبب: ${cancelReason.trim()}`,
-        metadata: {
-          payment_id: paymentId,
-          amount,
-          student_id: studentId,
-          reason: cancelReason.trim(),
-          cancelled_by: currentUserId,
-        },
-      })
-
-      // 2. RJE3 installment
+      // 1. Revert installment
       if (installmentId) {
         const { data: inst } = await supabase
           .from('installments')
@@ -285,38 +307,114 @@ export default function PaymentsPage() {
 
           await supabase
             .from('installments')
-            .update({
-              paid_amount: newPaidAmount,
-              status: newStatus,
-            })
+            .update({ paid_amount: newPaidAmount, status: newStatus })
             .eq('id', installmentId)
         }
       }
 
-      // 3. MSA7 paiement
+      // 2. SOFT DELETE payment
       const { error: delError } = await supabase
         .from('payments')
-        .delete()
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: currentUserId,
+          delete_reason: cancelReason.trim(),
+        })
         .eq('id', paymentId)
 
       if (delError) throw delError
 
-      // 4. Notification l créateur
-      if (cancelPayment.user_id && cancelPayment.user_id !== currentUserId) {
-        await supabase.from('notifications').insert({
-          user_id: cancelPayment.user_id,
-          establishment_id: establishmentId,
-          type: 'payment_cancelled_by',
-          title: '⚠️ تم إلغاء دفعة سجلتها',
-          message: `تم إلغاء دفعة بمبلغ ${amount.toFixed(2)} DH\nالسبب: ${cancelReason.trim()}`,
-          link: '/dashboard/payments',
-          metadata: { payment_id: paymentId, reason: cancelReason.trim() },
-        })
+      // ═══════════════════════════════════════════════════════
+      // 3. NOTIFICATIONS in-app
+      // ═══════════════════════════════════════════════════════
+      const studentName = cancelPayment.students
+        ? `${cancelPayment.students.first_name} ${cancelPayment.students.last_name}`
+        : 'تلميذ'
+
+      const notifInserts: any[] = []
+      const notifBase = {
+        establishment_id: establishmentId,
+        type: 'payment_cancelled',
+        title: '🗑️ تم حذف دفعة',
+        message: `دفعة ${amount.toFixed(2)} DH — ${studentName}\nالسبب: ${cancelReason.trim()}`,
+        link: '/dashboard/payments',
+        metadata: {
+          payment_id: paymentId,
+          amount,
+          student_id: studentId,
+          reason: cancelReason.trim(),
+          cancelled_by: currentUserId,
+        },
       }
+
+      // 3a) Directeurs — TOUJOURS
+      const { data: directors } = await supabase
+        .from('user_profiles')
+        .select('user_id')
+        .eq('establishment_id', establishmentId)
+        .eq('role', 'directeur')
+
+      for (const d of directors || []) {
+        notifInserts.push({ ...notifBase, user_id: d.user_id })
+      }
+
+      // 3b) Secrétaires — TOUTES
+      const { data: secretaries } = await supabase
+        .from('user_profiles')
+        .select('user_id')
+        .eq('establishment_id', establishmentId)
+        .eq('role', 'secretaire')
+
+      for (const s of secretaries || []) {
+        if (notifInserts.some((i) => i.user_id === s.user_id)) continue
+        notifInserts.push({ ...notifBase, user_id: s.user_id })
+      }
+
+      // 3c) Parent — si c'est son enfant
+      if (studentId) {
+        const { data: studentRow } = await supabase
+          .from('students')
+          .select('family_id')
+          .eq('id', studentId)
+          .maybeSingle()
+
+        if (studentRow?.family_id) {
+          const { data: family } = await supabase
+            .from('families')
+            .select('parent_user_id')
+            .eq('id', studentRow.family_id)
+            .maybeSingle()
+
+          if (family?.parent_user_id) {
+            notifInserts.push({
+              ...notifBase,
+              user_id: family.parent_user_id,
+              title: '⚠️ تم حذف دفعتكم',
+              message: `تم حذف دفعة ${amount.toFixed(2)} DH لـ ${studentName}\nالسبب: ${cancelReason.trim()}`,
+              link: '/parent/dashboard/payments',
+            })
+          }
+        }
+      }
+
+      if (notifInserts.length > 0) {
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .insert(notifInserts)
+        if (notifError) {
+          console.error('⚠️ Notifications error:', notifError?.message || notifError)
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════
+      // 4. EMAILS (via API)
+      // ═══════════════════════════════════════════════════════
+      await triggerPaymentCancelledEmails(paymentId, cancelReason.trim())
 
       fetchPayments(establishmentId)
       closeCancelModal()
     } catch (err: any) {
+      console.error('[handleConfirmCancel]', err?.message || err)
       setError(err.message || 'حدث خطأ')
     } finally {
       setCancelling(false)
@@ -346,6 +444,19 @@ export default function PaymentsPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {isDirector && (
+            <button
+              onClick={() => setShowDeleted(!showDeleted)}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm border transition ${
+                showDeleted
+                  ? 'bg-red-600 text-white border-red-600 hover:bg-red-700'
+                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Archive className="h-4 w-4" />
+              {showDeleted ? 'إخفاء المحذوفة' : 'عرض المحذوفة'}
+            </button>
+          )}
           <button
             onClick={() => fetchPayments(establishmentId!)}
             className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm"
@@ -371,12 +482,19 @@ export default function PaymentsPage() {
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
 
-      {/* STATS CARDS */}
+      {showDeleted && isDirector && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm">
+          <Archive className="h-5 w-5" />
+          <span>أنت تستعرض <strong>الدفعات المحذوفة</strong> فقط.</span>
+        </div>
+      )}
+
+      {/* STATS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl p-5 text-white shadow-lg">
+        <div className={`bg-gradient-to-br ${showDeleted ? 'from-red-500 to-red-700' : 'from-emerald-500 to-emerald-700'} rounded-2xl p-5 text-white shadow-lg`}>
           <div className="flex items-center gap-2 mb-2 opacity-90">
             <TrendingUp className="h-5 w-5" />
-            <span className="text-sm">إجمالي المدفوعات</span>
+            <span className="text-sm">{showDeleted ? 'إجمالي المحذوفة' : 'إجمالي المدفوعات'}</span>
           </div>
           <p className="text-3xl font-bold">{totals.amount.toFixed(2)} DH</p>
         </div>
@@ -387,7 +505,9 @@ export default function PaymentsPage() {
             <span className="text-sm font-medium">عدد الدفعات</span>
           </div>
           <p className="text-2xl font-bold text-slate-800">{totals.count}</p>
-          <p className="text-xs text-slate-500 mt-1">من أصل {payments.length} إجمالي</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {showDeleted ? 'دفعات محذوفة' : `من أصل ${payments.length} إجمالي`}
+          </p>
         </div>
 
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
@@ -432,11 +552,6 @@ export default function PaymentsPage() {
           >
             <Filter className="h-4 w-4" />
             فلاتر
-            {hasActiveFilters && (
-              <span className="bg-white/20 rounded-full px-2 text-xs">
-                {[searchTerm, methodFilter !== 'all', caisseFilter !== 'all', dateFrom, dateTo].filter(Boolean).length}
-              </span>
-            )}
           </button>
           {hasActiveFilters && (
             <button
@@ -497,7 +612,7 @@ export default function PaymentsPage() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-bold text-slate-800">
-            قائمة المدفوعات ({filteredPayments.length})
+            {showDeleted ? 'الدفعات المحذوفة' : 'قائمة المدفوعات'} ({filteredPayments.length})
           </h2>
         </div>
 
@@ -505,16 +620,8 @@ export default function PaymentsPage() {
           <div className="p-16 text-center">
             <Wallet className="h-16 w-16 text-slate-300 mx-auto mb-4" />
             <p className="text-slate-500 font-medium">
-              {hasActiveFilters ? 'لا توجد نتائج مطابقة' : 'لا توجد مدفوعات'}
+              {showDeleted ? 'لا توجد دفعات محذوفة' : hasActiveFilters ? 'لا توجد نتائج مطابقة' : 'لا توجد مدفوعات'}
             </p>
-            {hasActiveFilters && (
-              <button
-                onClick={resetFilters}
-                className="mt-3 text-sm text-indigo-600 hover:underline"
-              >
-                مسح الفلاتر
-              </button>
-            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -532,23 +639,37 @@ export default function PaymentsPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredPayments.map((payment) => (
-                  <tr key={payment.id} className="hover:bg-gray-50 transition">
+                  <tr
+                    key={payment.id}
+                    className={`transition ${
+                      payment.deleted_at
+                        ? 'bg-red-50/40 hover:bg-red-50/60'
+                        : 'hover:bg-gray-50'
+                    }`}
+                  >
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
                       {payment.payment_date}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {payment.students ? `${payment.students.first_name} ${payment.students.last_name}` : '-'}
+                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className={payment.deleted_at ? 'text-red-700 line-through' : 'text-gray-900'}>
+                        {payment.students ? `${payment.students.first_name} ${payment.students.last_name}` : '-'}
+                      </div>
+                      {payment.deleted_at && payment.delete_reason && (
+                        <div className="text-xs text-red-600 mt-0.5">🗑️ {payment.delete_reason}</div>
+                      )}
                     </td>
                     <td className="px-4 py-4 text-sm text-gray-600">
                       {payment.installments?.description || '-'}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-emerald-600">
-                      + {Number(payment.amount).toFixed(2)} DH
+                    <td className="px-4 py-4 whitespace-nowrap text-sm font-bold">
+                      {payment.deleted_at ? (
+                        <span className="text-red-500 line-through">{Number(payment.amount).toFixed(2)} DH</span>
+                      ) : (
+                        <span className="text-emerald-600">+ {Number(payment.amount).toFixed(2)} DH</span>
+                      )}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
-                        METHOD_COLORS[payment.method] || 'bg-slate-100 text-slate-700'
-                      }`}>
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${METHOD_COLORS[payment.method] || 'bg-slate-100 text-slate-700'}`}>
                         {METHOD_LABELS[payment.method] || payment.method}
                       </span>
                     </td>
@@ -557,7 +678,6 @@ export default function PaymentsPage() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-1">
-                        {/* Reçu PDF */}
                         <button
                           onClick={() => window.open(`/api/pdf/payment-receipt?paymentId=${payment.id}`, '_blank')}
                           className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
@@ -566,19 +686,26 @@ export default function PaymentsPage() {
                           <FileText className="h-4 w-4" />
                         </button>
 
-                        {/* Annuler */}
-                        <button
-                          onClick={() => handleOpenCancel(payment)}
-                          className={`p-1.5 rounded-lg transition ${
-                            canCancelPayment(payment)
-                              ? 'text-red-600 hover:bg-red-50'
-                              : 'text-slate-300 cursor-not-allowed'
-                          }`}
-                          title={canCancelPayment(payment) ? 'إلغاء الدفعة' : 'لا يمكن الإلغاء'}
-                          disabled={!canCancelPayment(payment)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {!payment.deleted_at && (
+                          <button
+                            onClick={() => handleOpenCancel(payment)}
+                            className={`p-1.5 rounded-lg transition ${
+                              canCancelPayment(payment)
+                                ? 'text-red-600 hover:bg-red-50'
+                                : 'text-slate-300 cursor-not-allowed'
+                            }`}
+                            title={canCancelPayment(payment) ? 'حذف الدفعة' : 'لا يمكن الحذف'}
+                            disabled={!canCancelPayment(payment)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+
+                        {payment.deleted_at && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 bg-red-100 px-2 py-1 rounded-lg">
+                            <Archive className="h-3 w-3" /> محذوفة
+                          </span>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -586,10 +713,11 @@ export default function PaymentsPage() {
               </tbody>
             </table>
 
-            {/* FOOTER TOTAL */}
             <div className="bg-slate-50 px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-              <span className="text-sm font-medium text-slate-600">المجموع</span>
-              <span className="text-lg font-bold text-emerald-700">
+              <span className="text-sm font-medium text-slate-600">
+                {showDeleted ? 'مجموع المحذوفة' : 'المجموع'}
+              </span>
+              <span className={`text-lg font-bold ${showDeleted ? 'text-red-700' : 'text-emerald-700'}`}>
                 {totals.amount.toFixed(2)} DH
               </span>
             </div>
@@ -597,7 +725,7 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      {/* ============ CANCEL MODAL ============ */}
+      {/* ============ CANCEL MODAL (simple) ============ */}
       {cancelPayment && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
@@ -606,8 +734,8 @@ export default function PaymentsPage() {
                 <AlertTriangle className="h-6 w-6 text-red-600" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-800">إلغاء الدفعة</h3>
-                <p className="text-sm text-slate-500">لا يمكن التراجع عن هذه العملية</p>
+                <h3 className="text-lg font-bold text-slate-800">حذف الدفعة</h3>
+                <p className="text-sm text-slate-500">ستبقى محفوظة في السجل</p>
               </div>
             </div>
 
@@ -635,16 +763,16 @@ export default function PaymentsPage() {
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-sm text-amber-800">
               <p className="font-semibold mb-1">⚠️ ما سيحدث:</p>
               <ul className="list-disc list-inside space-y-1 text-xs">
-                <li>سيتم حذف الدفعة نهائياً</li>
-                <li>سيتم إرجاع القسط إلى حالته السابقة (متبقي +{Number(cancelPayment.amount).toFixed(2)} DH)</li>
-                <li>سيتم تسجيل العملية في السجل</li>
-                <li>سيتم إشعار الطرف المعني</li>
+                <li>سيتم حذف الدفعة من صندوقك (تبقى في السجل)</li>
+                <li>سيتم إرجاع القسط إلى حالته السابقة</li>
+                <li>سيتم إشعار المدير</li>
+                <li>سيتم إشعار السكرتيرة وولي الأمر</li>
               </ul>
             </div>
 
             <div className="mb-4">
               <label className="block text-sm font-bold text-slate-700 mb-2">
-                سبب الإلغاء <span className="text-red-500">*</span>
+                سبب الحذف <span className="text-red-500">*</span>
               </label>
               <textarea
                 value={cancelReason}
@@ -652,23 +780,23 @@ export default function PaymentsPage() {
                 rows={3}
                 required
                 minLength={5}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 text-sm"
                 placeholder="مثال: خطأ في المبلغ، دفعة مكررة، إلغاء من طرف ولي الأمر..."
               />
-              <p className="text-xs text-slate-500 mt-1">
-                {cancelReason.length}/5 أحرف على الأقل
-              </p>
+              <p className="text-xs text-slate-500 mt-1">{cancelReason.length}/5 أحرف على الأقل</p>
             </div>
 
             <div className="mb-4">
               <label className="block text-sm font-bold text-slate-700 mb-2">
-                للتأكيد، اكتب كلمة <span className="text-red-600 font-mono bg-red-50 px-2 py-0.5 rounded">إلغاء</span> <span className="text-red-500">*</span>
+                للتأكيد، اكتب كلمة{' '}
+                <span className="text-red-600 font-mono bg-red-50 px-2 py-0.5 rounded">حذف</span>{' '}
+                <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={cancelConfirmText}
                 onChange={(e) => setCancelConfirmText(e.target.value)}
-                className="w-full h-11 px-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-center font-bold"
+                className="w-full h-11 px-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 text-center font-bold"
                 placeholder="اكتب هنا..."
               />
             </div>
@@ -682,16 +810,16 @@ export default function PaymentsPage() {
             <div className="flex gap-2 justify-end pt-4 border-t border-slate-100">
               <button
                 onClick={handleConfirmCancel}
-                disabled={cancelling || !cancelReason.trim() || cancelConfirmText.trim().toUpperCase() !== 'إلغاء'}
+                disabled={cancelling || !cancelReason.trim() || cancelConfirmText.trim().toUpperCase() !== 'حذف'}
                 className="h-11 px-6 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
               >
                 <Trash2 className="h-4 w-4" />
-                {cancelling ? 'جارٍ الإلغاء...' : 'تأكيد الإلغاء'}
+                {cancelling ? 'جارٍ الحذف...' : 'تأكيد الحذف'}
               </button>
               <button
                 onClick={closeCancelModal}
                 disabled={cancelling}
-                className="h-11 px-6 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                className="h-11 px-6 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
               >
                 تراجع
               </button>

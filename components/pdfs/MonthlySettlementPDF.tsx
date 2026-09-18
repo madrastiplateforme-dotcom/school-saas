@@ -7,24 +7,9 @@ import {
   StyleSheet,
   Font,
 } from '@react-pdf/renderer'
-import path from 'path'
+import { registerPdfFonts } from '@/lib/pdf-fonts'
 
-// ═══════════════════════════════════════════════════
-// Fonts — Cairo (4 variants)
-// ═══════════════════════════════════════════════════
-const FONTS_DIR = path.resolve(process.cwd(), 'public', 'fonts')
-
-Font.register({
-  family: 'Cairo',
-  fonts: [
-    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'normal' },
-    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'italic' },
-    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'normal' },
-    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'italic' },
-  ],
-})
-
-Font.registerHyphenationCallback((word) => [word])
+registerPdfFonts()
 
 // ═══════════════════════════════════════════════════
 // Palette
@@ -42,332 +27,258 @@ const EMERALD = '#059669'
 const ROSE = '#dc2626'
 const CYAN = '#0891b2'
 
-const styles = StyleSheet.create({
-  page: {
-    padding: 0,
-    fontFamily: 'Cairo',
-    fontSize: 10,
-    direction: 'rtl',
-  },
-
-  outerFrame: {
-    position: 'absolute',
-    top: 18,
-    left: 18,
-    right: 18,
-    bottom: 18,
-    borderWidth: 2.5,
-    borderColor: C.navy,
-    borderRadius: 4,
-  },
-  innerFrame: {
-    position: 'absolute',
-    top: 25,
-    left: 25,
-    right: 25,
-    bottom: 25,
-    borderWidth: 0.8,
-    borderColor: C.gold,
-    borderRadius: 2,
-  },
-
-  content: {
-    padding: 42,
-    paddingTop: 38,
-  },
-
-  // ─── Header ───
-  header: {
-    alignItems: 'center',
-    paddingBottom: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: C.navy,
-    marginBottom: 14,
-  },
-  kingdomAr: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'center',
-  },
-  kingdomFr: {
-    fontSize: 8.5,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'center',
-    marginTop: 1,
-  },
-  schoolAr: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: C.gold,
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  schoolSub: {
-    fontSize: 9,
-    color: C.gray,
-    textAlign: 'center',
-    marginTop: 2,
-  },
-
-  // ─── Title ───
-  titleBox: {
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 15,
-  },
-  titleAr: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'center',
-  },
-  titleFr: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: C.gold,
-    textAlign: 'center',
-    letterSpacing: 2,
-    marginTop: 2,
-  },
-  titleDivider: {
-    width: 160,
-    height: 1.5,
-    backgroundColor: C.gold,
-    marginTop: 6,
-  },
-
-  // ─── Section ───
-  section: { marginBottom: 10 },
-  sectionHeader: {
-    backgroundColor: C.navy,
-    borderRadius: 3,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    marginBottom: 5,
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitleAr: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    textAlign: 'right',
-  },
-  sectionTitleFr: {
+// ═══════════════════════════════════════════════════
+// 🎯 DYNAMIC SIZING
+// ═══════════════════════════════════════════════════
+function getDynamicSizes(totalRows: number) {
+  if (totalRows <= 10) {
+    return {
+      contentPadding: 42, contentPaddingTop: 38,
+      fontSize: 10,
+      titleSize: 20, titleFrSize: 11,
+      titleMarginTop: 10, titleMarginBottom: 15,
+      headerPaddingBottom: 12, headerMarginBottom: 14,
+      sectionMarginBottom: 10,
+      sectionHeaderPadding: 5,
+      rowPadding: 6, rowPaddingH: 10,
+      summaryPadding: 12, summaryMarginTop: 12, summaryRowPadding: 4,
+      infoBoxPadding: 10, infoBoxMarginTop: 10,
+      balanceBoxPadding: 15, balanceBoxMarginTop: 12,
+      balanceValueSize: 24, balanceUnitSize: 12,
+      footerMarginTop: 20, footerPaddingTop: 12,
+      signLabelFrMarginBottom: 35,
+      footerNoteMarginTop: 12,
+    }
+  }
+  if (totalRows <= 20) {
+    return {
+      contentPadding: 32, contentPaddingTop: 28,
+      fontSize: 9,
+      titleSize: 17, titleFrSize: 10,
+      titleMarginTop: 7, titleMarginBottom: 11,
+      headerPaddingBottom: 10, headerMarginBottom: 10,
+      sectionMarginBottom: 8,
+      sectionHeaderPadding: 4,
+      rowPadding: 5, rowPaddingH: 8,
+      summaryPadding: 10, summaryMarginTop: 10, summaryRowPadding: 3.5,
+      infoBoxPadding: 8, infoBoxMarginTop: 8,
+      balanceBoxPadding: 12, balanceBoxMarginTop: 10,
+      balanceValueSize: 22, balanceUnitSize: 11,
+      footerMarginTop: 16, footerPaddingTop: 10,
+      signLabelFrMarginBottom: 30,
+      footerNoteMarginTop: 10,
+    }
+  }
+  if (totalRows <= 30) {
+    return {
+      contentPadding: 26, contentPaddingTop: 22,
+      fontSize: 8.5,
+      titleSize: 15, titleFrSize: 9,
+      titleMarginTop: 5, titleMarginBottom: 8,
+      headerPaddingBottom: 8, headerMarginBottom: 8,
+      sectionMarginBottom: 6,
+      sectionHeaderPadding: 3.5,
+      rowPadding: 3.5, rowPaddingH: 6,
+      summaryPadding: 8, summaryMarginTop: 8, summaryRowPadding: 3,
+      infoBoxPadding: 6, infoBoxMarginTop: 6,
+      balanceBoxPadding: 10, balanceBoxMarginTop: 8,
+      balanceValueSize: 20, balanceUnitSize: 10,
+      footerMarginTop: 12, footerPaddingTop: 8,
+      signLabelFrMarginBottom: 25,
+      footerNoteMarginTop: 8,
+    }
+  }
+  return {
+    contentPadding: 20, contentPaddingTop: 18,
     fontSize: 8,
-    color: C.lightGold,
-    textAlign: 'left',
-    fontStyle: 'italic',
-  },
-  sectionNote: {
-    fontSize: 8,
-    color: C.gray,
-    fontStyle: 'italic',
-    padding: 5,
-    backgroundColor: '#fafafa',
-    borderRadius: 2,
-    marginBottom: 5,
-    textAlign: 'right',
-  },
-
-  // ─── Table ───
-  table: {
-    borderWidth: 1,
-    borderColor: C.navy,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row-reverse',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#e5e5e5',
-    borderBottomStyle: 'dotted',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-  },
-  rowAlt: { backgroundColor: '#fafafa' },
-  rowLast: {
-    flexDirection: 'row-reverse',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-  },
-  cell: {
-    flex: 1,
-    fontSize: 9,
-    color: C.dark,
-    textAlign: 'right',
-  },
-  cellAmount: {
-    width: 100,
-    fontSize: 9.5,
-    textAlign: 'left',
-    fontWeight: 'bold',
-  },
-
-  // ─── Summary ───
-  summary: {
-    backgroundColor: C.lightGold,
-    borderWidth: 1,
-    borderColor: C.gold,
-    borderRadius: 4,
-    padding: 12,
-    marginTop: 12,
-  },
-  summaryRow: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    alignItems: 'center',
-  },
-  summaryLabelAr: {
-    fontSize: 10,
-    color: C.navy,
-    textAlign: 'right',
-    fontWeight: 'bold',
-  },
-  summaryValue: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    textAlign: 'left',
-  },
-
-  // ─── Info Box ───
-  infoBox: {
-    backgroundColor: '#f0f9ff',
-    borderWidth: 1,
-    borderColor: '#7dd3fc',
-    borderRadius: 4,
-    padding: 10,
-    marginTop: 10,
-  },
-  infoTitleAr: {
-    fontSize: 9,
-    color: '#0369a1',
-    marginBottom: 4,
-    textAlign: 'right',
-    fontWeight: 'bold',
-  },
-  infoTitleFr: {
-    fontSize: 7.5,
-    color: '#0369a1',
-    marginBottom: 6,
-    textAlign: 'right',
-    fontStyle: 'italic',
-  },
-  infoRow: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    paddingVertical: 2,
-  },
-  infoLabel: {
-    fontSize: 9,
-    color: '#0369a1',
-    textAlign: 'right',
-  },
-  infoValue: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: CYAN,
-    textAlign: 'left',
-  },
-
-  // ─── Balance ───
-  balanceBox: {
-    backgroundColor: '#f0fdf4',
-    borderWidth: 2,
-    borderColor: '#86efac',
-    borderRadius: 6,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  balanceLabelAr: {
-    fontSize: 11,
-    color: '#166534',
-    marginBottom: 2,
-    fontWeight: 'bold',
-  },
-  balanceLabelFr: {
-    fontSize: 8,
-    color: '#166534',
-    marginBottom: 8,
-    fontStyle: 'italic',
-  },
-  balanceValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#166534',
-  },
-  balanceUnit: {
-    fontSize: 12,
-    color: '#166534',
-    fontWeight: 'bold',
-  },
-
-  // ─── Footer ───
-  footer: {
-    marginTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: C.gold,
-    paddingTop: 12,
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-  },
-  signBox: {
-    width: 180,
-    alignItems: 'center',
-  },
-  signLabelAr: {
-    fontSize: 9,
-    color: C.navy,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  signLabelFr: {
-    fontSize: 7,
-    color: C.gray,
-    textAlign: 'center',
-    marginBottom: 35,
-    fontStyle: 'italic',
-  },
-  signLine: {
-    borderTopWidth: 1,
-    borderTopColor: C.navy,
-    width: 150,
-    marginTop: 10,
-    paddingTop: 4,
-  },
-  signText: {
-    fontSize: 8,
-    color: C.gray,
-    textAlign: 'center',
-  },
-  footerNote: {
-    fontSize: 7.5,
-    color: C.gray,
-    textAlign: 'center',
-    marginTop: 12,
-    fontStyle: 'italic',
-  },
-})
+    titleSize: 14, titleFrSize: 8.5,
+    titleMarginTop: 4, titleMarginBottom: 6,
+    headerPaddingBottom: 6, headerMarginBottom: 6,
+    sectionMarginBottom: 5,
+    sectionHeaderPadding: 3,
+    rowPadding: 2.5, rowPaddingH: 5,
+    summaryPadding: 6, summaryMarginTop: 6, summaryRowPadding: 2.5,
+    infoBoxPadding: 5, infoBoxMarginTop: 5,
+    balanceBoxPadding: 8, balanceBoxMarginTop: 6,
+    balanceValueSize: 18, balanceUnitSize: 10,
+    footerMarginTop: 10, footerPaddingTop: 6,
+    signLabelFrMarginBottom: 22,
+    footerNoteMarginTop: 6,
+  }
+}
 
 type Item = { description: string; date: string; amount: number }
 
 export default function MonthlySettlementPDF({ data }: { data: any }) {
+  const totalRows =
+    (data.payments?.length || 0) +
+    (data.expenses?.length || 0) +
+    (data.transfersIn?.length || 0) +
+    (data.transfersOut?.length || 0)
+  const S = getDynamicSizes(totalRows)
+
+  const styles = StyleSheet.create({
+    page: {
+      padding: 0,
+      fontFamily: 'Cairo',
+      fontSize: S.fontSize,
+      direction: 'rtl',
+    },
+
+    outerFrame: {
+      position: 'absolute', top: 18, left: 18, right: 18, bottom: 18,
+      borderWidth: 2.5, borderColor: C.navy, borderRadius: 4,
+    },
+    innerFrame: {
+      position: 'absolute', top: 25, left: 25, right: 25, bottom: 25,
+      borderWidth: 0.8, borderColor: C.gold, borderRadius: 2,
+    },
+
+    content: {
+      padding: S.contentPadding,
+      paddingTop: S.contentPaddingTop,
+    },
+
+    header: {
+      alignItems: 'center',
+      paddingBottom: S.headerPaddingBottom,
+      borderBottomWidth: 2, borderBottomColor: C.navy,
+      marginBottom: S.headerMarginBottom,
+    },
+    kingdomAr: { fontSize: 11, fontWeight: 'bold', color: C.navy, textAlign: 'center' },
+    kingdomFr: { fontSize: 8.5, fontWeight: 'bold', color: C.navy, textAlign: 'center', marginTop: 1 },
+    schoolAr: { fontSize: 14, fontWeight: 'bold', color: C.gold, textAlign: 'center', marginTop: 6 },
+    schoolSub: { fontSize: 9, color: C.gray, textAlign: 'center', marginTop: 2 },
+
+    titleBox: {
+      alignItems: 'center',
+      marginTop: S.titleMarginTop,
+      marginBottom: S.titleMarginBottom,
+    },
+    titleAr: { fontSize: S.titleSize, fontWeight: 'bold', color: C.navy, textAlign: 'center' },
+    titleFr: {
+      fontSize: S.titleFrSize, fontWeight: 'bold', color: C.gold,
+      textAlign: 'center', letterSpacing: 2, marginTop: 2,
+    },
+    titleDivider: { width: 160, height: 1.5, backgroundColor: C.gold, marginTop: 6 },
+
+    section: { marginBottom: S.sectionMarginBottom },
+    sectionHeader: {
+      backgroundColor: C.navy, borderRadius: 3,
+      paddingVertical: S.sectionHeaderPadding,
+      paddingHorizontal: 10,
+      marginBottom: 5,
+      flexDirection: 'row-reverse',
+      justifyContent: 'space-between', alignItems: 'center',
+    },
+    sectionTitleAr: { fontSize: 10, fontWeight: 'bold', color: '#ffffff', textAlign: 'right' },
+    sectionTitleFr: { fontSize: 8, color: C.lightGold, textAlign: 'left', fontStyle: 'italic' },
+    sectionNote: {
+      fontSize: 8, color: C.gray, fontStyle: 'italic',
+      padding: 5, backgroundColor: '#fafafa', borderRadius: 2,
+      marginBottom: 5, textAlign: 'right',
+    },
+
+    table: {
+      borderWidth: 1, borderColor: C.navy, borderRadius: 3, overflow: 'hidden',
+    },
+    row: {
+      flexDirection: 'row-reverse',
+      borderBottomWidth: 0.5, borderBottomColor: '#e5e5e5',
+      borderBottomStyle: 'dotted',
+      paddingVertical: S.rowPadding,
+      paddingHorizontal: S.rowPaddingH,
+      alignItems: 'center',
+    },
+    rowAlt: { backgroundColor: '#fafafa' },
+    rowLast: {
+      flexDirection: 'row-reverse',
+      paddingVertical: S.rowPadding,
+      paddingHorizontal: S.rowPaddingH,
+      alignItems: 'center',
+    },
+    cell: { flex: 1, fontSize: 9, color: C.dark, textAlign: 'right' },
+    cellAmount: { width: 100, fontSize: 9.5, textAlign: 'left', fontWeight: 'bold' },
+
+    summary: {
+      backgroundColor: C.lightGold,
+      borderWidth: 1, borderColor: C.gold,
+      borderRadius: 4, padding: S.summaryPadding,
+      marginTop: S.summaryMarginTop,
+    },
+    summaryRow: {
+      flexDirection: 'row-reverse', justifyContent: 'space-between',
+      paddingVertical: S.summaryRowPadding, alignItems: 'center',
+    },
+    summaryLabelAr: { fontSize: 10, color: C.navy, textAlign: 'right', fontWeight: 'bold' },
+    summaryValue: { fontSize: 11, fontWeight: 'bold', textAlign: 'left' },
+
+    infoBox: {
+      backgroundColor: '#f0f9ff',
+      borderWidth: 1, borderColor: '#7dd3fc',
+      borderRadius: 4, padding: S.infoBoxPadding,
+      marginTop: S.infoBoxMarginTop,
+    },
+    infoTitleAr: {
+      fontSize: 9, color: '#0369a1', marginBottom: 4,
+      textAlign: 'right', fontWeight: 'bold',
+    },
+    infoTitleFr: {
+      fontSize: 7.5, color: '#0369a1', marginBottom: 6,
+      textAlign: 'right', fontStyle: 'italic',
+    },
+    infoRow: {
+      flexDirection: 'row-reverse', justifyContent: 'space-between',
+      paddingVertical: 2,
+    },
+    infoLabel: { fontSize: 9, color: '#0369a1', textAlign: 'right' },
+    infoValue: { fontSize: 9, fontWeight: 'bold', color: CYAN, textAlign: 'left' },
+
+    balanceBox: {
+      backgroundColor: '#f0fdf4',
+      borderWidth: 2, borderColor: '#86efac',
+      borderRadius: 6, padding: S.balanceBoxPadding,
+      alignItems: 'center', marginTop: S.balanceBoxMarginTop,
+    },
+    balanceLabelAr: {
+      fontSize: 11, color: '#166534', marginBottom: 2, fontWeight: 'bold',
+    },
+    balanceLabelFr: { fontSize: 8, color: '#166534', marginBottom: 8, fontStyle: 'italic' },
+    balanceValue: {
+      fontSize: S.balanceValueSize, fontWeight: 'bold', color: '#166534',
+    },
+    balanceUnit: { fontSize: S.balanceUnitSize, color: '#166534', fontWeight: 'bold' },
+
+    footer: {
+      marginTop: S.footerMarginTop,
+      borderTopWidth: 1, borderTopColor: C.gold,
+      paddingTop: S.footerPaddingTop,
+      flexDirection: 'row-reverse', justifyContent: 'space-between',
+    },
+    signBox: { width: 180, alignItems: 'center' },
+    signLabelAr: { fontSize: 9, color: C.navy, fontWeight: 'bold', textAlign: 'center' },
+    signLabelFr: {
+      fontSize: 7, color: C.gray, textAlign: 'center',
+      marginBottom: S.signLabelFrMarginBottom, fontStyle: 'italic',
+    },
+    signLine: {
+      borderTopWidth: 1, borderTopColor: C.navy,
+      width: 150, marginTop: 10, paddingTop: 4,
+    },
+    footerNote: {
+      fontSize: 7.5, color: C.gray, textAlign: 'center',
+      marginTop: S.footerNoteMarginTop, fontStyle: 'italic',
+    },
+  })
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Cadres décoratifs */}
         <View style={styles.outerFrame} />
         <View style={styles.innerFrame} />
 
         <View style={styles.content}>
-          {/* ═══════ HEADER ═══════ */}
+          {/* HEADER */}
           <View style={styles.header}>
             <Text style={styles.kingdomAr}>المملكة المغربية</Text>
             <Text style={styles.kingdomFr}>Royaume du Maroc</Text>
@@ -377,22 +288,18 @@ export default function MonthlySettlementPDF({ data }: { data: any }) {
             </Text>
           </View>
 
-          {/* ═══════ TITLE ═══════ */}
+          {/* TITLE */}
           <View style={styles.titleBox}>
             <Text style={styles.titleAr}>تقرير تسوية الشهر</Text>
-            <Text style={styles.titleFr}>
-              RAPPORT DE RÉGULARISATION MENSUELLE
-            </Text>
+            <Text style={styles.titleFr}>RAPPORT DE RÉGULARISATION MENSUELLE</Text>
             <View style={styles.titleDivider} />
           </View>
 
-          {/* ═══════ PAYMENTS ═══════ */}
+          {/* PAYMENTS */}
           {data.payments.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitleAr}>
-                  المداخيل الحقيقية
-                </Text>
+                <Text style={styles.sectionTitleAr}>المداخيل الحقيقية</Text>
                 <Text style={styles.sectionTitleFr}>Encaissements</Text>
               </View>
               <View style={styles.table}>
@@ -416,13 +323,11 @@ export default function MonthlySettlementPDF({ data }: { data: any }) {
             </View>
           )}
 
-          {/* ═══════ EXPENSES ═══════ */}
+          {/* EXPENSES */}
           {data.expenses.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitleAr}>
-                  المصاريف الحقيقية
-                </Text>
+                <Text style={styles.sectionTitleAr}>المصاريف الحقيقية</Text>
                 <Text style={styles.sectionTitleFr}>Dépenses</Text>
               </View>
               <View style={styles.table}>
@@ -446,16 +351,12 @@ export default function MonthlySettlementPDF({ data }: { data: any }) {
             </View>
           )}
 
-          {/* ═══════ TRANSFERS ═══════ */}
+          {/* TRANSFERS */}
           {(data.transfersIn.length > 0 || data.transfersOut.length > 0) && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitleAr}>
-                  حركات داخلية
-                </Text>
-                <Text style={styles.sectionTitleFr}>
-                  Transferts internes
-                </Text>
+                <Text style={styles.sectionTitleAr}>حركات داخلية</Text>
+                <Text style={styles.sectionTitleFr}>Transferts internes</Text>
               </View>
               <Text style={styles.sectionNote}>
                 ملاحظة: هذه الحركات لا تُحتسب في المداخيل/المصاريف — مجرد نقل بين الصناديق
@@ -492,7 +393,7 @@ export default function MonthlySettlementPDF({ data }: { data: any }) {
             </View>
           )}
 
-          {/* ═══════ SUMMARY ═══════ */}
+          {/* SUMMARY */}
           <View style={styles.summary}>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabelAr}>الرصيد الابتدائي</Text>
@@ -501,24 +402,20 @@ export default function MonthlySettlementPDF({ data }: { data: any }) {
               </Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabelAr}>
-                إجمالي المداخيل الحقيقية
-              </Text>
+              <Text style={styles.summaryLabelAr}>إجمالي المداخيل الحقيقية</Text>
               <Text style={[styles.summaryValue, { color: EMERALD }]}>
                 + {data.totalIn.toFixed(2)} DH
               </Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabelAr}>
-                إجمالي المصاريف الحقيقية
-              </Text>
+              <Text style={styles.summaryLabelAr}>إجمالي المصاريف الحقيقية</Text>
               <Text style={[styles.summaryValue, { color: ROSE }]}>
                 - {data.totalOut.toFixed(2)} DH
               </Text>
             </View>
           </View>
 
-          {/* ═══════ INFO TRANSFERS ═══════ */}
+          {/* INFO TRANSFERS */}
           {(data.totalTransfersIn > 0 || data.totalTransfersOut > 0) && (
             <View style={styles.infoBox}>
               <Text style={styles.infoTitleAr}>
@@ -542,7 +439,7 @@ export default function MonthlySettlementPDF({ data }: { data: any }) {
             </View>
           )}
 
-          {/* ═══════ BALANCE ═══════ */}
+          {/* BALANCE */}
           <View style={styles.balanceBox}>
             <Text style={styles.balanceLabelAr}>الرصيد النهائي</Text>
             <Text style={styles.balanceLabelFr}>Solde final</Text>
@@ -552,20 +449,16 @@ export default function MonthlySettlementPDF({ data }: { data: any }) {
             </Text>
           </View>
 
-          {/* ═══════ FOOTER ═══════ */}
+          {/* FOOTER */}
           <View style={styles.footer}>
             <View style={styles.signBox}>
               <Text style={styles.signLabelAr}>توقيع المدير(ة)</Text>
-              <Text style={styles.signLabelFr}>
-                Signature du Directeur
-              </Text>
+              <Text style={styles.signLabelFr}>Signature du Directeur</Text>
               <View style={styles.signLine} />
             </View>
             <View style={styles.signBox}>
               <Text style={styles.signLabelAr}>توقيع السكرتيرة</Text>
-              <Text style={styles.signLabelFr}>
-                Signature de la Secrétaire
-              </Text>
+              <Text style={styles.signLabelFr}>Signature de la Secrétaire</Text>
               <View style={styles.signLine} />
             </View>
           </View>

@@ -3,17 +3,11 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { fetchTeacherData, TeacherClass } from '@/lib/useTeacherData'
 import {
   FileText, RefreshCw, Plus, Edit3, Trash2, X, Save, Calendar,
-  BookOpen, AlertCircle, User, Filter, Paperclip, Clock,
+  BookOpen, AlertCircle, User, Filter, Paperclip,
 } from 'lucide-react'
-
-type ClassOpt = {
-  class_id: string
-  class_name: string
-  level_name: string | null
-  subjects: { id: string; name: string }[]
-}
 
 type Devoir = {
   id: string
@@ -40,14 +34,18 @@ export default function TeacherDevoirsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
   const [staffId, setStaffId] = useState('')
   const [estabId, setEstabId] = useState('')
   const [yearId, setYearId] = useState('')
-  const [classes, setClasses] = useState<ClassOpt[]>([])
+
+  const [classes, setClasses] = useState<TeacherClass[]>([])
   const [selectedClass, setSelectedClass] = useState('')
   const [selectedSubject, setSelectedSubject] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
+
   const [devoirs, setDevoirs] = useState<Devoir[]>([])
+
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -63,76 +61,86 @@ export default function TeacherDevoirsPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setError('غير مصرح'); setLoading(false); return }
-      const { data: profile } = await supabase
-        .from('user_profiles').select('establishment_id').eq('user_id', user.id).maybeSingle()
-      const estab = profile?.establishment_id
-      if (!estab) { setError('لم يتم العثور على المؤسسة'); setLoading(false); return }
-      setEstabId(estab)
 
-      const { data: staffRow } = await supabase
-        .from('staff').select('id').eq('user_id', user.id).maybeSingle()
-      if (!staffRow?.id) { setError('لم يتم العثور على ملف الأستاذ'); setLoading(false); return }
-      setStaffId(staffRow.id)
+      const { staffId: sid, establishmentId, classes: list } =
+        await fetchTeacherData(supabase, user.id)
+
+      if (!sid) { setError('ملف الأستاذ غير موجود'); setLoading(false); return }
+      setStaffId(sid)
+      setEstabId(establishmentId || '')
 
       const { data: year } = await supabase
         .from('academic_years').select('id')
-        .eq('establishment_id', estab).eq('is_current', true).maybeSingle()
+        .eq('establishment_id', establishmentId).eq('is_current', true).maybeSingle()
       if (year?.id) setYearId(year.id)
 
-      const { data: ts } = await supabase
-        .from('teacher_subjects')
-        .select('class_id, subject_id, classes(id, name, levels(name)), subjects(id, name)')
-        .eq('teacher_id', staffRow.id)
-
-      const map = new Map<string, ClassOpt>()
-      ;(ts || []).forEach((row: any) => {
-        const cls = row.classes
-        if (!cls?.id) return
-        if (!map.has(cls.id)) {
-          map.set(cls.id, { class_id: cls.id, class_name: cls.name || '—', level_name: cls.levels?.name || null, subjects: [] })
-        }
-        const entry = map.get(cls.id)!
-        if (row.subjects?.id && !entry.subjects.find((s) => s.id === row.subjects.id)) {
-          entry.subjects.push({ id: row.subjects.id, name: row.subjects.name })
-        }
-      })
-      const list = Array.from(map.values())
       setClasses(list)
       if (list.length > 0) {
-        setSelectedClass(list[0].class_id)
+        setSelectedClass(list[0].id)
         if (list[0].subjects.length > 0) setSelectedSubject(list[0].subjects[0].id)
       }
-    } catch (e: any) { setError(e.message || 'خطأ') } finally { setLoading(false) }
+    } catch (e: any) {
+      console.error('[teacher-devoirs]', e)
+      setError(e.message || 'خطأ')
+    } finally { setLoading(false) }
   }
 
   const loadDevoirs = async () => {
     if (!selectedClass) return
     const supabase = createClient()
+
     let q = supabase
       .from('devoirs')
-      .select('id, title, description, due_date, attachment_url, subject_id, teacher_id, subjects(name), staff(full_name)')
+      .select('id, title, description, due_date, attachment_url, subject_id, teacher_id')
       .eq('class_id', selectedClass)
       .order('due_date', { ascending: true })
       .limit(100)
+
     if (selectedSubject) q = q.eq('subject_id', selectedSubject)
     if (mineOnly) q = q.eq('teacher_id', staffId)
 
-    const { data } = await q
+    const { data: raw, error: err } = await q
+    if (err) { console.error(err); setDevoirs([]); return }
+
+    const list = raw || []
+    const subjectIds = Array.from(new Set(list.map((d: any) => d.subject_id).filter(Boolean)))
+    const teacherIds = Array.from(new Set(list.map((d: any) => d.teacher_id).filter(Boolean)))
+
+    let subjectsMap = new Map<string, string>()
+    let teachersMap = new Map<string, string>()
+
+    if (subjectIds.length > 0) {
+      const { data: subjs } = await supabase
+        .from('subjects').select('id, name').in('id', subjectIds)
+      ;(subjs || []).forEach((s: any) => subjectsMap.set(s.id, s.name))
+    }
+    if (teacherIds.length > 0) {
+      const { data: staffs } = await supabase
+        .from('staff').select('id, full_name').in('id', teacherIds)
+      ;(staffs || []).forEach((s: any) => teachersMap.set(s.id, s.full_name))
+    }
+
     const today = new Date(); today.setHours(0,0,0,0)
-    const mapped: Devoir[] = (data || []).map((d: any) => {
+    const mapped: Devoir[] = list.map((d: any) => {
       const due = new Date(d.due_date); due.setHours(0,0,0,0)
       return {
-        id: d.id, title: d.title, description: d.description, due_date: d.due_date,
-        attachment_url: d.attachment_url, subject_id: d.subject_id,
-        subject_name: d.subjects?.name || '—', teacher_id: d.teacher_id,
-        teacher_name: d.staff?.full_name || '—', is_mine: d.teacher_id === staffId,
+        id: d.id,
+        title: d.title,
+        description: d.description,
+        due_date: d.due_date,
+        attachment_url: d.attachment_url,
+        subject_id: d.subject_id,
+        subject_name: subjectsMap.get(d.subject_id) || '—',
+        teacher_id: d.teacher_id,
+        teacher_name: teachersMap.get(d.teacher_id) || '—',
+        is_mine: d.teacher_id === staffId,
         is_past: due.getTime() < today.getTime(),
       }
     })
     setDevoirs(mapped)
   }
 
-  const currentClass = classes.find((c) => c.class_id === selectedClass)
+  const currentClass = classes.find((c) => c.id === selectedClass)
   const availableSubjects = currentClass?.subjects || []
 
   const openNew = () => {
@@ -144,8 +152,10 @@ export default function TeacherDevoirsPage() {
   const openEdit = (d: Devoir) => {
     setEditingId(d.id)
     setForm({
-      title: d.title, description: d.description || '',
-      due_date: d.due_date, attachment_url: d.attachment_url || '',
+      title: d.title,
+      description: d.description || '',
+      due_date: d.due_date,
+      attachment_url: d.attachment_url || '',
     })
     setShowForm(true)
   }
@@ -158,12 +168,15 @@ export default function TeacherDevoirsPage() {
     const supabase = createClient()
     try {
       if (editingId) {
-        const { error: err } = await supabase.from('devoirs').update({
-          title: form.title.trim(),
-          description: form.description.trim() || null,
-          due_date: form.due_date,
-          attachment_url: form.attachment_url.trim() || null,
-        }).eq('id', editingId).eq('teacher_id', staffId)
+        const { error: err } = await supabase
+          .from('devoirs')
+          .update({
+            title: form.title.trim(),
+            description: form.description.trim() || null,
+            due_date: form.due_date,
+            attachment_url: form.attachment_url.trim() || null,
+          })
+          .eq('id', editingId).eq('teacher_id', staffId)
         if (err) throw err
       } else {
         const payload: any = {
@@ -182,7 +195,9 @@ export default function TeacherDevoirsPage() {
       }
       setShowForm(false); setEditingId(null)
       await loadDevoirs()
-    } catch (e: any) { setError(e.message || 'فشل الحفظ') } finally { setSaving(false) }
+    } catch (e: any) {
+      setError(e.message || 'فشل الحفظ')
+    } finally { setSaving(false) }
   }
 
   const handleDelete = async (id: string) => {
@@ -206,13 +221,13 @@ export default function TeacherDevoirsPage() {
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <FileText className="h-6 w-6 text-sky-600" />
-            الفروض
+            <FileText className="h-6 w-6 text-sky-600" /> الفروض
           </h1>
           <p className="text-sm text-gray-500 mt-1">أضف الفروض المنزلية للأقسام</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={loadDevoirs} className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm">
+          <button onClick={loadDevoirs}
+            className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm">
             <RefreshCw className="h-4 w-4" /> تحديث
           </button>
           <button onClick={openNew} disabled={!selectedClass || !selectedSubject}
@@ -242,13 +257,13 @@ export default function TeacherDevoirsPage() {
                 <select value={selectedClass}
                   onChange={(e) => {
                     setSelectedClass(e.target.value)
-                    const c = classes.find((x) => x.class_id === e.target.value)
+                    const c = classes.find((x) => x.id === e.target.value)
                     setSelectedSubject(c?.subjects[0]?.id || '')
                   }}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
                   {classes.map((c) => (
-                    <option key={c.class_id} value={c.class_id}>
-                      {c.class_name} {c.level_name ? `— ${c.level_name}` : ''}
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.level_name ? `— ${c.level_name}` : ''}
                     </option>
                   ))}
                 </select>
@@ -257,7 +272,9 @@ export default function TeacherDevoirsPage() {
                 <label className="block text-xs font-bold text-slate-600 mb-1.5">المادة</label>
                 <select value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
-                  {availableSubjects.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                  {availableSubjects.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
                 </select>
               </div>
               <div className="flex items-end">
@@ -281,40 +298,51 @@ export default function TeacherDevoirsPage() {
                     <FileText className="h-5 w-5 text-sky-600" />
                     {editingId ? 'تعديل فرض' : 'فرض جديد'}
                   </h3>
-                  <button onClick={() => { setShowForm(false); setEditingId(null) }} className="text-slate-400 hover:text-slate-600">
+                  <button onClick={() => { setShowForm(false); setEditingId(null) }}
+                    className="text-slate-400 hover:text-slate-600">
                     <X className="h-5 w-5" />
                   </button>
                 </div>
                 <div className="p-5 space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-600 mb-1.5">العنوان *</label>
-                    <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
-                      placeholder="مثال: تمارين صفحة 45" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                    <input type="text" value={form.title}
+                      onChange={(e) => setForm({ ...form, title: e.target.value })}
+                      placeholder="مثال: تمارين صفحة 45"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-600 mb-1.5">الوصف</label>
-                    <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-                      rows={4} placeholder="تفاصيل الفرض..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y" />
+                    <textarea value={form.description}
+                      onChange={(e) => setForm({ ...form, description: e.target.value })}
+                      rows={4} placeholder="تفاصيل الفرض..."
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y" />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-600 mb-1.5">تاريخ التسليم *</label>
-                      <input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })}
+                      <input type="date" value={form.due_date}
+                        onChange={(e) => setForm({ ...form, due_date: e.target.value })}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-600 mb-1.5">رابط الملف (اختياري)</label>
-                      <input type="url" value={form.attachment_url} onChange={(e) => setForm({ ...form, attachment_url: e.target.value })}
-                        placeholder="https://..." className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                      <input type="url" value={form.attachment_url}
+                        onChange={(e) => setForm({ ...form, attachment_url: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                     </div>
                   </div>
                 </div>
                 <div className="p-5 border-t border-gray-100 flex justify-end gap-2 sticky bottom-0 bg-white">
                   <button onClick={() => { setShowForm(false); setEditingId(null) }}
-                    className="px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium text-sm">إلغاء</button>
+                    className="px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium text-sm">
+                    إلغاء
+                  </button>
                   <button onClick={handleSave} disabled={saving}
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium text-sm disabled:opacity-50">
-                    <Save className="h-4 w-4" /> {saving ? 'جارٍ الحفظ...' : 'حفظ'}
+                    <Save className="h-4 w-4" />
+                    {saving ? 'جارٍ الحفظ...' : 'حفظ'}
                   </button>
                 </div>
               </div>
@@ -340,7 +368,9 @@ export default function TeacherDevoirsPage() {
                     isOverdue ? 'border-rose-200' : isToday ? 'border-amber-200' : 'border-gray-100'
                   }`}>
                     <div className={`px-5 py-3 border-b flex items-center justify-between flex-wrap gap-2 ${
-                      isOverdue ? 'bg-rose-50 border-rose-100' : isToday ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100'
+                      isOverdue ? 'bg-rose-50 border-rose-100'
+                        : isToday ? 'bg-amber-50 border-amber-100'
+                        : 'bg-slate-50 border-slate-100'
                     }`}>
                       <div className="flex items-center gap-3 flex-wrap">
                         <span className="inline-flex items-center gap-1 text-xs font-bold text-sky-700 bg-sky-100 px-2.5 py-1 rounded-md">
@@ -366,10 +396,12 @@ export default function TeacherDevoirsPage() {
                         </span>
                         {d.is_mine && (
                           <>
-                            <button onClick={() => openEdit(d)} className="p-1.5 rounded-md text-slate-500 hover:bg-sky-100 hover:text-sky-700">
+                            <button onClick={() => openEdit(d)}
+                              className="p-1.5 rounded-md text-slate-500 hover:bg-sky-100 hover:text-sky-700">
                               <Edit3 className="h-3.5 w-3.5" />
                             </button>
-                            <button onClick={() => handleDelete(d.id)} className="p-1.5 rounded-md text-slate-500 hover:bg-rose-100 hover:text-rose-700">
+                            <button onClick={() => handleDelete(d.id)}
+                              className="p-1.5 rounded-md text-slate-500 hover:bg-rose-100 hover:text-rose-700">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </>

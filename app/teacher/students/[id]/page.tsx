@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import {
   User, RefreshCw, ChevronLeft, BookOpen, GraduationCap, Calendar,
-  AlertCircle, CheckCircle2, XCircle, Clock, TrendingUp, Award,
+  AlertCircle, CheckCircle2, XCircle, Clock, TrendingUp,
   ShieldAlert, ClipboardList, UserCheck,
 } from 'lucide-react'
 
@@ -20,6 +20,7 @@ type StudentInfo = {
   massar_code: string | null
   birth_date: string | null
   gender: string | null
+  class_id: string | null
   class_name: string | null
   level_name: string | null
 }
@@ -47,10 +48,11 @@ type DiscRow = {
   severity: string | null
   title: string
   description: string | null
-  actions: { action_type: string; description: string | null; action_date: string }[]
 }
 
-const fmtDate = (d: string) => { try { return new Date(d).toLocaleDateString('fr-FR') } catch { return d } }
+const fmtDate = (d: string) => {
+  try { return new Date(d).toLocaleDateString('fr-FR') } catch { return d }
+}
 
 const statusLabel = (s: string) => {
   if (s === 'present') return { text: 'حاضر', color: 'text-emerald-700 bg-emerald-50', icon: CheckCircle2 }
@@ -80,76 +82,139 @@ export default function TeacherStudentDetailPage() {
     setLoading(true); setError('')
     const supabase = createClient()
     try {
+      // 1) Auth + staff
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: profile } = await supabase
-        .from('user_profiles').select('establishment_id').eq('user_id', user.id).maybeSingle()
-      const estab = profile?.establishment_id
+      if (!user) { setError('غير مصرح'); setLoading(false); return }
 
       const { data: staffRow } = await supabase
         .from('staff').select('id').eq('user_id', user.id).maybeSingle()
-      if (!staffRow?.id) { setError('ملف الأستاذ غير موجود'); setLoading(false); return }
+      if (!staffRow?.id) {
+        setError('ملف الأستاذ غير موجود'); setLoading(false); return
+      }
 
-      // الأقسام اللي كيدرّسها
+      // 2) teacher_subjects (SANS JOIN)
       const { data: ts } = await supabase
-        .from('teacher_subjects').select('class_id').eq('teacher_id', staffRow.id)
-      const classIds = Array.from(new Set((ts || []).map((r: any) => r.class_id).filter(Boolean)))
+        .from('teacher_subjects')
+        .select('subject_id, level_id')
+        .eq('teacher_id', staffRow.id)
 
-      const { data: year } = await supabase
-        .from('academic_years').select('id')
-        .eq('establishment_id', estab).eq('is_current', true).maybeSingle()
+      const levelIds = Array.from(
+        new Set((ts || []).map((r: any) => r.level_id).filter(Boolean)),
+      )
 
-      // student + enrollments → class
+      // 3) Student
       const { data: student } = await supabase
         .from('students')
         .select('id, first_name, last_name, massar_code, birth_date, gender')
-        .eq('id', studentId).maybeSingle()
-      if (!student) { setError('التلميذ غير موجود'); setLoading(false); return }
+        .eq('id', studentId)
+        .maybeSingle()
 
-      let enrollQuery = supabase
+      if (!student) {
+        setError('التلميذ غير موجود'); setLoading(false); return
+      }
+
+      // 4) Enrollment → class (SANS JOIN)
+      const { data: enrolls } = await supabase
         .from('enrollments')
-        .select('class_id, classes(name, levels(name))')
+        .select('class_id, level_id')
         .eq('student_id', studentId)
         .eq('status', 'active')
-      if (year?.id) enrollQuery = enrollQuery.eq('academic_year_id', year.id)
+        .limit(1)
 
-      const { data: enrolls } = await enrollQuery
       const enr = enrolls?.[0] as any
-      const cls = enr?.classes
-
-      // الأستاذ خاصو يديرّس قسم التلميذ
-      if (!enr || !classIds.includes(enr.class_id)) {
+      if (!enr?.class_id) {
         setAuthorized(false); setLoading(false); return
+      }
+
+      // 5) Class info (SANS JOIN)
+      const { data: cls } = await supabase
+        .from('classes')
+        .select('id, name, level_id')
+        .eq('id', enr.class_id)
+        .maybeSingle()
+
+      // ✅ AUTHORIZATION: level ديال class خاصو يكون فـ levels ديال الأستاذ
+      if (!cls?.level_id || !levelIds.includes(cls.level_id)) {
+        setAuthorized(false); setLoading(false); return
+      }
+
+      // 6) Level name
+      let levelName: string | null = null
+      if (cls.level_id) {
+        const { data: lv } = await supabase
+          .from('levels').select('name').eq('id', cls.level_id).maybeSingle()
+        levelName = lv?.name || null
       }
 
       setInfo({
         id: student.id,
-        first_name: student.first_name,
-        last_name: student.last_name,
+        first_name: student.first_name || '',
+        last_name: student.last_name || '',
         massar_code: student.massar_code,
         birth_date: student.birth_date,
         gender: student.gender,
-        class_name: cls?.name || null,
-        level_name: cls?.levels?.name || null,
+        class_id: cls.id,
+        class_name: cls.name || null,
+        level_name: levelName,
       })
 
-      // Grades
-      const { data: gradesData } = await supabase
+      // 7) Grades (SANS JOIN)
+      const { data: gradesRaw } = await supabase
         .from('grades')
-        .select('id, score, evaluations!inner(name, date, coefficient, subject_id, class_id, subjects(name))')
+        .select('id, score, evaluation_id')
         .eq('student_id', studentId)
-      const mappedGrades: GradeRow[] = (gradesData || []).map((g: any) => ({
-        id: g.id,
-        score: g.score,
-        evaluation_name: g.evaluations?.name || '—',
-        evaluation_date: g.evaluations?.date || '',
-        coefficient: g.evaluations?.coefficient || 1,
-        subject_name: g.evaluations?.subjects?.name || '—',
-      })).sort((a, b) => (b.evaluation_date || '').localeCompare(a.evaluation_date || ''))
+
+      const evalIds = Array.from(
+        new Set((gradesRaw || []).map((g: any) => g.evaluation_id).filter(Boolean)),
+      )
+
+      let evaluationsMap = new Map<string, any>()
+      if (evalIds.length > 0) {
+        const { data: evals } = await supabase
+          .from('evaluations')
+          .select('id, name, date, coefficient, subject_id')
+          .in('id', evalIds)
+
+        const subjectIds = Array.from(
+          new Set((evals || []).map((e: any) => e.subject_id).filter(Boolean)),
+        )
+
+        let subjectsMap = new Map<string, string>()
+        if (subjectIds.length > 0) {
+          const { data: subjs } = await supabase
+            .from('subjects').select('id, name').in('id', subjectIds)
+          ;(subjs || []).forEach((s: any) => subjectsMap.set(s.id, s.name))
+        }
+
+        ;(evals || []).forEach((e: any) => {
+          evaluationsMap.set(e.id, {
+            ...e,
+            subject_name: subjectsMap.get(e.subject_id) || '—',
+          })
+        })
+      }
+
+      const mappedGrades: GradeRow[] = (gradesRaw || [])
+        .map((g: any) => {
+          const ev = evaluationsMap.get(g.evaluation_id)
+          if (!ev) return null
+          return {
+            id: g.id,
+            score: Number(g.score) || 0,
+            evaluation_name: ev.name || '—',
+            evaluation_date: ev.date || '',
+            coefficient: ev.coefficient || 1,
+            subject_name: ev.subject_name,
+          }
+        })
+        .filter(Boolean) as GradeRow[]
+
+      mappedGrades.sort((a, b) =>
+        (b.evaluation_date || '').localeCompare(a.evaluation_date || ''),
+      )
       setGrades(mappedGrades)
 
-      // Attendance
+      // 8) Attendances (SANS JOIN)
       const { data: atData } = await supabase
         .from('attendances')
         .select('id, attendance_date, status, note')
@@ -158,34 +223,27 @@ export default function TeacherStudentDetailPage() {
         .limit(100)
       setAttends(atData || [])
 
-      // Discipline
+      // 9) Disciplines (SANS JOIN sur discipline_actions)
       const { data: discData } = await supabase
         .from('disciplines')
-        .select('id, incident_date, category, severity, title, description, discipline_actions(action_type, description, action_date)')
+        .select('id, incident_date, category, severity, title, description')
         .eq('student_id', studentId)
         .order('incident_date', { ascending: false })
-      const mappedDisc: DiscRow[] = (discData || []).map((d: any) => ({
-        id: d.id,
-        incident_date: d.incident_date,
-        category: d.category,
-        severity: d.severity,
-        title: d.title,
-        description: d.description,
-        actions: d.discipline_actions || [],
-      }))
-      setDisciplines(mappedDisc)
+
+      setDisciplines(discData || [])
     } catch (e: any) {
+      console.error('[teacher-student-detail]', e)
       setError(e.message || 'خطأ')
     } finally { setLoading(false) }
   }
 
-  // Moyenne générale
+  // Moyenne pondérée
   const moyenne = (() => {
     if (grades.length === 0) return null
     let sumW = 0, sumC = 0
     grades.forEach((g) => {
       const c = g.coefficient || 1
-      sumW += Number(g.score) * c
+      sumW += g.score * c
       sumC += c
     })
     return sumC > 0 ? sumW / sumC : null
@@ -213,7 +271,10 @@ export default function TeacherStudentDetailPage() {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <AlertCircle className="h-12 w-12 text-rose-300 mx-auto mb-3" />
           <p className="text-slate-700 font-bold">ما عندكش صلاحية لهاد التلميذ</p>
-          <p className="text-xs text-slate-500 mt-1">خاص التلميذ يكون مسجل فقسم كتدرّسو</p>
+          <p className="text-xs text-slate-500 mt-1">خاص التلميذ يكون مسجل فقسم من مستويات اللي كتدرّس</p>
+          <Link href="/teacher/classes" className="text-sm text-sky-600 hover:text-sky-800 mt-3 inline-block">
+            ← رجع للأقسام
+          </Link>
         </div>
       </div>
     )
@@ -231,15 +292,15 @@ export default function TeacherStudentDetailPage() {
   return (
     <div className="p-6 space-y-6" dir="rtl">
       <header>
-        <Link href={info.class_name ? '/teacher/classes' : '/teacher/dashboard'}
+        <Link href={info.class_id ? `/teacher/classes/${info.class_id}` : '/teacher/classes'}
           className="text-xs text-sky-600 hover:text-sky-800 inline-flex items-center gap-1 mb-1">
-          <ChevronLeft className="h-3 w-3" /> رجع
+          <ChevronLeft className="h-3 w-3" /> رجع للقسم
         </Link>
         <div className="flex items-center gap-3 flex-wrap">
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-sky-100 font-bold text-sky-800 text-xl">
-            {info.first_name.charAt(0)}
+            {info.first_name.charAt(0) || '?'}
           </span>
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-bold text-gray-900">
               {info.first_name} {info.last_name}
             </h1>
@@ -259,7 +320,8 @@ export default function TeacherStudentDetailPage() {
               )}
             </div>
           </div>
-          <button onClick={loadData} className="mr-auto inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 font-medium text-sm">
+          <button onClick={loadData}
+            className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 font-medium text-sm">
             <RefreshCw className="h-4 w-4" /> تحديث
           </button>
         </div>
@@ -271,7 +333,6 @@ export default function TeacherStudentDetailPage() {
         </div>
       )}
 
-      {/* Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
@@ -315,15 +376,21 @@ export default function TeacherStudentDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div>
                 <p className="text-xs text-slate-500 mb-0.5">تاريخ الميلاد</p>
-                <p className="font-bold text-slate-800" dir="ltr">{info.birth_date ? fmtDate(info.birth_date) : '—'}</p>
+                <p className="font-bold text-slate-800" dir="ltr">
+                  {info.birth_date ? fmtDate(info.birth_date) : '—'}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-0.5">الجنس</p>
-                <p className="font-bold text-slate-800">{info.gender === 'M' ? 'ذكر' : info.gender === 'F' ? 'أنثى' : '—'}</p>
+                <p className="font-bold text-slate-800">
+                  {info.gender === 'M' ? 'ذكر' : info.gender === 'F' ? 'أنثى' : '—'}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-0.5">كود مسار</p>
-                <p className="font-bold text-slate-800 font-mono" dir="ltr">{info.massar_code || '—'}</p>
+                <p className="font-bold text-slate-800 font-mono" dir="ltr">
+                  {info.massar_code || '—'}
+                </p>
               </div>
             </div>
           </div>
@@ -338,9 +405,11 @@ export default function TeacherStudentDetailPage() {
                   <div key={g.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                     <div>
                       <p className="font-bold text-sm text-slate-800">{g.evaluation_name}</p>
-                      <p className="text-xs text-slate-500">{g.subject_name} • {fmtDate(g.evaluation_date)}</p>
+                      <p className="text-xs text-slate-500">
+                        {g.subject_name} • {fmtDate(g.evaluation_date)}
+                      </p>
                     </div>
-                    <span className={`font-bold text-lg ${Number(g.score) >= 10 ? 'text-emerald-600' : 'text-rose-600'}`} dir="ltr">
+                    <span className={`font-bold text-lg ${g.score >= 10 ? 'text-emerald-600' : 'text-rose-600'}`} dir="ltr">
                       {g.score}/20
                     </span>
                   </div>
@@ -374,9 +443,11 @@ export default function TeacherStudentDetailPage() {
                   <tr key={g.id} className="border-b border-gray-100 last:border-0 hover:bg-slate-50/60">
                     <td className="px-4 py-3 text-sm font-bold text-slate-800">{g.subject_name}</td>
                     <td className="px-4 py-3 text-sm text-slate-700">{g.evaluation_name}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">{fmtDate(g.evaluation_date)}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">
+                      {fmtDate(g.evaluation_date)}
+                    </td>
                     <td className="px-4 py-3 text-left">
-                      <span className={`font-bold ${Number(g.score) >= 10 ? 'text-emerald-600' : 'text-rose-600'}`} dir="ltr">
+                      <span className={`font-bold ${g.score >= 10 ? 'text-emerald-600' : 'text-rose-600'}`} dir="ltr">
                         {g.score}/20
                       </span>
                     </td>
@@ -458,23 +529,16 @@ export default function TeacherStudentDetailPage() {
                     <div>
                       <p className="font-bold text-slate-800">{d.title}</p>
                       <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
-                        <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> {fmtDate(d.incident_date)}</span>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" /> {fmtDate(d.incident_date)}
+                        </span>
                         {d.category && <span>• {d.category}</span>}
                         {d.severity && <span className="font-bold text-amber-700">• {d.severity}</span>}
                       </div>
                     </div>
                   </div>
-                  {d.description && <p className="text-sm text-slate-700 mt-2">{d.description}</p>}
-                  {d.actions.length > 0 && (
-                    <div className="mt-3 bg-slate-50 rounded-lg p-3 space-y-2">
-                      <p className="text-xs font-bold text-slate-600">الإجراءات:</p>
-                      {d.actions.map((a, i) => (
-                        <div key={i} className="text-xs text-slate-700">
-                          <span className="font-bold">{a.action_type}</span> — {a.description || '—'}
-                          <span className="text-slate-400 mr-1">({fmtDate(a.action_date)})</span>
-                        </div>
-                      ))}
-                    </div>
+                  {d.description && (
+                    <p className="text-sm text-slate-700 mt-2">{d.description}</p>
                   )}
                 </div>
               ))}

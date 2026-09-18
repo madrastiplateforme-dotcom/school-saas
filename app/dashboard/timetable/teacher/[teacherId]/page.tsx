@@ -55,7 +55,7 @@ export default function TeacherTimetablePage() {
 
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
-  const isDirector = role === 'directeur'
+  const canManage = role === 'directeur' || role === 'secretaire'
 
   const [teacherName, setTeacherName] = useState('')
   const [yearName, setYearName] = useState('')
@@ -231,8 +231,7 @@ export default function TeacherTimetablePage() {
   }, [timetables])
 
   if (loading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
-  if (!isDirector) return <div className="p-6">ليس لديك صلاحية</div>
-
+  if (!canManage) return <div className="p-6">ليس لديك صلاحية</div>
   const enabledDays = DAYS.filter(d => daysConfig[String(d.value)]?.enabled)
 
   return (

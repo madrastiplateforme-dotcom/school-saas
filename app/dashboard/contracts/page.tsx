@@ -1,18 +1,22 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import { generateInstallmentsForContract } from '@/lib/billing'
 import DateInput from '@/components/DateInput'
-import { Plus, FileText, Trash2, RefreshCw, XCircle, Pencil, X } from 'lucide-react'
+import {
+  Plus, FileText, Trash2, RefreshCw, Pencil, X, Pause, Play,
+  AlertCircle, Info, CheckCircle2, AlertTriangle,
+} from 'lucide-react'
 
 type StudentOption = {
   id: string
   first_name: string
   last_name: string
+  massar_code: string | null
   enrollments: {
     id: string
     academic_year_id: string
@@ -57,6 +61,8 @@ type ContractRow = {
   end_date: string | null
   status: string
   notes: string | null
+  suspended_at?: string | null
+  suspended_reason?: string | null
   students: {
     first_name: string
     last_name: string
@@ -77,6 +83,7 @@ export default function ContractsPage() {
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
   const canViewContracts = hasPermission('contracts', 'view')
   const canCreateContracts = hasPermission('contracts', 'create')
+  const canDeleteContracts = hasPermission('contracts', 'delete')  // ✅ NEW
 
   const [students, setStudents] = useState<StudentOption[]>([])
   const [contracts, setContracts] = useState<ContractRow[]>([])
@@ -89,10 +96,23 @@ export default function ContractsPage() {
   const [success, setSuccess] = useState('')
   const [showForm, setShowForm] = useState(false)
 
+  // ✅ Recherche élève (combobox)
+  const [studentSearch, setStudentSearch] = useState('')
+  const [showStudentDropdown, setShowStudentDropdown] = useState(false)
+  const studentBoxRef = useRef<HTMLDivElement>(null)
+
+  // ✅ Contrats existants du même élève/année
+  const [existingContracts, setExistingContracts] = useState<ContractRow[]>([])
+
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [notes, setNotes] = useState('')
   const [creating, setCreating] = useState(false)
+
+  // ✅ NEW: Suspend dialog
+  const [suspendDialog, setSuspendDialog] = useState<{ contractId: string; studentName: string } | null>(null)
+  const [suspendReason, setSuspendReason] = useState('')
+  const [suspending, setSuspending] = useState(false)
 
   // Edit states
   const [editContract, setEditContract] = useState<ContractRow | null>(null)
@@ -109,13 +129,24 @@ export default function ContractsPage() {
     fetchAllData(establishmentId)
   }, [establishmentId])
 
+  // ✅ Click outside pour fermer dropdown élève
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (studentBoxRef.current && !studentBoxRef.current.contains(e.target as Node)) {
+        setShowStudentDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
   const fetchAllData = async (sid: string) => {
     const supabase = createClient()
 
     const { data: studentsData, error: studentsError } = await supabase
       .from('students')
       .select(`
-        id, first_name, last_name,
+        id, first_name, last_name, massar_code,
         enrollments (
           id, academic_year_id, level_id, class_id,
           academic_years (name, start_date, end_date),
@@ -133,6 +164,7 @@ export default function ContractsPage() {
       .from('contracts')
       .select(`
         id, student_id, academic_year_id, start_date, end_date, status, notes,
+        suspended_at, suspended_reason,
         students (first_name, last_name),
         academic_years (name),
         contract_items (services (name))
@@ -151,6 +183,7 @@ export default function ContractsPage() {
     setSelectedEnrollment(null)
     setAvailableServices([])
     setSelectedServices([])
+    setExistingContracts([])
     setStartDate('')
     setEndDate('')
 
@@ -165,14 +198,28 @@ export default function ContractsPage() {
     const enrollment = student.enrollments[0]
     setSelectedEnrollment(enrollment)
 
-    if (enrollment.academic_years?.start_date) {
-      setStartDate(enrollment.academic_years.start_date)
-    }
-    if (enrollment.academic_years?.end_date) {
-      setEndDate(enrollment.academic_years.end_date)
-    }
+    if (enrollment.academic_years?.start_date) setStartDate(enrollment.academic_years.start_date)
+    if (enrollment.academic_years?.end_date) setEndDate(enrollment.academic_years.end_date)
 
     await fetchServicesForLevel(enrollment.level_id)
+
+    if (establishmentId) {
+      const supabase = createClient()
+      const { data: existing } = await supabase
+        .from('contracts')
+        .select(`
+          id, student_id, academic_year_id, start_date, end_date, status, notes,
+          suspended_at, suspended_reason,
+          contract_items (services (name))
+        `)
+        .eq('student_id', studentId)
+        .eq('academic_year_id', enrollment.academic_year_id)
+        .eq('establishment_id', establishmentId)
+        .in('status', ['active', 'suspended', 'cancelled'])
+        .order('created_at', { ascending: false })
+
+      setExistingContracts((existing as any) || [])
+    }
   }
 
   const fetchServicesForLevel = async (levelId: string) => {
@@ -339,9 +386,11 @@ export default function ContractsPage() {
       setSelectedEnrollment(null)
       setAvailableServices([])
       setSelectedServices([])
+      setExistingContracts([])
       setStartDate('')
       setEndDate('')
       setNotes('')
+      setStudentSearch('')
       setShowForm(false)
       fetchAllData(establishmentId)
     } catch (err: any) {
@@ -351,7 +400,6 @@ export default function ContractsPage() {
     }
   }
 
-  // ✅ OPEN EDIT
   const handleOpenEdit = async (contract: ContractRow) => {
     setEditContract(contract)
     setEditLoading(true)
@@ -408,24 +456,17 @@ export default function ContractsPage() {
   const handleToggleEditService = (serviceId: string, isExisting: boolean) => {
     if (isExisting) {
       const newSet = new Set(editSelectedServiceIds)
-      if (newSet.has(serviceId)) {
-        newSet.delete(serviceId)
-      } else {
-        newSet.add(serviceId)
-      }
+      if (newSet.has(serviceId)) newSet.delete(serviceId)
+      else newSet.add(serviceId)
       setEditSelectedServiceIds(newSet)
     } else {
       const newSet = new Set(editNewServiceIds)
-      if (newSet.has(serviceId)) {
-        newSet.delete(serviceId)
-      } else {
-        newSet.add(serviceId)
-      }
+      if (newSet.has(serviceId)) newSet.delete(serviceId)
+      else newSet.add(serviceId)
       setEditNewServiceIds(newSet)
     }
   }
 
-  // ✅ SAVE EDIT
   const handleSaveEdit = async () => {
     if (!editContract || !establishmentId) return
     setEditSaving(true)
@@ -434,33 +475,25 @@ export default function ContractsPage() {
     const supabase = createClient()
 
     try {
-      // 1. Services li khass yt7aydo
       const existingServiceIds = new Set(editExistingItems.map(i => i.service_id))
       const toRemove: string[] = []
       existingServiceIds.forEach(id => {
         if (!editSelectedServiceIds.has(id)) toRemove.push(id)
       })
 
-      // 2. Services jdad
       const toAdd = Array.from(editNewServiceIds)
 
-      // ========== REMOVE ==========
       for (const serviceId of toRemove) {
         const item = editExistingItems.find(i => i.service_id === serviceId)
         if (!item) continue
 
         const serviceName = (item.services?.name || '').trim()
-        console.log('🗑️ Service à supprimer:', serviceName, '| ID:', serviceId)
 
-        // Jib ga3 les installments
         const { data: allInstallments } = await supabase
           .from('installments')
           .select('id, status, description, service_id')
           .eq('contract_id', editContract.id)
 
-        console.log('📋 Total installments:', allInstallments?.length || 0)
-
-        // Filtre : machi paid + match par service_id (fallback: description)
         const filteredIds = (allInstallments || [])
           .filter(i => {
             if (i.status === 'paid') return false
@@ -472,8 +505,6 @@ export default function ContractsPage() {
           })
           .map(i => i.id)
 
-        console.log('🎯 À supprimer:', filteredIds.length)
-
         if (filteredIds.length > 0) {
           const { error: delError } = await supabase
             .from('installments')
@@ -481,20 +512,16 @@ export default function ContractsPage() {
             .in('id', filteredIds)
 
           if (delError) throw delError
-          console.log('✅ Installments supprimés')
         }
 
-        // Msa7 contract_item
         const { error: ciError } = await supabase
           .from('contract_items')
           .delete()
           .eq('id', item.id)
 
         if (ciError) throw ciError
-        console.log('✅ Contract_item supprimé')
       }
 
-      // ========== ADD ==========
       if (toAdd.length > 0) {
         const newItems: ContractItemInput[] = []
 
@@ -559,14 +586,154 @@ export default function ContractsPage() {
       setEditContract(null)
       fetchAllData(establishmentId)
     } catch (err: any) {
-      console.error('❌ Save edit error:', err)
+      console.error('❌ Save edit error:', err?.message || err)
       setError(err.message || 'حدث خطأ')
     } finally {
       setEditSaving(false)
     }
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 Tawaqquf (Suspend) — remplace Cancel
+  // ═══════════════════════════════════════════════════════════
+  const handleSuspendContract = async (contractId: string, reason: string) => {
+    if (!establishmentId) return
+    setSuspending(true)
+    setError('')
+
+    const supabase = createClient()
+    const today = new Date().toISOString().split('T')[0]
+
+    try {
+      // 1) Supprimer les échéances non payées à partir d'aujourd'hui
+      const { data: installments } = await supabase
+        .from('installments')
+        .select('id, status, due_date')
+        .eq('contract_id', contractId)
+
+      const toDelete = (installments || [])
+        .filter((i: any) => {
+          if (i.status === 'paid') return false
+          if (!i.due_date) return true
+          return i.due_date >= today
+        })
+        .map((i: any) => i.id)
+
+      if (toDelete.length > 0) {
+        const { error: delErr } = await supabase
+          .from('installments')
+          .delete()
+          .in('id', toDelete)
+        if (delErr) throw delErr
+      }
+
+      // 2) Marquer le contrat comme suspendu
+      const { error: updErr } = await supabase
+        .from('contracts')
+        .update({
+          status: 'suspended',
+          suspended_at: new Date().toISOString(),
+          suspended_reason: reason || null,
+        })
+        .eq('id', contractId)
+
+      if (updErr) throw updErr
+
+      setSuccess(`✅ تم توقيف العقد (${toDelete.length} قسط غير مدفوع تم حذفه)`)
+      setTimeout(() => setSuccess(''), 4000)
+      setSuspendDialog(null)
+      setSuspendReason('')
+      fetchAllData(establishmentId)
+    } catch (err: any) {
+      console.error('❌ Suspend error:', err?.message || err)
+      setError(err?.message || 'حدث خطأ')
+    } finally {
+      setSuspending(false)
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 🆕 Réactivation — régénère les échéances depuis aujourd'hui
+  // ═══════════════════════════════════════════════════════════
+  const handleReactivateContract = async (contract: ContractRow) => {
+    if (!establishmentId) return
+    if (!confirm('هل تريد إعادة تفعيل هذا العقد؟\nسيتم توليد أقساط جديدة من تاريخ اليوم حتى نهاية العقد.')) return
+
+    setError('')
+    const supabase = createClient()
+    const today = new Date().toISOString().split('T')[0]
+
+    try {
+      // 1) Récupérer les contract_items
+      const { data: items } = await supabase
+        .from('contract_items')
+        .select('id, service_id, price, discount_percent, discount_amount, final_price, services(id, name, type, accept_discount)')
+        .eq('contract_id', contract.id)
+
+      // 2) Déterminer end_date (si déjà dépassée → null)
+      let endDate = contract.end_date
+      if (endDate && new Date(endDate) <= new Date(today)) endDate = null
+
+      // 3) Générer les nouvelles échéances
+      const services: ContractItemInput[] = (items || []).map((i: any) => ({
+        service_id: i.service_id,
+        name: i.services?.name || '',
+        type: i.services?.type || '',
+        price: i.price,
+        discount_percent: i.discount_percent,
+        discount_amount: i.discount_amount,
+        final_price: i.final_price,
+        accept_discount: i.services?.accept_discount ?? false,
+      }))
+
+      if (services.length > 0) {
+        const newInstallments = generateInstallmentsForContract({
+          establishmentId,
+          studentId: contract.student_id,
+          contractId: contract.id,
+          startDate: today,
+          endDate,
+          services,
+        })
+
+        if (newInstallments.length > 0) {
+          const { error: instErr } = await supabase
+            .from('installments')
+            .insert(newInstallments)
+          if (instErr) throw instErr
+        }
+      }
+
+      // 4) Réactiver le contrat
+      const { error: updErr } = await supabase
+        .from('contracts')
+        .update({
+          status: 'active',
+          suspended_at: null,
+          suspended_reason: null,
+        })
+        .eq('id', contract.id)
+
+      if (updErr) throw updErr
+
+      setSuccess('✅ تم إعادة تفعيل العقد وتوليد الأقساط الجديدة')
+      setTimeout(() => setSuccess(''), 4000)
+      fetchAllData(establishmentId)
+    } catch (err: any) {
+      console.error('❌ Reactivate error:', err?.message || err)
+      setError(err?.message || 'حدث خطأ')
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 🗑️ Suppression définitive (directeur only)
+  // ═══════════════════════════════════════════════════════════
   const handleDeleteContract = async (contractId: string) => {
+    if (!canDeleteContracts) {
+      setError('ليس لديك صلاحية الحذف النهائي')
+      return
+    }
+
     const supabase = createClient()
 
     const { data: installments } = await supabase
@@ -589,28 +756,17 @@ export default function ContractsPage() {
       if (confirm(
         `⚠️ هذا العقد يحتوي على ${paidCount} دفعة مسجلة.\n\n` +
         `لا يمكن حذفه نهائياً (للحفاظ على السجل المالي).\n\n` +
-        `هل تريد إلغاء العقد بدلاً من ذلك؟`
+        `هل تريد توقيفه بدلاً من ذلك؟`
       )) {
-        const { error } = await supabase
-          .from('contracts')
-          .update({
-            status: 'cancelled',
-            end_date: new Date().toISOString().split('T')[0],
-            notes: `تم الإلغاء بتاريخ ${new Date().toLocaleDateString('fr-FR')}`,
-          })
-          .eq('id', contractId)
-
-        if (error) setError(error.message)
-        else {
-          setSuccess('✅ تم إلغاء العقد (مازال محفوظاً في السجل)')
-          setTimeout(() => setSuccess(''), 3000)
-          fetchAllData(establishmentId!)
-        }
+        // ✅ NEW: offrir توقيف au lieu de إلغاء
+        const student = contracts.find(c => c.id === contractId)?.students
+        const studentName = student ? `${student.first_name} ${student.last_name}` : ''
+        setSuspendDialog({ contractId, studentName })
       }
       return
     }
 
-    if (!confirm('هل تريد حذف هذا العقد؟ (لا يحتوي على دفعات)')) return
+    if (!confirm('⚠️ هل أنت متأكد من الحذف النهائي لهذا العقد؟\nهذه العملية لا يمكن التراجع عنها.')) return
 
     if (installmentIds.length > 0) {
       await supabase.from('installments').delete().in('id', installmentIds)
@@ -618,47 +774,9 @@ export default function ContractsPage() {
     await supabase.from('contract_items').delete().eq('contract_id', contractId)
     await supabase.from('contracts').delete().eq('id', contractId)
 
-    setSuccess('✅ تم حذف العقد')
+    setSuccess('✅ تم حذف العقد نهائياً')
     setTimeout(() => setSuccess(''), 3000)
     fetchAllData(establishmentId!)
-  }
-
-  const handleCancelContract = async (contractId: string) => {
-    if (!confirm('هل تريد إلغاء هذا العقد؟ (سيتم الاحتفاظ بالسجل)')) return
-    const supabase = createClient()
-
-    const { error } = await supabase
-      .from('contracts')
-      .update({
-        status: 'cancelled',
-        end_date: new Date().toISOString().split('T')[0],
-        notes: `تم الإلغاء بتاريخ ${new Date().toLocaleDateString('fr-FR')}`,
-      })
-      .eq('id', contractId)
-
-    if (error) setError(error.message)
-    else {
-      setSuccess('✅ تم إلغاء العقد')
-      setTimeout(() => setSuccess(''), 3000)
-      fetchAllData(establishmentId!)
-    }
-  }
-
-  const handleReactivateContract = async (contractId: string) => {
-    if (!confirm('هل تريد إعادة تفعيل هذا العقد؟')) return
-    const supabase = createClient()
-
-    const { error } = await supabase
-      .from('contracts')
-      .update({ status: 'active', end_date: null })
-      .eq('id', contractId)
-
-    if (error) setError(error.message)
-    else {
-      setSuccess('✅ تم إعادة تفعيل العقد')
-      setTimeout(() => setSuccess(''), 3000)
-      fetchAllData(establishmentId!)
-    }
   }
 
   const handlePrintContract = (contractId: string) => {
@@ -669,6 +787,8 @@ export default function ContractsPage() {
     switch (status) {
       case 'active':
         return <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg text-xs font-medium">● نشط</span>
+      case 'suspended':
+        return <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 px-2.5 py-1 rounded-lg text-xs font-medium">⏸️ موقوف</span>
       case 'cancelled':
         return <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 px-2.5 py-1 rounded-lg text-xs font-medium">● ملغى</span>
       case 'completed':
@@ -680,6 +800,21 @@ export default function ContractsPage() {
 
   if (loading || permissionsLoading) return <div className="p-6">Chargement...</div>
   if (!canViewContracts) return <div className="p-6">ليس لديك صلاحية</div>
+
+  const alreadySubscribedServiceNames = new Set(
+    existingContracts
+      .filter((c) => c.status === 'active')
+      .flatMap((c) => c.contract_items?.map((i: any) => i.services?.name).filter(Boolean) || [])
+  )
+
+  const studentQuery = studentSearch.trim().toLowerCase()
+  const filteredStudents = students.filter((s) => {
+    if (!studentQuery) return true
+    return (
+      `${s.first_name} ${s.last_name}`.toLowerCase().includes(studentQuery) ||
+      (s.massar_code || '').toLowerCase().includes(studentQuery)
+    )
+  })
 
   return (
     <div className="p-6" dir="rtl">
@@ -707,15 +842,64 @@ export default function ContractsPage() {
             <div className="bg-white p-6 rounded-xl shadow-sm mb-8">
               <h2 className="text-lg font-semibold mb-4">عقد جديد</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">التلميذ <span className="text-red-500">*</span></label>
-                  <select value={selectedStudentId} onChange={(e) => handleStudentChange(e.target.value)} className="block w-full px-3 py-2 border border-gray-300 rounded-md">
-                    <option value="">-- اختر --</option>
-                    {students.map((student) => (
-                      <option key={student.id} value={student.id}>{student.first_name} {student.last_name}</option>
-                    ))}
-                  </select>
+                {/* ✅ Searchable combobox élève */}
+                <div ref={studentBoxRef} className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    التلميذ <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={studentSearch}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setStudentSearch(v)
+                      setShowStudentDropdown(true)
+                      if (selectedStudentId) {
+                        setSelectedStudentId('')
+                        setSelectedEnrollment(null)
+                        setAvailableServices([])
+                        setSelectedServices([])
+                        setExistingContracts([])
+                        setStartDate('')
+                        setEndDate('')
+                      }
+                    }}
+                    onFocus={() => setShowStudentDropdown(true)}
+                    placeholder="ابحث بالاسم أو رقم مسار..."
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+
+                  {showStudentDropdown && (
+                    <div className="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-64 overflow-y-auto">
+                      {filteredStudents.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-gray-500">لا نتائج</div>
+                      ) : (
+                        filteredStudents.slice(0, 50).map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setStudentSearch(`${s.first_name} ${s.last_name}`)
+                              setShowStudentDropdown(false)
+                              handleStudentChange(s.id)
+                            }}
+                            className="block w-full text-right px-3 py-2 hover:bg-indigo-50 text-sm border-b border-gray-100 last:border-b-0"
+                          >
+                            <div className="font-medium text-gray-800">
+                              {s.first_name} {s.last_name}
+                            </div>
+                            {s.massar_code && (
+                              <div className="text-xs text-gray-500" dir="ltr">
+                                {s.massar_code}
+                              </div>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
+
                 {selectedEnrollment && (
                   <div className="text-sm text-gray-700 self-end bg-gray-50 p-3 rounded-lg">
                     <p><span className="font-medium">السنة:</span> {selectedEnrollment.academic_years?.name}</p>
@@ -723,6 +907,40 @@ export default function ContractsPage() {
                     {selectedEnrollment.classes?.name && <p><span className="font-medium">القسم:</span> {selectedEnrollment.classes.name}</p>}
                   </div>
                 )}
+
+                {selectedStudentId && existingContracts.length > 0 && (
+                  <div className="md:col-span-2 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <p className="font-bold text-amber-900 mb-3 flex items-center gap-2">
+                      <AlertCircle className="h-5 w-5" />
+                      هذا التلميذ عنده {existingContracts.length} عقد فهاد السنة
+                    </p>
+                    <div className="space-y-1.5 mb-3">
+                      {existingContracts.map((c) => (
+                        <div key={c.id} className="flex items-center justify-between text-xs bg-white rounded-lg p-2.5">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <span className={`font-bold flex-shrink-0 ${
+                              c.status === 'active' ? 'text-emerald-700' :
+                              c.status === 'suspended' ? 'text-amber-700' : 'text-rose-700'
+                            }`}>
+                              {c.status === 'active' ? '● نشط' : c.status === 'suspended' ? '⏸️ موقوف' : '● ملغى'}
+                            </span>
+                            <span className="text-slate-600 truncate">
+                              {c.contract_items?.map((i: any) => i.services?.name).filter(Boolean).join(' • ') || '—'}
+                            </span>
+                          </div>
+                          <span className="text-slate-400 flex-shrink-0 mr-2">{c.start_date}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-100/60 rounded-lg p-2.5">
+                      <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                      <span>
+                        يمكنك إما <strong>إضافة عقد جديد</strong> بخدمات مختلفة، أو إغلاق النموذج واستعمال زر <strong>"تعديل"</strong> على العقد الموجود.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">تاريخ البداية <span className="text-red-500">*</span></label>
                   <DateInput value={startDate} onChange={setStartDate} />
@@ -736,6 +954,7 @@ export default function ContractsPage() {
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="block w-full px-3 py-2 border border-gray-300 rounded-md"></textarea>
                 </div>
               </div>
+
               {availableServices.length > 0 && (
                 <div className="border-t pt-4">
                   <h3 className="font-medium mb-2">الخدمات المتاحة</h3>
@@ -744,16 +963,37 @@ export default function ContractsPage() {
                       const si = swp.services
                       if (!si || !si.active) return null
                       const isSel = selectedServices.some(s => s.service_id === si.id)
+                      const isAlreadySubscribed = alreadySubscribedServiceNames.has(si.name)
+
                       return (
-                        <div key={swp.id} className="flex items-start gap-2 p-2 border rounded">
+                        <div
+                          key={swp.id}
+                          className={`flex items-start gap-2 p-3 border rounded-lg transition ${
+                            isAlreadySubscribed ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200'
+                          }`}
+                        >
                           <input type="checkbox" checked={isSel} onChange={() => toggleServiceSelection(swp)} className="mt-1 h-4 w-4" />
                           <div className="flex-1">
-                            <span className="font-medium">{si.name}</span>
-                            <span className="text-sm text-gray-500"> - {swp.price} DH ({si.type})</span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium">{si.name}</span>
+                              <span className="text-sm text-gray-500">— {swp.price} DH ({si.type})</span>
+                              {isAlreadySubscribed && (
+                                <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                                  ⚠️ مشترك فيها ف عقد آخر
+                                </span>
+                              )}
+                            </div>
                             {isSel && si.accept_discount && (
                               <div className="mt-2 flex items-center gap-2">
                                 <label className="text-sm">تخفيض % :</label>
-                                <input type="number" min="0" max="100" value={selectedServices.find(s => s.service_id === si.id)?.discount_percent || 0} onChange={(e) => updateServiceDiscount(si.id, 'discount_percent', Number(e.target.value))} className="w-20 px-2 py-1 border rounded" />
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={selectedServices.find(s => s.service_id === si.id)?.discount_percent || 0}
+                                  onChange={(e) => updateServiceDiscount(si.id, 'discount_percent', Number(e.target.value))}
+                                  className="w-20 px-2 py-1 border rounded"
+                                />
                               </div>
                             )}
                           </div>
@@ -763,6 +1003,7 @@ export default function ContractsPage() {
                   </div>
                 </div>
               )}
+
               <button onClick={handleCreateContract} disabled={creating || !selectedStudentId || !selectedEnrollment} className="mt-4 inline-flex items-center gap-1 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
                 <Plus className="h-4 w-4" />
                 {creating ? 'جارٍ الإنشاء...' : 'إنشاء العقد'}
@@ -798,7 +1039,7 @@ export default function ContractsPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {contracts.map((contract) => (
-                  <tr key={contract.id} className={contract.status === 'cancelled' ? 'bg-red-50/30 opacity-70' : ''}>
+                  <tr key={contract.id} className={contract.status === 'cancelled' ? 'bg-red-50/30 opacity-70' : contract.status === 'suspended' ? 'bg-amber-50/40' : ''}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {contract.students ? `${contract.students.first_name} ${contract.students.last_name}` : '-'}
                     </td>
@@ -819,17 +1060,35 @@ export default function ContractsPage() {
                         <button onClick={() => handlePrintContract(contract.id)} className="p-1 text-indigo-600 hover:bg-indigo-50 rounded" title="طباعة">
                           <FileText className="h-4 w-4" />
                         </button>
+                        {/* ⏸️ Tawaqquf (remplace إلغاء) */}
                         {contract.status === 'active' && (
-                          <button onClick={() => handleCancelContract(contract.id)} className="p-1 text-amber-600 hover:bg-amber-50 rounded" title="إلغاء">
-                            <XCircle className="h-4 w-4" />
+                          <button
+                            onClick={() => {
+                              const sName = contract.students ? `${contract.students.first_name} ${contract.students.last_name}` : ''
+                              setSuspendDialog({ contractId: contract.id, studentName: sName })
+                            }}
+                            className="p-1 text-amber-600 hover:bg-amber-50 rounded"
+                            title="توقيف"
+                          >
+                            <Pause className="h-4 w-4" />
                           </button>
                         )}
-                        {contract.status === 'cancelled' && (
-                          <button onClick={() => handleReactivateContract(contract.id)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded text-xs font-bold" title="إعادة تفعيل">↻</button>
+                        {/* ▶️ Réactivation (suspended seulement) */}
+                        {contract.status === 'suspended' && (
+                          <button
+                            onClick={() => handleReactivateContract(contract)}
+                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                            title="إعادة تفعيل"
+                          >
+                            <Play className="h-4 w-4" />
+                          </button>
                         )}
-                        <button onClick={() => handleDeleteContract(contract.id)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="حذف">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {/* 🗑️ Suppression définitive — directeur uniquement */}
+                        {canDeleteContracts && (
+                          <button onClick={() => handleDeleteContract(contract.id)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="حذف نهائي">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -938,6 +1197,71 @@ export default function ContractsPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════
+          ⏸️ SUSPEND MODAL
+          ═══════════════════════════════════════════════════════════ */}
+      {suspendDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-gray-800">توقيف العقد</h3>
+                {suspendDialog.studentName && (
+                  <p className="text-sm text-gray-500 mt-0.5">{suspendDialog.studentName}</p>
+                )}
+              </div>
+              <button
+                onClick={() => { setSuspendDialog(null); setSuspendReason('') }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-900">
+              <p className="font-medium mb-1">⚠️ شنو غادي يطرا؟</p>
+              <ul className="text-xs space-y-1 list-disc list-inside">
+                <li>الأقساط <strong>غير المدفوعة</strong> من اليوم لـ النهاية = <strong>غادي تتحيد</strong></li>
+                <li>الأقساط <strong>المدفوعة</strong> = <strong>غادي تبقى</strong> فالسجل</li>
+                <li>الدفعات المسجلة = <strong>ما كيتغيرش عليها والو</strong></li>
+                <li>ممكن ترجع العقد بـ "إعادة تفعيل" → غادي تولّد أقساط جديدة من تاريخ الرجوع</li>
+              </ul>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">سبب التوقيف (اختياري)</label>
+              <textarea
+                value={suspendReason}
+                onChange={(e) => setSuspendReason(e.target.value)}
+                rows={2}
+                placeholder="مثال: التلميذ مريض / مسافر..."
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              />
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setSuspendDialog(null); setSuspendReason('') }}
+                disabled={suspending}
+                className="h-10 px-5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+              >
+                رجوع
+              </button>
+              <button
+                onClick={() => handleSuspendContract(suspendDialog.contractId, suspendReason)}
+                disabled={suspending}
+                className="h-10 px-5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 text-sm font-medium"
+              >
+                {suspending ? 'جارٍ التوقيف...' : 'تأكيد التوقيف'}
+              </button>
+            </div>
           </div>
         </div>
       )}

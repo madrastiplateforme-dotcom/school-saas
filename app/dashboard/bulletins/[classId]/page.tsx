@@ -55,7 +55,7 @@ export default function ClassBulletinsPage() {
 
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
-  const isDirector = role === 'directeur'
+  const canManage = role === 'directeur' || role === 'secretaire'
 
   const [classInfo, setClassInfo] = useState<{ id: string; name: string; level_id: string | null; level_name: string | null } | null>(null)
   const [yearId, setYearId] = useState<string | null>(null)
@@ -563,7 +563,7 @@ export default function ClassBulletinsPage() {
   )
 
   if (loading || roleLoading) return <div className="p-6 text-center">جارٍ التحميل...</div>
-  if (!isDirector) return <div className="p-6">ليس لديك صلاحية</div>
+  if (!canManage) return <div className="p-6">ليس لديك صلاحية</div>
   if (!classInfo) return <div className="p-6">القسم غير موجود</div>
 
   const noSubjects = subjects.length === 0

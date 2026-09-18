@@ -6,7 +6,7 @@ import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
 import {
   Search, KeyRound, Copy, CheckCircle2, Mail, Shield, Users, User,
-  RefreshCw, X, Pencil, Trash2, AlertTriangle, Loader2,
+  RefreshCw, X, Pencil, Trash2, AlertTriangle, Loader2, Wallet,
 } from 'lucide-react'
 
 type UserRow = {
@@ -19,6 +19,13 @@ type UserRow = {
   type: 'directeur' | 'secretaire' | 'parent' | 'other'
   staff: { type: string; custom_type: string | null } | null
   family: { id: string; family_name: string } | null
+}
+
+type DeleteError = {
+  code?: string
+  message: string
+  balance?: number
+  registerName?: string
 }
 
 export default function UsersPage() {
@@ -52,6 +59,7 @@ export default function UsersPage() {
   // Delete
   const [deleteUser, setDeleteUser] = useState<UserRow | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<DeleteError | null>(null)
 
   const isDirector = role === 'directeur'
 
@@ -168,12 +176,14 @@ export default function UsersPage() {
   const openDelete = (u: UserRow) => {
     setDeleteUser(u)
     setError('')
+    setDeleteError(null)
   }
 
   const handleDelete = async () => {
     if (!deleteUser) return
     setDeleting(true)
     setError('')
+    setDeleteError(null)
 
     try {
       const res = await fetch('/api/establishment/delete-user', {
@@ -182,11 +192,25 @@ export default function UsersPage() {
         body: JSON.stringify({ userId: deleteUser.user_id }),
       })
       const data = await res.json()
-      if (!res.ok || !data.success) throw new Error(data.error || 'فشل')
+
+      if (!res.ok || !data.success) {
+        // 🛡️ Cas spécial : caisse non vide
+        if (data.code === 'CASH_NOT_EMPTY') {
+          setDeleteError({
+            code: 'CASH_NOT_EMPTY',
+            message: data.error,
+            balance: data.balance,
+            registerName: data.registerName,
+          })
+          return
+        }
+        throw new Error(data.error || 'فشل')
+      }
 
       setSuccess(data.message || 'تم الحذف')
       setTimeout(() => setSuccess(''), 4000)
       setDeleteUser(null)
+      setDeleteError(null)
       loadData()
     } catch (err: any) {
       setError(err.message)
@@ -636,57 +660,119 @@ export default function UsersPage() {
       {deleteUser && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">
-                  حذف المستخدم
-                </h3>
-                <p className="text-sm text-gray-500">{deleteUser.full_name}</p>
-              </div>
-            </div>
+            {!deleteError ? (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                    <AlertTriangle className="h-6 w-6 text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">
+                      حذف المستخدم
+                    </h3>
+                    <p className="text-sm text-gray-500">{deleteUser.full_name}</p>
+                  </div>
+                </div>
 
-            <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-4">
-              <p className="text-sm text-red-900 leading-relaxed">
-                ⚠️ غادي يتحيد:
-              </p>
-              <ul className="text-xs text-red-800 mt-2 space-y-1 list-disc list-inside">
-                <li>حساب الدخول (Auth)</li>
-                <li>الملف الشخصي</li>
-                {deleteUser.type === 'secretaire' && <li>الصندوق ديالو</li>}
-                {deleteUser.family && <li>الربط مع العائلة</li>}
-              </ul>
-            </div>
+                <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-red-900 leading-relaxed">
+                    ⚠️ غادي يتحيد:
+                  </p>
+                  <ul className="text-xs text-red-800 mt-2 space-y-1 list-disc list-inside">
+                    <li>حساب الدخول (Auth)</li>
+                    <li>الملف الشخصي</li>
+                    {deleteUser.type === 'secretaire' && <li>الصندوق ديالو</li>}
+                    {deleteUser.family && <li>الربط مع العائلة</li>}
+                  </ul>
+                </div>
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-3">
-                {error}
-              </div>
-            )}
-
-            <div className="flex gap-2 justify-end pt-4 border-t">
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="h-10 px-6 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-2 font-medium"
-              >
-                {deleting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Trash2 className="h-4 w-4" />
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-3">
+                    {error}
+                  </div>
                 )}
-                {deleting ? 'جارٍ...' : 'تأكيد الحذف'}
-              </button>
-              <button
-                onClick={() => setDeleteUser(null)}
-                disabled={deleting}
-                className="h-10 px-6 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                إلغاء
-              </button>
-            </div>
+
+                <div className="flex gap-2 justify-end pt-4 border-t">
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="h-10 px-6 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-2 font-medium"
+                  >
+                    {deleting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    {deleting ? 'جارٍ...' : 'تأكيد الحذف'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDeleteUser(null)
+                      setDeleteError(null)
+                    }}
+                    disabled={deleting}
+                    className="h-10 px-6 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* 🛡️ CAS: Caisse non vide */
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
+                    <Wallet className="h-6 w-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">
+                      ⛔ الحذف مرفوض
+                    </h3>
+                    <p className="text-sm text-gray-500">{deleteUser.full_name}</p>
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-amber-900 leading-relaxed font-medium">
+                    {deleteError.message}
+                  </p>
+
+                  {deleteError.balance !== undefined && (
+                    <div className="mt-3 bg-white rounded-lg p-3 border border-amber-200">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-amber-800 font-medium">
+                          📊 الرصيد الحالي:
+                        </span>
+                        <span
+                          className="font-bold text-amber-900 text-lg"
+                          dir="ltr"
+                        >
+                          {deleteError.balance.toFixed(2)} DH
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-900 leading-relaxed">
+                  💡 <strong>الحل:</strong> خاصك أولاً:
+                  <ol className="list-decimal list-inside mt-2 space-y-1">
+                    <li>تسفية الصندوق (تحويل الفلوس ولا إخراجها كمصروف)</li>
+                    <li>ترجع هنا وتعاود الحذف</li>
+                  </ol>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setDeleteUser(null)
+                    setDeleteError(null)
+                  }}
+                  className="w-full h-11 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                >
+                  فهمت، غادي نسفي الصندوق أولاً
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

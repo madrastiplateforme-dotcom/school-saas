@@ -8,24 +8,9 @@ import {
   Image,
   Font,
 } from '@react-pdf/renderer'
-import path from 'path'
+import { registerPdfFonts } from '@/lib/pdf-fonts'
 
-// ═══════════════════════════════════════════════════
-// Fonts — Cairo (4 variants)
-// ═══════════════════════════════════════════════════
-const FONTS_DIR = path.resolve(process.cwd(), 'public', 'fonts')
-
-Font.register({
-  family: 'Cairo',
-  fonts: [
-    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'normal' },
-    { src: path.join(FONTS_DIR, 'Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'italic' },
-    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'normal' },
-    { src: path.join(FONTS_DIR, 'Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'italic' },
-  ],
-})
-
-Font.registerHyphenationCallback((word) => [word])
+registerPdfFonts()
 
 // ═══════════════════════════════════════════════════
 // Palette

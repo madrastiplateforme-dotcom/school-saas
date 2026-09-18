@@ -1,7 +1,7 @@
-// app/api/establishment/delete-user/route.ts
+// app/api/admin/delete-user/route.ts
 // ═══════════════════════════════════════════════════════════════════════
-// 🗑️ Suppression d'un utilisateur d'un établissement
-// 🛡️ Bloque si la caisse de l'utilisateur n'est pas à 0 DH
+// 🗑️ Suppression d'un utilisateur (auth.users)
+// Le trigger auth.users validera automatiquement (caisse vide requise)
 // ═══════════════════════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -12,7 +12,7 @@ import { cookies } from 'next/headers'
 export async function POST(req: NextRequest) {
   try {
     // ─────────────────────────────────────────────────────────────
-    // 1. AUTH — vérifier que l'appelant est Directeur
+    // 1. AUTH — vérifier que l'appelant est Directeur ou Super Admin
     // ─────────────────────────────────────────────────────────────
     const cookieStore = await cookies()
     const supabase = createServerClient(
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Rôle de l'appelant
+    // Rôle
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('role_id, establishment_id')
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
       (roleName || '').toLowerCase().includes('direct')
 
     const isSuperAdmin =
-      !!process.env.SUPER_ADMIN_EMAIL &&
+      process.env.SUPER_ADMIN_EMAIL &&
       user.email === process.env.SUPER_ADMIN_EMAIL
 
     if (!isDirecteur && !isSuperAdmin) {
@@ -75,7 +75,8 @@ export async function POST(req: NextRequest) {
     // ─────────────────────────────────────────────────────────────
     // 2. BODY
     // ─────────────────────────────────────────────────────────────
-    const { userId } = await req.json()
+    const body = await req.json()
+    const { userId } = body
 
     if (!userId) {
       return NextResponse.json(
@@ -84,11 +85,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // 3. Vérifier que le user cible est du même établissement
+    //    (sauf Super Admin)
+    // ─────────────────────────────────────────────────────────────
     const admin = createAdminClient()
 
-    // ─────────────────────────────────────────────────────────────
-    // 3. Le user cible doit appartenir au même établissement
-    // ─────────────────────────────────────────────────────────────
     const { data: targetProfile } = await admin
       .from('user_profiles')
       .select('establishment_id, full_name')
@@ -112,16 +114,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Ne pas pouvoir se supprimer soi-même
-    if (userId === user.id) {
-      return NextResponse.json(
-        { success: false, error: 'لا يمكنك حذف حسابك الخاص' },
-        { status: 400 },
-      )
-    }
-
     // ─────────────────────────────────────────────────────────────
-    // 4. 🛡️ Vérification caisse (avant suppression)
+    // 4. Vérification caisse (avant suppression)
     // ─────────────────────────────────────────────────────────────
     const { data: check, error: checkErr } = await admin.rpc(
       'fn_can_delete_user',
@@ -129,36 +123,27 @@ export async function POST(req: NextRequest) {
     )
 
     if (checkErr) {
-      console.error('[delete-user] rpc check error:', checkErr?.message)
       return NextResponse.json(
-        { success: false, error: 'خطأ في الفحص: ' + checkErr.message },
+        { success: false, error: checkErr.message },
         { status: 500 },
       )
     }
 
-    // 🚫 Caisse non vide → BLOQUER
-    if (check && check.can_delete === false) {
+    if (check && !check.can_delete) {
       return NextResponse.json(
-        {
-          success: false,
-          code: 'CASH_NOT_EMPTY',
-          error: check.message,
-          balance: check.balance,
-          registerName: check.cash_register_name,
-        },
+        { success: false, error: check.message, code: 'CASH_NOT_EMPTY' },
         { status: 400 },
       )
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 5. ✅ Cascade : cash_register + staff + user_profiles
+    // 5. Cascade : cash_register + staff + user_profiles
     // ─────────────────────────────────────────────────────────────
     const { error: cascadeErr } = await admin.rpc('fn_delete_user_cascade', {
       p_user_id: userId,
     })
 
     if (cascadeErr) {
-      console.error('[delete-user] cascade error:', cascadeErr?.message)
       return NextResponse.json(
         { success: false, error: cascadeErr.message },
         { status: 500 },
@@ -166,12 +151,11 @@ export async function POST(req: NextRequest) {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 6. ✅ Suppression auth.users (trigger validera à nouveau)
+    // 6. Suppression auth.users (le trigger validera à nouveau)
     // ─────────────────────────────────────────────────────────────
     const { error: authErr } = await admin.auth.admin.deleteUser(userId)
 
     if (authErr) {
-      console.error('[delete-user] auth delete error:', authErr?.message)
       return NextResponse.json(
         {
           success: false,
@@ -181,12 +165,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    return NextResponse.json({
-      success: true,
-      message: `✅ تم حذف ${targetProfile.full_name || 'المستخدم'} بنجاح`,
-    })
+    return NextResponse.json({ success: true, userId })
   } catch (err: any) {
-    console.error('[api/establishment/delete-user]', err?.message || err)
+    console.error('[api/admin/delete-user]', err?.message || err)
     return NextResponse.json(
       { success: false, error: err?.message || 'خطأ داخلي' },
       { status: 500 },

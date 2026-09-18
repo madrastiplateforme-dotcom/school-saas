@@ -6,8 +6,8 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import {
-  BookOpen, RefreshCw, Users, GraduationCap, ChevronLeft, User,
-  AlertCircle, Search,
+  BookOpen, RefreshCw, Users, GraduationCap, ChevronLeft,
+  AlertCircle, Search, User, UserCheck, ShieldAlert,
 } from 'lucide-react'
 
 type Student = {
@@ -23,12 +23,12 @@ export default function TeacherClassDetailPage() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [authorized, setAuthorized] = useState(true)
   const [className, setClassName] = useState('')
   const [levelName, setLevelName] = useState<string | null>(null)
   const [subjects, setSubjects] = useState<string[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [search, setSearch] = useState('')
-  const [authorized, setAuthorized] = useState(true)
 
   useEffect(() => { if (classId) loadData() }, [classId])
 
@@ -37,54 +37,93 @@ export default function TeacherClassDetailPage() {
     const supabase = createClient()
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) { setError('غير مصرح'); setLoading(false); return }
 
+      // 1) Staff
       const { data: staffRow } = await supabase
         .from('staff').select('id').eq('user_id', user.id).maybeSingle()
-      if (!staffRow?.id) { setError('ملف الأستاذ غير موجود'); setLoading(false); return }
+      if (!staffRow?.id) {
+        setError('ملف الأستاذ غير موجود'); setLoading(false); return
+      }
 
-      // تأكد أن الأستاذ كيدرّس هاد القسم
+      // 2) teacher_subjects (SANS JOIN)
       const { data: ts } = await supabase
         .from('teacher_subjects')
-        .select('subject_id, subjects(name), classes(name, levels(name))')
+        .select('subject_id, level_id')
         .eq('teacher_id', staffRow.id)
-        .eq('class_id', classId)
 
-      if (!ts || ts.length === 0) {
+      const levelIds = Array.from(
+        new Set((ts || []).map((r: any) => r.level_id).filter(Boolean)),
+      )
+      const subjectIds = Array.from(
+        new Set((ts || []).map((r: any) => r.subject_id).filter(Boolean)),
+      )
+
+      // 3) Class
+      const { data: cls } = await supabase
+        .from('classes')
+        .select('id, name, level_id')
+        .eq('id', classId)
+        .maybeSingle()
+
+      if (!cls) {
+        setError('القسم غير موجود'); setLoading(false); return
+      }
+
+      // ✅ AUTHORIZATION: level de la classe doit être dans les levels du prof
+      if (!levelIds.includes(cls.level_id)) {
         setAuthorized(false); setLoading(false); return
       }
 
-      const cls = (ts[0] as any)?.classes
-      setClassName(cls?.name || '—')
-      setLevelName(cls?.levels?.name || null)
-      setSubjects(Array.from(new Set((ts as any[]).map((r) => r.subjects?.name).filter(Boolean))))
+      setClassName(cls.name || '—')
 
-      // students via enrollments (current year)
-      const { data: profile } = await supabase
-        .from('user_profiles').select('establishment_id').eq('user_id', user.id).maybeSingle()
-      const estab = profile?.establishment_id
+      // 4) Level name
+      if (cls.level_id) {
+        const { data: lv } = await supabase
+          .from('levels').select('name').eq('id', cls.level_id).maybeSingle()
+        setLevelName(lv?.name || null)
+      }
 
-      const { data: year } = await supabase
-        .from('academic_years').select('id')
-        .eq('establishment_id', estab).eq('is_current', true).maybeSingle()
+      // 5) Subjects enseignées dans ce niveau
+      if (subjectIds.length > 0) {
+        const { data: subjs } = await supabase
+          .from('subjects').select('id, name').in('id', subjectIds)
+        setSubjects((subjs || []).map((s: any) => s.name))
+      }
 
-      let enrollQuery = supabase
+      // 6) Students via enrollments (SANS JOIN sur students)
+      const { data: enrolls } = await supabase
         .from('enrollments')
-        .select('student_id, students(id, first_name, last_name, massar_code)')
+        .select('student_id')
         .eq('class_id', classId)
         .eq('status', 'active')
-      if (year?.id) enrollQuery = enrollQuery.eq('academic_year_id', year.id)
 
-      const { data: enrolls } = await enrollQuery
-      const list: Student[] = (enrolls || [])
-        .map((e: any) => e.students)
+      const studentIds = (enrolls || [])
+        .map((e: any) => e.student_id)
         .filter(Boolean)
-        .map((s: any) => ({
-          id: s.id, first_name: s.first_name, last_name: s.last_name, massar_code: s.massar_code,
-        }))
-        .sort((a: Student, b: Student) => a.first_name.localeCompare(b.first_name))
-      setStudents(list)
+
+      if (studentIds.length > 0) {
+        const { data: studs } = await supabase
+          .from('students')
+          .select('id, first_name, last_name, massar_code')
+          .in('id', studentIds)
+
+        const list: Student[] = (studs || [])
+          .map((s: any) => ({
+            id: s.id,
+            first_name: s.first_name || '',
+            last_name: s.last_name || '',
+            massar_code: s.massar_code,
+          }))
+          .sort((a, b) =>
+            `${a.first_name} ${a.last_name}`.localeCompare(
+              `${b.first_name} ${b.last_name}`,
+            ),
+          )
+        setStudents(list)
+      }
     } catch (e: any) {
+      console.error('[teacher-class-detail]', e)
       setError(e.message || 'خطأ')
     } finally { setLoading(false) }
   }
@@ -92,8 +131,11 @@ export default function TeacherClassDetailPage() {
   const filtered = students.filter((s) => {
     if (!search.trim()) return true
     const q = search.toLowerCase()
-    return s.first_name.toLowerCase().includes(q) || s.last_name.toLowerCase().includes(q) ||
+    return (
+      s.first_name.toLowerCase().includes(q) ||
+      s.last_name.toLowerCase().includes(q) ||
       (s.massar_code || '').toLowerCase().includes(q)
+    )
   })
 
   if (loading) {
@@ -121,31 +163,46 @@ export default function TeacherClassDetailPage() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-      <header className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <Link href="/teacher/classes" className="text-xs text-sky-600 hover:text-sky-800 inline-flex items-center gap-1 mb-1">
-            <ChevronLeft className="h-3 w-3" /> رجع للأقسام
-          </Link>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <BookOpen className="h-6 w-6 text-sky-600" />
-            {className}
-          </h1>
-          <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
-            {levelName && (
-              <span className="flex items-center gap-1">
-                <GraduationCap className="h-3 w-3" /> {levelName}
-              </span>
-            )}
-            <span className="flex items-center gap-1">
-              <Users className="h-3 w-3" />
-              <span dir="ltr" className="font-bold">{students.length}</span> تلميذ
-            </span>
-          </div>
-        </div>
-        <button onClick={loadData} className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm">
-          <RefreshCw className="h-4 w-4" /> تحديث
-        </button>
-      </header>
+     
+      <header>
+  <Link href="/teacher/classes"
+    className="text-xs text-sky-600 hover:text-sky-800 inline-flex items-center gap-1 mb-1">
+    <ChevronLeft className="h-3 w-3" /> رجع للأقسام
+  </Link>
+  <div className="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+        <BookOpen className="h-6 w-6 text-sky-600" />
+        {className}
+      </h1>
+      <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
+        {levelName && (
+          <span className="flex items-center gap-1">
+            <GraduationCap className="h-3 w-3" /> {levelName}
+          </span>
+        )}
+        <span className="flex items-center gap-1">
+          <Users className="h-3 w-3" />
+          <span dir="ltr" className="font-bold">{students.length}</span> تلميذ
+        </span>
+      </div>
+    </div>
+    <div className="flex items-center gap-2 flex-wrap">
+      <Link href="/teacher/attendance"
+        className="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-lg hover:bg-emerald-700 font-medium text-sm">
+        <UserCheck className="h-4 w-4" /> تسجيل الحضور
+      </Link>
+      <Link href="/teacher/discipline"
+        className="inline-flex items-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg hover:bg-amber-700 font-medium text-sm">
+        <ShieldAlert className="h-4 w-4" /> الانضباط
+      </Link>
+      <button onClick={loadData}
+        className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm">
+        <RefreshCw className="h-4 w-4" /> تحديث
+      </button>
+    </div>
+  </div>
+</header>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
@@ -158,7 +215,9 @@ export default function TeacherClassDetailPage() {
           <p className="text-xs font-bold text-slate-600 mb-2">المواد اللي كتدرّسها فهاد القسم:</p>
           <div className="flex flex-wrap gap-1.5">
             {subjects.map((s) => (
-              <span key={s} className="text-xs font-bold bg-sky-100 text-sky-800 px-2.5 py-1 rounded-md">{s}</span>
+              <span key={s} className="text-xs font-bold bg-sky-100 text-sky-800 px-2.5 py-1 rounded-md">
+                {s}
+              </span>
             ))}
           </div>
         </div>
@@ -194,7 +253,7 @@ export default function TeacherClassDetailPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <span className="grid h-9 w-9 place-items-center rounded-full bg-sky-100 font-bold text-sky-800 text-sm">
-                        {s.first_name.charAt(0)}
+                        {s.first_name.charAt(0) || '?'}
                       </span>
                       <span className="font-bold text-slate-800 text-sm">
                         {s.first_name} {s.last_name}
@@ -202,7 +261,9 @@ export default function TeacherClassDetailPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell">
-                    <span className="text-xs text-slate-500 font-mono" dir="ltr">{s.massar_code || '—'}</span>
+                    <span className="text-xs text-slate-500 font-mono" dir="ltr">
+                      {s.massar_code || '—'}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-left">
                     <Link href={`/teacher/students/${s.id}`}

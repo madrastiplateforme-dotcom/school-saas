@@ -71,8 +71,7 @@ export default function ClassTimetablePage() {
 
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
-  const isDirector = role === 'directeur'
-
+  const canManage = role === 'directeur' || role === 'secretaire'
   const [classInfo, setClassInfo] = useState<{ id: string; name: string; level_id: string | null; level_name: string | null } | null>(null)
   const [yearId, setYearId] = useState<string | null>(null)
   const [yearName, setYearName] = useState<string>('')
@@ -1170,9 +1169,7 @@ const handleDrop = async (e: React.DragEvent, day: number, slot: Slot) => {
 
   // ============ RENDER ============
   if (loading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
-  if (!isDirector) return <div className="p-6">ليس لديك صلاحية</div>
-  if (!classInfo) return <div className="p-6">القسم غير موجود</div>
-
+  if (!canManage) return <div className="p-6">ليس لديك صلاحية</div>
   const enabledDays = DAYS.filter(d => daysConfig[String(d.value)]?.enabled)
   const lessonSlots = slots.filter(s => s.type === 'lesson')
 

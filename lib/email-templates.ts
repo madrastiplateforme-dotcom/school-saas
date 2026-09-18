@@ -558,3 +558,358 @@ export function meetingReminderEmail(params: {
     text: `[${schoolName}] ⏰ تذكير: لقاء غدا ${meetingDate} — ${studentName}`,
   }
 }
+// ─────────────────────────────────────────────────────────
+// 9. PAYMENT RECEIVED — دفعة مستلمة
+// ─────────────────────────────────────────────────────────
+export function paymentReceivedEmail(params: {
+  recipientRole: 'directeur' | 'secretaire' | 'parent'
+  recipientName: string
+  studentName: string
+  amount: number
+  installmentDesc: string
+  paymentDate: string
+  method: string
+  reference?: string | null
+  cashRegisterName?: string | null
+  recordedByName: string
+  schoolName: string
+  link: string
+}) {
+  const {
+    recipientRole, recipientName, studentName, amount, installmentDesc,
+    paymentDate, method, reference, cashRegisterName, recordedByName,
+    schoolName, link,
+  } = params
+
+  const methodLabels: Record<string, string> = {
+    cash: 'نقداً', cheque: 'شيك', transfer: 'تحويل بنكي',
+    card: 'بطاقة', other: 'أخرى',
+  }
+  const methodLabel = methodLabels[method] || method
+  const amountStr = amount.toFixed(2)
+
+  const titleAr =
+    recipientRole === 'parent' ? '✅ تم استلام دفعتكم' :
+    recipientRole === 'secretaire' ? '✅ تم تسجيل دفعة' :
+    '💰 دفعة جديدة'
+  const titleFr =
+    recipientRole === 'parent' ? '✅ Paiement reçu' :
+    recipientRole === 'secretaire' ? '✅ Paiement enregistré' :
+    '💰 Nouveau paiement'
+
+  const introAr =
+    recipientRole === 'parent'
+      ? `تم استلام دفعتكم بنجاح لصالح <strong>${studentName}</strong>.`
+      : `تم تسجيل دفعة جديدة من طرف <strong>${recordedByName}</strong>.`
+  const introFr =
+    recipientRole === 'parent'
+      ? `Votre paiement a été bien reçu pour <strong>${studentName}</strong>.`
+      : `Un nouveau paiement a été enregistré par <strong>${recordedByName}</strong>.`
+
+  const detailsAr = `
+    <p style="margin:0 0 8px;"><strong>التلميذ:</strong> ${studentName}</p>
+    <p style="margin:0 0 8px;"><strong>القسط:</strong> ${installmentDesc}</p>
+    <p style="margin:0 0 8px;"><strong>المبلغ:</strong> <span dir="ltr" style="font-weight:bold;color:#059669;">${amountStr} DH</span></p>
+    <p style="margin:0 0 8px;"><strong>التاريخ:</strong> ${paymentDate}</p>
+    <p style="margin:0 0 8px;"><strong>الطريقة:</strong> ${methodLabel}</p>
+    ${reference ? `<p style="margin:0 0 8px;"><strong>المرجع:</strong> <span dir="ltr">${reference}</span></p>` : ''}
+    ${cashRegisterName ? `<p style="margin:0 0 8px;"><strong>الصندوق:</strong> ${cashRegisterName}</p>` : ''}
+  `
+  const detailsFr = `
+    <p style="margin:0 0 8px;"><strong>Élève :</strong> ${studentName}</p>
+    <p style="margin:0 0 8px;"><strong>Échéance :</strong> ${installmentDesc}</p>
+    <p style="margin:0 0 8px;"><strong>Montant :</strong> <span dir="ltr" style="font-weight:bold;color:#059669;">${amountStr} DH</span></p>
+    <p style="margin:0 0 8px;"><strong>Date :</strong> ${paymentDate}</p>
+    <p style="margin:0 0 8px;"><strong>Méthode :</strong> ${methodLabel}</p>
+    ${reference ? `<p style="margin:0 0 8px;"><strong>Référence :</strong> <span dir="ltr">${reference}</span></p>` : ''}
+    ${cashRegisterName ? `<p style="margin:0 0 8px;"><strong>Caisse :</strong> ${cashRegisterName}</p>` : ''}
+  `
+
+  return {
+    subject:
+      recipientRole === 'parent'
+        ? `[${schoolName}] ✅ تم استلام دفعتكم — ${studentName}`
+        : `[${schoolName}] 💰 دفعة جديدة — ${studentName} (${amountStr} DH)`,
+    html: layout(
+      `
+        <h2 style="color:#059669;margin:0 0 12px;font-size:20px;">${titleAr}</h2>
+        <p>عزيزي ${recipientName}،</p>
+        <p>${introAr}</p>
+        ${infoBox(detailsAr, '#f0fdf4')}
+        ${ctaButton('عرض التفاصيل', link)}
+      `,
+      `
+        <h2 style="color:#059669;margin:0 0 12px;font-size:18px;">${titleFr}</h2>
+        <p>Cher ${recipientName},</p>
+        <p>${introFr}</p>
+        ${infoBox(detailsFr, '#f0fdf4')}
+        ${ctaButton('Voir les détails', link)}
+      `,
+      schoolName,
+    ),
+    text: `[${schoolName}] دفعة ${amountStr} DH — ${studentName} (${installmentDesc}) le ${paymentDate}`,
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// 10. PAYMENT CANCELLED — دفعة مؤرشفة (للمدير + السكرتيرة صاحبة الدفعة + الوالد)
+// ─────────────────────────────────────────────────────────
+export function paymentCancelledEmail(params: {
+  recipientRole: 'directeur' | 'secretaire' | 'parent'
+  recipientName: string
+  studentName: string
+  amount: number
+  installmentDesc: string
+  paymentDate: string
+  cancelledByName: string
+  reason: string
+  recordedByName: string
+  schoolName: string
+  link: string
+}) {
+  const {
+    recipientRole, recipientName, studentName, amount, installmentDesc,
+    paymentDate, cancelledByName, reason, recordedByName, schoolName, link,
+  } = params
+
+  const amountStr = amount.toFixed(2)
+
+  const introAr =
+  recipientRole === 'parent'
+    ? `نعلمكم أنه تم <strong>حذف</strong> دفعة سابقة لصالح <strong>${studentName}</strong>.`
+    : `تم <strong>حذف</strong> دفعة من طرف <strong>${cancelledByName}</strong>.`
+  const introFr =
+  recipientRole === 'parent'
+    ? `Une paiement précédent pour <strong>${studentName}</strong> a été <strong>supprimé</strong>.`
+    : `Un paiement a été <strong>supprimé</strong> par <strong>${cancelledByName}</strong>.`
+ const detailsAr = `
+  <p style="margin:0 0 8px;"><strong>التلميذ:</strong> ${studentName}</p>
+  <p style="margin:0 0 8px;"><strong>القسط:</strong> ${installmentDesc}</p>
+  <p style="margin:0 0 8px;"><strong>المبلغ:</strong> <span dir="ltr" style="font-weight:bold;color:#dc2626;">${amountStr} DH</span></p>
+  <p style="margin:0 0 8px;"><strong>تاريخ الدفعة الأصلية:</strong> ${paymentDate}</p>
+  <p style="margin:0 0 8px;"><strong>سُجّلت من طرف:</strong> ${recordedByName}</p>
+  <p style="margin:0 0 8px;"><strong>حُذفت من طرف:</strong> ${cancelledByName}</p>
+  <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>السبب:</strong> ${reason}</p>
+`
+
+ const detailsFr = `
+  <p style="margin:0 0 8px;"><strong>Élève :</strong> ${studentName}</p>
+  <p style="margin:0 0 8px;"><strong>Échéance :</strong> ${installmentDesc}</p>
+  <p style="margin:0 0 8px;"><strong>Montant :</strong> <span dir="ltr" style="font-weight:bold;color:#dc2626;">${amountStr} DH</span></p>
+  <p style="margin:0 0 8px;"><strong>Date du paiement :</strong> ${paymentDate}</p>
+  <p style="margin:0 0 8px;"><strong>Enregistré par :</strong> ${recordedByName}</p>
+  <p style="margin:0 0 8px;"><strong>Supprimé par :</strong> ${cancelledByName}</p>
+  <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>Raison :</strong> ${reason}</p>
+`
+
+  return {
+    subject:
+  recipientRole === 'parent'
+    ? `[${schoolName}] ⚠️ تم حذف دفعة — ${studentName}`
+    : `[${schoolName}] 🗑️ دفعة محذوفة — ${studentName} (${amountStr} DH)`,
+    html: layout(
+      `
+       <h2 style="color:#dc2626;margin:0 0 12px;font-size:20px;">🗑️ دفعة محذوفة</h2>
+        <p>عزيزي ${recipientName}،</p>
+        <p>${introAr}</p>
+        ${infoBox(detailsAr, '#fef2f2')}
+        <p style="font-size:13px;color:#64748b;">القسط المرتبط تم إرجاعه إلى حالته السابقة في النظام.</p>
+        ${ctaButton('عرض التفاصيل', link)}
+      `,
+      `
+        <h2 style="color:#dc2626;margin:0 0 12px;font-size:18px;">🗑️ Paiement supprimé</h2>
+        <p>Cher ${recipientName},</p>
+        <p>${introFr}</p>
+        ${infoBox(detailsFr, '#fef2f2')}
+        <p style="font-size:13px;color:#64748b;">L'échéance liée a été restaurée à son état précédent.</p>
+        ${ctaButton('Voir les détails', link)}
+      `,
+      schoolName,
+    ),
+    text: `[${schoolName}] دفعة محذوفة ${amountStr} DH — ${studentName}. السبب: ${reason}`,
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// 11. PAYMENT CANCELLED TO RECORDER — إشعار خاص للذي سجّل الدفعة
+// ─────────────────────────────────────────────────────────
+export function paymentCancelledToRecorderEmail(params: {
+  recorderName: string
+  cancelledByName: string
+  studentName: string
+  amount: number
+  installmentDesc: string
+  paymentDate: string
+  reason: string
+  schoolName: string
+  link: string
+}) {
+  const {
+    recorderName, cancelledByName, studentName, amount, installmentDesc,
+    paymentDate, reason, schoolName, link,
+  } = params
+
+  const amountStr = amount.toFixed(2)
+
+  return {
+   subject: `[${schoolName}] ⚠️ تنبيه: تم حذف دفعة سجلتها — ${studentName}`,
+    html: layout(
+      `
+      <h2 style="color:#dc2626;margin:0 0 12px;font-size:20px;">⚠️ تنبيه: تم حذف دفعة سجلتها</h2>
+<p>عزيزي ${recorderName}،</p>
+<p>نحيطكم علماً أنه تم <strong style="color:#dc2626;">حذف دفعة</strong> كنتم قد سجلتموها سابقاً.</p>
+        ${infoBox(`
+         <p style="margin:0 0 8px;"><strong>من قام بالحذف:</strong> ...
+          <p style="margin:0 0 8px;"><strong>التلميذ:</strong> ${studentName}</p>
+          <p style="margin:0 0 8px;"><strong>القسط:</strong> ${installmentDesc}</p>
+          <p style="margin:0 0 8px;"><strong>المبلغ:</strong> <span dir="ltr" style="font-weight:bold;">${amountStr} DH</span></p>
+          <p style="margin:0 0 8px;"><strong>تاريخ الدفعة الأصلية:</strong> ${paymentDate}</p>
+          <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>السبب:</strong> ${reason}</p>
+        `, '#fef2f2')}
+        <p style="font-size:13px;color:#64748b;">في حال كان لديكم أي استفسار، المرجو التواصل مع الإدارة.</p>
+        ${ctaButton('عرض المدفوعات', link)}
+      `,
+      `
+        <h2 style="color:#dc2626;margin:0 0 12px;font-size:18px;">⚠️ Un paiement que vous avez enregistré a été supprimé</h2>
+<p>Cher ${recorderName},</p>
+<p>Un paiement que vous avez enregistré a été <strong style="color:#dc2626;">supprimé</strong>.</p>
+        ${infoBox(`
+          <p style="margin:0 0 8px;"><strong>Supprimé par :</strong> ...
+          <p style="margin:0 0 8px;"><strong>Élève :</strong> ${studentName}</p>
+          <p style="margin:0 0 8px;"><strong>Échéance :</strong> ${installmentDesc}</p>
+          <p style="margin:0 0 8px;"><strong>Montant :</strong> <span dir="ltr" style="font-weight:bold;">${amountStr} DH</span></p>
+          <p style="margin:0 0 8px;"><strong>Date du paiement :</strong> ${paymentDate}</p>
+          <p style="margin:8px 0 0;border-top:1px dashed #cbd5e1;padding-top:8px;"><strong>Raison :</strong> ${reason}</p>
+        `, '#fef2f2')}
+        <p style="font-size:13px;color:#64748b;">Pour toute question, contactez l'administration.</p>
+        ${ctaButton('Voir les paiements', link)}
+      `,
+      schoolName,
+    ),
+   text: `[${schoolName}] تنبيه: ${cancelledByName} حذف دفعة سجلتها (${studentName} — ${amountStr} DH). السبب: ${reason}`,
+  }
+}
+// ─────────────────────────────────────────────────────────
+// 12. DAILY CAISSE BALANCE — الرصيد اليومي للصناديق
+// ─────────────────────────────────────────────────────────
+export type CaisseRow = {
+  name: string
+  type: string
+  balance: number
+  inCount: number   // عدد الدفعات اليوم
+  outCount: number  // عدد المصاريف اليوم
+}
+
+export function dailyCaisseBalanceEmail(params: {
+  recipientRole: 'directeur' | 'secretaire'
+  recipientName: string
+  caisses: CaisseRow[]
+  totalBalance: number
+  schoolName: string
+  date: string
+}) {
+  const {
+    recipientRole, recipientName, caisses, totalBalance, schoolName, date,
+  } = params
+
+  const isDirector = recipientRole === 'directeur'
+
+  const titleAr = isDirector
+    ? '📊 الرصيد اليومي لجميع الصناديق'
+    : '📊 رصيد صندوقك'
+  const titleFr = isDirector
+    ? '📊 Solde quotidien de toutes les caisses'
+    : '📊 Solde de votre caisse'
+
+  // Lignes du tableau
+  const tableRowsAr = caisses
+    .map((c) => {
+      const balanceColor = c.balance >= 0 ? '#059669' : '#dc2626'
+      const typeLabel =
+        c.type === 'central' || c.type === 'principal'
+          ? 'مركزي'
+          : c.type === 'secretary'
+            ? 'سكرتيرة'
+            : 'خدمة'
+
+      return `
+        <tr style="border-bottom:1px solid #e2e8f0;">
+          <td style="padding:10px 8px;font-weight:bold;color:#1e293b;">${c.name}</td>
+          <td style="padding:10px 8px;color:#64748b;font-size:12px;">${typeLabel}</td>
+          <td style="padding:10px 8px;text-align:right;">
+            <span style="font-family:monospace;font-weight:bold;color:${balanceColor};" dir="ltr">
+              ${c.balance.toFixed(2)} DH
+            </span>
+          </td>
+          <td style="padding:10px 8px;text-align:center;font-size:12px;color:#64748b;" dir="ltr">
+            +${c.inCount} / -${c.outCount}
+          </td>
+        </tr>`
+    })
+    .join('')
+
+  const tableRowsFr = tableRowsAr // même contenu, direction différente
+
+  const tableAr = `
+    <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8fafc;border-radius:12px;overflow:hidden;">
+      <thead>
+        <tr style="background:#1e293b;color:#ffffff;">
+          <th style="padding:10px 8px;text-align:right;font-size:12px;">الصندوق</th>
+          <th style="padding:10px 8px;text-align:right;font-size:12px;">النوع</th>
+          <th style="padding:10px 8px;text-align:right;font-size:12px;">الرصيد</th>
+          <th style="padding:10px 8px;text-align:center;font-size:12px;">حركات</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRowsAr}
+        ${
+          isDirector
+            ? `
+          <tr style="background:#fef3c7;font-weight:bold;">
+            <td colspan="2" style="padding:12px 8px;">المجموع العام</td>
+            <td style="padding:12px 8px;text-align:right;">
+              <span style="font-family:monospace;color:#d97706;font-size:16px;" dir="ltr">
+                ${totalBalance.toFixed(2)} DH
+              </span>
+            </td>
+            <td></td>
+          </tr>`
+            : ''
+        }
+      </tbody>
+    </table>
+  `
+
+  return {
+    subject: isDirector
+      ? `[${schoolName}] 📊 الرصيد اليومي — ${totalBalance.toFixed(2)} DH`
+      : `[${schoolName}] 📊 رصيد صندوقك — ${caisses[0]?.balance.toFixed(2) || '0.00'} DH`,
+    html: layout(
+      `
+        <h2 style="color:#1e3a5f;margin:0 0 12px;font-size:20px;">${titleAr}</h2>
+        <p>مرحباً ${recipientName}،</p>
+        <p>في ما يلي رصيد ${isDirector ? 'جميع الصناديق' : 'صندوقك'} بتاريخ <strong>${date}</strong>:</p>
+        ${tableAr}
+        ${isDirector
+          ? `<p style="font-size:13px;color:#64748b;">عدد الصناديق: <strong dir="ltr">${caisses.length}</strong></p>`
+          : ''}
+        <p style="font-size:12px;color:#94a3b8;margin-top:20px;">
+          🔔 يتم إرسال هذا التقرير تلقائياً كل يوم على الساعة <span dir="ltr">00:00</span>.
+        </p>
+      `,
+      `
+        <h2 style="color:#1e3a5f;margin:0 0 12px;font-size:18px;">${titleFr}</h2>
+        <p>Bonjour ${recipientName},</p>
+        <p>Voici le solde ${isDirector ? 'de toutes les caisses' : 'de votre caisse'} au <strong>${date}</strong> :</p>
+        ${tableAr}
+        <p style="font-size:12px;color:#94a3b8;margin-top:20px;">
+          🔔 Ce rapport est envoyé automatiquement chaque jour à <span dir="ltr">00:00</span>.
+        </p>
+      `,
+      schoolName,
+    ),
+    text: isDirector
+      ? `[${schoolName}] الرصيد اليومي — ${date}\n${caisses.map((c) => `${c.name}: ${c.balance.toFixed(2)} DH`).join('\n')}\nالمجموع: ${totalBalance.toFixed(2)} DH`
+      : `[${schoolName}] رصيد ${caisses[0]?.name} — ${date}: ${caisses[0]?.balance.toFixed(2) || '0.00'} DH`,
+  }
+}

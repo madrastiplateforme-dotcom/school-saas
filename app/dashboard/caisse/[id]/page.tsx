@@ -69,61 +69,93 @@ export default function CaisseDetailPage() {
 
     const allMovements: Movement[] = []
 
-    // 2. Payments
+    // ═════════════════════════════════════════════════════════════
+    // 2. Payments (exclut deleted_at SET, garde is_refunded=true)
+    // ═════════════════════════════════════════════════════════════
     const { data: payments, error: payError } = await supabase
       .from('payments')
-      .select('id, amount, payment_date, students(first_name, last_name)')
+      .select('id, amount, payment_date, student_id, is_refunded')
       .eq('cash_register_id', registerId)
+      .is('deleted_at', null)
 
-    if (payError) console.error('Payments error:', payError)
+    if (payError) console.error('Payments error:', payError?.message || payError)
+
+    // Récupérer les noms étudiants séparément (R1)
+    const studentIds = Array.from(
+      new Set((payments || []).map((p: any) => p.student_id).filter(Boolean))
+    )
+    const studentMap = new Map<string, string>()
+    if (studentIds.length > 0) {
+      const { data: studentsData } = await supabase
+        .from('students')
+        .select('id, first_name, last_name')
+        .in('id', studentIds)
+      ;(studentsData || []).forEach((s: any) => {
+        studentMap.set(s.id, `${s.first_name || ''} ${s.last_name || ''}`.trim())
+      })
+    }
 
     ;(payments || []).forEach((p: any) => {
+      const studentName = p.student_id ? (studentMap.get(p.student_id) || '') : ''
+      const refundedFlag = p.is_refunded ? ' ⚠️' : ''
+
       allMovements.push({
         id: `pay-${p.id}`,
         date: p.payment_date,
-        description: `دفعة - ${p.students?.first_name || ''} ${p.students?.last_name || ''}`.trim(),
+        description: `دفعة - ${studentName}${refundedFlag}`.trim(),
         amount: Number(p.amount),
         direction: 'in',
-        type: 'Paiement',
-        relatedTo: p.students ? `${p.students.first_name} ${p.students.last_name}` : '-',
+        type: p.is_refunded ? 'Paiement (remboursé)' : 'Paiement',
+        relatedTo: studentName || '-',
         icon: ArrowDownLeft,
-        color: 'text-emerald-600 bg-emerald-50',
+        color: p.is_refunded
+          ? 'text-orange-600 bg-orange-50'
+          : 'text-emerald-600 bg-emerald-50',
       })
     })
 
-    // 3. Expenses (BLA staff join)
+    // ═════════════════════════════════════════════════════════════
+    // 3. Expenses
+    // ═════════════════════════════════════════════════════════════
     const { data: expenses, error: expError } = await supabase
       .from('expenses')
       .select('id, amount, expense_date, description, nature, category')
       .eq('cash_register_id', registerId)
 
-    if (expError) console.error('Expenses error:', expError)
+    if (expError) console.error('Expenses error:', expError?.message || expError)
 
     ;(expenses || []).forEach((e: any) => {
       const isSalaire = e.nature === 'salaire'
+      const isRefund = e.nature === 'refund' || e.category === 'refund'
+
       allMovements.push({
         id: `exp-${e.id}`,
         date: e.expense_date,
-        description: e.description || (isSalaire ? 'راتب' : 'مصروف'),
+        description: e.description || (isSalaire ? 'راتب' : isRefund ? 'إرجاع دفعة' : 'مصروف'),
         amount: Number(e.amount),
         direction: 'out',
-        type: isSalaire ? 'Salaire' : 'Dépense',
+        type: isSalaire ? 'Salaire' : isRefund ? 'Remboursement' : 'Dépense',
         relatedTo: e.category || '-',
         icon: isSalaire ? UserIcon : TrendingDown,
-        color: isSalaire ? 'text-purple-600 bg-purple-50' : 'text-red-600 bg-red-50',
+        color: isSalaire
+          ? 'text-purple-600 bg-purple-50'
+          : isRefund
+            ? 'text-orange-600 bg-orange-50'
+            : 'text-red-600 bg-red-50',
       })
     })
 
+    // ═════════════════════════════════════════════════════════════
     // 4. Transfers out
+    // ═════════════════════════════════════════════════════════════
     const { data: transfersOut, error: tOutError } = await supabase
       .from('cash_transfers')
       .select('id, amount, transfer_date, to_cash_register_id, note, status')
       .eq('from_cash_register_id', registerId)
       .eq('status', 'accepted')
 
-    if (tOutError) console.error('Transfers out error:', tOutError)
+    if (tOutError) console.error('Transfers out error:', tOutError?.message || tOutError)
 
-    // Jib smiyt caisses destination
     const tOutTargets = (transfersOut || []).map(t => t.to_cash_register_id)
     let caisseNames: Record<string, string> = {}
     if (tOutTargets.length > 0) {
@@ -148,16 +180,17 @@ export default function CaisseDetailPage() {
       })
     })
 
+    // ═════════════════════════════════════════════════════════════
     // 5. Transfers in
+    // ═════════════════════════════════════════════════════════════
     const { data: transfersIn, error: tInError } = await supabase
       .from('cash_transfers')
       .select('id, amount, transfer_date, from_cash_register_id, note, status')
       .eq('to_cash_register_id', registerId)
       .eq('status', 'accepted')
 
-    if (tInError) console.error('Transfers in error:', tInError)
+    if (tInError) console.error('Transfers in error:', tInError?.message || tInError)
 
-    // Jib smiyt caisses source
     const tInSources = (transfersIn || []).map(t => t.from_cash_register_id)
     let caisseSources: Record<string, string> = {}
     if (tInSources.length > 0) {
@@ -196,7 +229,6 @@ export default function CaisseDetailPage() {
 
   const thisMonth = new Date().toISOString().slice(0, 7)
 
-  // Total In/Out — EXCLU les transferts
   const totalIn = movements
     .filter((m) => m.direction === 'in' && m.date.startsWith(thisMonth) && !m.type.includes('Transfert'))
     .reduce((s, m) => s + m.amount, 0)
