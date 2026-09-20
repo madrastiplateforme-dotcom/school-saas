@@ -551,7 +551,8 @@ export default function EvaluationsPage() {
                     <div className="flex items-center gap-2 text-slate-600">
                       <Calendar className="h-3.5 w-3.5 opacity-60" />
                       <span>{termNames[ev.term - 1] || `الفصل ${ev.term}`}</span>
-                      {ev.eval_date && (
+                      {/* ✅ FIX: ev.eval_date → ev.date + guard sur new Date() */}
+                      {ev.date && (
                         <span className="text-slate-400">· {new Date(ev.date).toLocaleDateString('fr-FR')}</span>
                       )}
                     </div>

@@ -1,17 +1,14 @@
 'use client'
 
 import {
-  Document,
-  Page,
-  Text,
-  View,
-  StyleSheet,
-  Font,
-  Image,
+  Document, Page, Text, View, StyleSheet, Font, Image,
 } from '@react-pdf/renderer'
+import path from 'path'
 import { registerPdfFonts } from '@/lib/pdf-fonts'
 
 registerPdfFonts()
+
+const FONTS_DIR = path.resolve(process.cwd(), 'public', 'fonts')
 
 // ═══════════════════════════════════════════════════
 // Palette
@@ -20,6 +17,7 @@ const C = {
   navy: '#1e3a5f',
   gold: '#b8860b',
   lightGold: '#f5ecd7',
+  cream: '#fbf8f1',
   gray: '#555',
   dark: '#1a1a1a',
   line: '#d4c9a8',
@@ -31,125 +29,19 @@ const ROSE = '#dc2626'
 const AMBER = '#d97706'
 
 // ═══════════════════════════════════════════════════
-// 🎯 DYNAMIC SIZING — fit 1 page if possible, else 2
+// 🎯 Dynamic sizing
 // ═══════════════════════════════════════════════════
 function getDynamicSizes(subjectCount: number) {
-  // Paliers : plus il y a de matières, plus on réduit
   if (subjectCount <= 8) {
-    return {
-      pagePadding: 0,
-      contentPadding: 40,
-      contentPaddingTop: 35,
-      fontSize: 9,
-      tableRowPadding: 5,
-      titleSize: 20,
-      titleFrSize: 11,
-      headerMargin: 12,
-      titleMarginTop: 8,
-      titleMarginBottom: 12,
-      studentPadding: 8,
-      studentMarginBottom: 10,
-      summaryPadding: 7,
-      summaryMarginBottom: 8,
-      decisionPadding: 8,
-      decisionMarginBottom: 8,
-      commentPadding: 8,
-      commentMinHeight: 42,
-      commentMarginBottom: 8,
-      footerMarginTop: 8,
-      footerPaddingTop: 8,
-      cellSubjectFont: 9,
-      cellMoyFont: 9.5,
-      cellCenterFont: 8.5,
-      tableHeaderPadding: 6,
-    }
+    return { contentPadding: 40, contentPaddingTop: 35, fontSize: 9, tableRowPadding: 5, titleSize: 20, titleFrSize: 11, headerMargin: 12, titleMarginTop: 8, titleMarginBottom: 12, studentPadding: 8, studentMarginBottom: 10, summaryPadding: 7, summaryMarginBottom: 8, decisionPadding: 8, decisionMarginBottom: 8, commentPadding: 8, commentMinHeight: 42, commentMarginBottom: 8, footerMarginTop: 8, footerPaddingTop: 8, cellSubjectFont: 9, cellMoyFont: 9.5, cellCenterFont: 8.5, tableHeaderPadding: 6 }
   }
   if (subjectCount <= 12) {
-    return {
-      pagePadding: 0,
-      contentPadding: 32,
-      contentPaddingTop: 28,
-      fontSize: 8.5,
-      tableRowPadding: 4,
-      titleSize: 18,
-      titleFrSize: 10,
-      headerMargin: 10,
-      titleMarginTop: 6,
-      titleMarginBottom: 10,
-      studentPadding: 6,
-      studentMarginBottom: 8,
-      summaryPadding: 6,
-      summaryMarginBottom: 6,
-      decisionPadding: 6,
-      decisionMarginBottom: 6,
-      commentPadding: 6,
-      commentMinHeight: 34,
-      commentMarginBottom: 6,
-      footerMarginTop: 6,
-      footerPaddingTop: 6,
-      cellSubjectFont: 8.5,
-      cellMoyFont: 9,
-      cellCenterFont: 8,
-      tableHeaderPadding: 5,
-    }
+    return { contentPadding: 32, contentPaddingTop: 28, fontSize: 8.5, tableRowPadding: 4, titleSize: 18, titleFrSize: 10, headerMargin: 10, titleMarginTop: 6, titleMarginBottom: 10, studentPadding: 6, studentMarginBottom: 8, summaryPadding: 6, summaryMarginBottom: 6, decisionPadding: 6, decisionMarginBottom: 6, commentPadding: 6, commentMinHeight: 34, commentMarginBottom: 6, footerMarginTop: 6, footerPaddingTop: 6, cellSubjectFont: 8.5, cellMoyFont: 9, cellCenterFont: 8, tableHeaderPadding: 5 }
   }
   if (subjectCount <= 15) {
-    return {
-      pagePadding: 0,
-      contentPadding: 26,
-      contentPaddingTop: 22,
-      fontSize: 8,
-      tableRowPadding: 3,
-      titleSize: 16,
-      titleFrSize: 9,
-      headerMargin: 8,
-      titleMarginTop: 4,
-      titleMarginBottom: 8,
-      studentPadding: 5,
-      studentMarginBottom: 6,
-      summaryPadding: 5,
-      summaryMarginBottom: 5,
-      decisionPadding: 5,
-      decisionMarginBottom: 5,
-      commentPadding: 5,
-      commentMinHeight: 28,
-      commentMarginBottom: 5,
-      footerMarginTop: 4,
-      footerPaddingTop: 4,
-      cellSubjectFont: 8,
-      cellMoyFont: 8.5,
-      cellCenterFont: 7.5,
-      tableHeaderPadding: 4,
-    }
+    return { contentPadding: 26, contentPaddingTop: 22, fontSize: 8, tableRowPadding: 3, titleSize: 16, titleFrSize: 9, headerMargin: 8, titleMarginTop: 4, titleMarginBottom: 8, studentPadding: 5, studentMarginBottom: 6, summaryPadding: 5, summaryMarginBottom: 5, decisionPadding: 5, decisionMarginBottom: 5, commentPadding: 5, commentMinHeight: 28, commentMarginBottom: 5, footerMarginTop: 4, footerPaddingTop: 4, cellSubjectFont: 8, cellMoyFont: 8.5, cellCenterFont: 7.5, tableHeaderPadding: 4 }
   }
-  // > 15 → on accepte 2 pages
-  return {
-    pagePadding: 0,
-    contentPadding: 22,
-    contentPaddingTop: 18,
-    fontSize: 7.5,
-    tableRowPadding: 2.5,
-    titleSize: 15,
-    titleFrSize: 8.5,
-    headerMargin: 6,
-    titleMarginTop: 3,
-    titleMarginBottom: 6,
-    studentPadding: 4,
-    studentMarginBottom: 5,
-    summaryPadding: 4,
-    summaryMarginBottom: 4,
-    decisionPadding: 4,
-    decisionMarginBottom: 4,
-    commentPadding: 4,
-    commentMinHeight: 24,
-    commentMarginBottom: 4,
-    footerMarginTop: 3,
-    footerPaddingTop: 3,
-    cellSubjectFont: 7.5,
-    cellMoyFont: 8,
-    cellCenterFont: 7,
-    tableHeaderPadding: 3.5,
-  }
+  return { contentPadding: 22, contentPaddingTop: 18, fontSize: 7.5, tableRowPadding: 2.5, titleSize: 15, titleFrSize: 8.5, headerMargin: 6, titleMarginTop: 3, titleMarginBottom: 6, studentPadding: 4, studentMarginBottom: 5, summaryPadding: 4, summaryMarginBottom: 4, decisionPadding: 4, decisionMarginBottom: 4, commentPadding: 4, commentMinHeight: 24, commentMarginBottom: 4, footerMarginTop: 3, footerPaddingTop: 3, cellSubjectFont: 7.5, cellMoyFont: 8, cellCenterFont: 7, tableHeaderPadding: 3.5 }
 }
 
 // ═══════════════════════════════════════════════════
@@ -211,19 +103,11 @@ type Props = {
 
 const formatDate = (d?: string | null) => {
   if (!d) return '—'
-  try {
-    return new Date(d).toLocaleDateString('fr-FR')
-  } catch {
-    return d
-  }
+  try { return new Date(d).toLocaleDateString('fr-FR') } catch { return d }
 }
 
-const MONTHS_FR = [
-  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
-]
-const formatDateFr = (d: Date) =>
-  `${d.getDate()} ${MONTHS_FR[d.getMonth()]} ${d.getFullYear()}`
+const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+const formatDateFr = (d: Date) => `${d.getDate()} ${MONTHS_FR[d.getMonth()]} ${d.getFullYear()}`
 
 const autoDecision = (avg: number | null, gradeMax: number): string => {
   if (avg == null) return '—'
@@ -243,13 +127,7 @@ const decisionFrMap: Record<string, string> = {
 // SINGLE PAGE
 // ═══════════════════════════════════════════════════
 function BulletinPage({
-  establishment,
-  yearName,
-  termName,
-  className,
-  levelName,
-  gradeMax,
-  bulletin,
+  establishment, yearName, termName, className, levelName, gradeMax, bulletin,
 }: Omit<Props, 'bulletins'> & { bulletin: BulletinData }) {
   const { student, subjects, overall, rank, classSize, totalCoef, totalWeighted } = bulletin
   const pass = gradeMax / 2
@@ -261,42 +139,38 @@ function BulletinPage({
   const todayAr = today.toLocaleDateString('fr-FR')
   const todayFr = formatDateFr(today)
 
-  // 🎯 Calcule la taille dynamique selon le nombre de matières
   const S = getDynamicSizes(subjects.length)
 
   const styles = StyleSheet.create({
     page: {
-      padding: S.pagePadding,
+      padding: 0,
       fontFamily: 'Cairo',
       fontSize: S.fontSize,
       direction: 'rtl',
+      backgroundColor: C.cream,
+    },
+
+    // Watermark
+    watermark: {
+      position: 'absolute', top: '30%', left: '25%',
+      width: 260, height: 260, opacity: 0.05,
+    },
+    watermarkLetter: {
+      position: 'absolute', top: '28%', left: 0, right: 0,
+      fontSize: 260, fontWeight: 'bold', color: C.navy,
+      textAlign: 'center', opacity: 0.04,
     },
 
     outerFrame: {
-      position: 'absolute',
-      top: 18,
-      left: 18,
-      right: 18,
-      bottom: 18,
-      borderWidth: 2.5,
-      borderColor: C.navy,
-      borderRadius: 4,
+      position: 'absolute', top: 18, left: 18, right: 18, bottom: 18,
+      borderWidth: 2.5, borderColor: C.navy, borderRadius: 4,
     },
     innerFrame: {
-      position: 'absolute',
-      top: 25,
-      left: 25,
-      right: 25,
-      bottom: 25,
-      borderWidth: 0.8,
-      borderColor: C.gold,
-      borderRadius: 2,
+      position: 'absolute', top: 25, left: 25, right: 25, bottom: 25,
+      borderWidth: 0.8, borderColor: C.gold, borderRadius: 2,
     },
 
-    content: {
-      padding: S.contentPadding,
-      paddingTop: S.contentPaddingTop,
-    },
+    content: { padding: S.contentPadding, paddingTop: S.contentPaddingTop },
 
     header: {
       flexDirection: 'row-reverse',
@@ -308,54 +182,39 @@ function BulletinPage({
       marginBottom: S.headerMargin,
     },
     logoBox: {
-      width: 50,
-      height: 50,
-      borderRadius: 6,
+      width: 50, height: 50, borderRadius: 6,
       backgroundColor: C.lightGold,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: C.gold,
+      justifyContent: 'center', alignItems: 'center',
+      borderWidth: 1, borderColor: C.gold,
     },
     logoImg: { width: 50, height: 50, borderRadius: 6 },
     logoPlaceholder: { fontSize: 20, color: C.navy, fontWeight: 'bold' },
     headerCenter: { flex: 1, textAlign: 'center', paddingHorizontal: 12 },
     kingdomAr: {
-      fontSize: 11,
-      fontWeight: 'bold',
-      color: C.navy,
-      textAlign: 'center',
-      letterSpacing: 0.5,
+      fontSize: 11, fontWeight: 'bold', color: C.navy,
+      textAlign: 'center', lineHeight: 1.5,
     },
     kingdomFr: {
-      fontSize: 8.5,
-      fontWeight: 'bold',
-      color: C.navy,
-      textAlign: 'center',
-      marginTop: 1,
+      fontSize: 8.5, fontWeight: 'bold', color: C.navy,
+      textAlign: 'center', marginTop: 1,
     },
     schoolAr: {
-      fontSize: 13,
-      fontWeight: 'bold',
-      color: C.gold,
-      textAlign: 'center',
-      marginTop: 5,
+      fontSize: 13, fontWeight: 'bold', color: C.gold,
+      textAlign: 'center', marginTop: 5, lineHeight: 1.4,
     },
     schoolFr: {
-      fontSize: 9,
-      color: C.gray,
-      textAlign: 'center',
-      marginTop: 0.5,
-      fontStyle: 'italic',
+      fontSize: 9, color: C.gray, textAlign: 'center',
+      marginTop: 0.5, fontStyle: 'italic',
     },
     schoolMeta: {
-      fontSize: 8,
-      color: C.gray,
-      textAlign: 'center',
-      marginTop: 2,
+      fontSize: 8, color: C.gray, textAlign: 'center',
+      marginTop: 2, lineHeight: 1.5,
     },
     headerRight: { width: 130, textAlign: 'left' },
-    headerRightLine: { fontSize: 8, color: C.gray, textAlign: 'left', marginBottom: 2 },
+    headerRightLine: {
+      fontSize: 8, color: C.gray, textAlign: 'left',
+      marginBottom: 2, lineHeight: 1.5,
+    },
     headerRightStrong: { fontSize: 8, fontWeight: 'bold', color: C.navy },
 
     titleBox: {
@@ -364,191 +223,130 @@ function BulletinPage({
       marginBottom: S.titleMarginBottom,
     },
     titleAr: {
-      fontSize: S.titleSize,
-      fontWeight: 'bold',
-      color: C.navy,
-      textAlign: 'center',
-      letterSpacing: 0.5,
+      fontSize: S.titleSize, fontWeight: 'bold', color: C.navy,
+      textAlign: 'center', lineHeight: 1.3,
     },
     titleFr: {
-      fontSize: S.titleFrSize,
-      fontWeight: 'bold',
-      color: C.gold,
-      textAlign: 'center',
-      letterSpacing: 1.5,
-      marginTop: 2,
+      fontSize: S.titleFrSize, fontWeight: 'bold', color: C.gold,
+      textAlign: 'center', letterSpacing: 1.5, marginTop: 2,
     },
-    titleDivider: {
-      width: 160,
-      height: 1.5,
-      backgroundColor: C.gold,
-      marginTop: 6,
+    titleDividerRow: {
+      flexDirection: 'row-reverse', alignItems: 'center',
+      marginTop: 6, gap: 6,
     },
+    titleDividerLine: { width: 70, height: 1.2, backgroundColor: C.gold },
+    titleDividerStar: { fontSize: 10, color: C.gold },
 
     studentBox: {
       flexDirection: 'row-reverse',
       backgroundColor: C.lightGold,
-      borderLeftWidth: 3,
-      borderLeftColor: C.gold,
-      borderRadius: 3,
-      padding: S.studentPadding,
-      marginBottom: S.studentMarginBottom,
-      flexWrap: 'wrap',
+      borderLeftWidth: 3, borderLeftColor: C.gold,
+      borderRadius: 3, padding: S.studentPadding,
+      marginBottom: S.studentMarginBottom, flexWrap: 'wrap',
     },
     studentItem: { width: '33.33%', paddingVertical: 3, paddingHorizontal: 4 },
     studentLabel: {
-      fontSize: 7.5,
-      color: C.gray,
-      textAlign: 'right',
-      marginBottom: 1,
+      fontSize: 7.5, color: C.gray, textAlign: 'right',
+      marginBottom: 1, lineHeight: 1.5,
     },
     studentLabelFr: { fontSize: 6.5, color: C.gray, textAlign: 'right' },
     studentValue: {
-      fontSize: 9.5,
-      fontWeight: 'bold',
-      color: C.navy,
-      marginTop: 1.5,
-      textAlign: 'right',
+      fontSize: 9.5, fontWeight: 'bold', color: C.navy,
+      marginTop: 1.5, textAlign: 'right', lineHeight: 1.5,
     },
 
     table: {
-      borderWidth: 1,
-      borderColor: C.navy,
-      borderRadius: 3,
-      overflow: 'hidden',
-      marginBottom: 10,
+      borderWidth: 1, borderColor: C.navy, borderRadius: 3,
+      overflow: 'hidden', marginBottom: 10,
     },
     tableHeader: {
-      flexDirection: 'row-reverse',
-      backgroundColor: C.navy,
+      flexDirection: 'row-reverse', backgroundColor: C.navy,
       paddingVertical: S.tableHeaderPadding,
     },
     tableHeaderCell: {
-      color: '#ffffff',
-      fontSize: 8,
-      fontWeight: 'bold',
-      textAlign: 'center',
-      paddingHorizontal: 3,
+      color: '#ffffff', fontSize: 8, fontWeight: 'bold',
+      textAlign: 'center', paddingHorizontal: 3, lineHeight: 1.4,
     },
     tableRow: {
       flexDirection: 'row-reverse',
-      borderBottomWidth: 0.5,
-      borderBottomColor: '#e5e5e5',
+      borderBottomWidth: 0.5, borderBottomColor: '#e5e5e5',
       borderBottomStyle: 'dotted',
-      paddingVertical: S.tableRowPadding,
-      alignItems: 'center',
+      paddingVertical: S.tableRowPadding, alignItems: 'center',
     },
     tableRowAlt: { backgroundColor: '#fafafa' },
     cellSubject: {
-      flex: 2.2,
-      textAlign: 'right',
-      paddingHorizontal: 6,
-      fontSize: S.cellSubjectFont,
-      fontWeight: 'bold',
-      color: C.navy,
+      flex: 2.2, textAlign: 'right', paddingHorizontal: 6,
+      fontSize: S.cellSubjectFont, fontWeight: 'bold',
+      color: C.navy, lineHeight: 1.4,
     },
     cellCenter: {
-      flex: 1,
-      textAlign: 'center',
-      fontSize: S.cellCenterFont,
-      paddingHorizontal: 3,
-      color: C.gray,
+      flex: 1, textAlign: 'center', fontSize: S.cellCenterFont,
+      paddingHorizontal: 3, color: C.gray, lineHeight: 1.4,
     },
     cellMoy: {
-      flex: 1,
-      textAlign: 'center',
-      fontSize: S.cellMoyFont,
-      fontWeight: 'bold',
-      paddingHorizontal: 3,
+      flex: 1, textAlign: 'center', fontSize: S.cellMoyFont,
+      fontWeight: 'bold', paddingHorizontal: 3, lineHeight: 1.4,
     },
     totalRow: {
-      flexDirection: 'row-reverse',
-      backgroundColor: C.lightGold,
-      paddingVertical: S.tableRowPadding,
-      alignItems: 'center',
-      borderTopWidth: 1,
-      borderTopColor: C.gold,
+      flexDirection: 'row-reverse', backgroundColor: C.lightGold,
+      paddingVertical: S.tableRowPadding, alignItems: 'center',
+      borderTopWidth: 1, borderTopColor: C.gold,
     },
 
     summaryGrid: {
-      flexDirection: 'row-reverse',
-      gap: 6,
+      flexDirection: 'row-reverse', gap: 6,
       marginBottom: S.summaryMarginBottom,
     },
     summaryCard: {
-      flex: 1,
-      borderRadius: 3,
-      padding: S.summaryPadding,
+      flex: 1, borderRadius: 3, padding: S.summaryPadding,
       backgroundColor: '#fafafa',
-      borderLeftWidth: 3,
-      borderLeftColor: C.navy,
+      borderLeftWidth: 3, borderLeftColor: C.navy,
     },
     summaryLabelAr: {
-      fontSize: 7.5,
-      color: C.gray,
-      marginBottom: 1,
-      textAlign: 'right',
+      fontSize: 7.5, color: C.gray, marginBottom: 1,
+      textAlign: 'right', lineHeight: 1.5,
     },
     summaryLabelFr: {
-      fontSize: 6.5,
-      color: C.gray,
-      marginBottom: 3,
-      textAlign: 'right',
-      fontStyle: 'italic',
+      fontSize: 6.5, color: C.gray, marginBottom: 3,
+      textAlign: 'right', fontStyle: 'italic',
     },
     summaryValue: {
-      fontSize: 13,
-      fontWeight: 'bold',
-      color: C.navy,
-      textAlign: 'right',
+      fontSize: 13, fontWeight: 'bold', color: C.navy,
+      textAlign: 'right', lineHeight: 1.4,
     },
     summaryUnit: { fontSize: 7.5, color: C.gray, fontWeight: 'normal' },
 
     decisionBox: {
-      flexDirection: 'row-reverse',
-      borderRadius: 3,
-      padding: S.decisionPadding,
-      marginBottom: S.decisionMarginBottom,
-      alignItems: 'center',
-      borderWidth: 1,
+      flexDirection: 'row-reverse', borderRadius: 3,
+      padding: S.decisionPadding, marginBottom: S.decisionMarginBottom,
+      alignItems: 'center', borderWidth: 1,
     },
-    decisionLabelAr: { fontSize: 9, color: C.gray, marginLeft: 6 },
+    decisionLabelAr: {
+      fontSize: 9, color: C.gray, marginLeft: 6, lineHeight: 1.5,
+    },
     decisionLabelFr: {
-      fontSize: 7,
-      color: C.gray,
-      marginLeft: 6,
-      fontStyle: 'italic',
+      fontSize: 7, color: C.gray, marginLeft: 6, fontStyle: 'italic',
     },
-    decisionValue: { fontSize: 12, fontWeight: 'bold' },
+    decisionValue: {
+      fontSize: 12, fontWeight: 'bold', lineHeight: 1.4,
+    },
 
     commentBox: {
-      borderWidth: 1,
-      borderColor: C.line,
-      borderStyle: 'dashed',
-      borderRadius: 3,
-      padding: S.commentPadding,
-      minHeight: S.commentMinHeight,
-      marginBottom: S.commentMarginBottom,
+      borderWidth: 1, borderColor: C.line, borderStyle: 'dashed',
+      borderRadius: 3, padding: S.commentPadding,
+      minHeight: S.commentMinHeight, marginBottom: S.commentMarginBottom,
       backgroundColor: '#fdfdf9',
     },
     commentLabelAr: {
-      fontSize: 7.5,
-      color: C.gray,
-      marginBottom: 1,
-      textAlign: 'right',
+      fontSize: 7.5, color: C.gray, marginBottom: 1,
+      textAlign: 'right', lineHeight: 1.5,
     },
     commentLabelFr: {
-      fontSize: 6.5,
-      color: C.gray,
-      marginBottom: 3,
-      textAlign: 'right',
-      fontStyle: 'italic',
+      fontSize: 6.5, color: C.gray, marginBottom: 3,
+      textAlign: 'right', fontStyle: 'italic',
     },
     commentText: {
-      fontSize: 9,
-      color: C.dark,
-      lineHeight: 1.5,
-      textAlign: 'right',
+      fontSize: 9, color: C.dark, lineHeight: 1.7, textAlign: 'right',
     },
 
     footer: {
@@ -557,29 +355,31 @@ function BulletinPage({
       alignItems: 'flex-end',
       marginTop: S.footerMarginTop,
       paddingTop: S.footerPaddingTop,
-      borderTopWidth: 1,
-      borderTopColor: C.gold,
+      borderTopWidth: 1, borderTopColor: C.gold,
     },
     footerBlock: { alignItems: 'center', width: '30%' },
     footerLabelAr: {
-      fontSize: 8,
-      color: C.navy,
-      fontWeight: 'bold',
-      marginBottom: 1,
-      textAlign: 'center',
+      fontSize: 8, color: C.navy, fontWeight: 'bold',
+      marginBottom: 1, textAlign: 'center', lineHeight: 1.5,
     },
     footerLabelFr: {
-      fontSize: 6.5,
-      color: C.gray,
-      marginBottom: 22,
-      textAlign: 'center',
-      fontStyle: 'italic',
+      fontSize: 6.5, color: C.gray, marginBottom: 22,
+      textAlign: 'center', fontStyle: 'italic',
     },
     footerLine: { fontSize: 7, color: C.gray, textAlign: 'center' },
   })
 
   return (
-    <Page size="A4" style={styles.page}>
+    <Page size="A4" style={styles.page} wrap={false}>
+      {/* Watermark */}
+      {establishment.logo_url ? (
+        <Image src={establishment.logo_url} style={styles.watermark} />
+      ) : (
+        <Text style={styles.watermarkLetter}>
+          {(establishment.name || 'م').charAt(0)}
+        </Text>
+      )}
+
       <View style={styles.outerFrame} />
       <View style={styles.innerFrame} />
 
@@ -626,9 +426,13 @@ function BulletinPage({
 
         {/* TITLE */}
         <View style={styles.titleBox}>
-          <Text style={styles.titleAr}>كشف نقط التلميذ(ة)</Text>
+          <Text style={styles.titleAr}>كشف نقط التلميذ</Text>
           <Text style={styles.titleFr}>BULLETIN DE NOTES</Text>
-          <View style={styles.titleDivider} />
+          <View style={styles.titleDividerRow}>
+            <View style={styles.titleDividerLine} />
+            <Text style={styles.titleDividerStar}>✦</Text>
+            <View style={styles.titleDividerLine} />
+          </View>
         </View>
 
         {/* STUDENT */}
@@ -680,27 +484,12 @@ function BulletinPage({
           {subjects.map((s, idx) => {
             const isPass = s.studentAverage != null && s.studentAverage >= pass
             return (
-              <View
-                key={s.subjectId}
-                style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}
-              >
+              <View key={s.subjectId} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}>
                 <Text style={[styles.cellSubject, { color: s.subjectColor || C.navy }]}>
                   {s.subjectName}
                 </Text>
                 <Text style={styles.cellCenter}>{s.coefficient}</Text>
-                <Text
-                  style={[
-                    styles.cellMoy,
-                    {
-                      color:
-                        s.studentAverage == null
-                          ? C.gray
-                          : isPass
-                          ? EMERALD
-                          : ORANGE,
-                    },
-                  ]}
-                >
+                <Text style={[styles.cellMoy, { color: s.studentAverage == null ? C.gray : isPass ? EMERALD : ORANGE }]}>
                   {s.studentAverage != null ? s.studentAverage.toFixed(2) : '—'}
                 </Text>
                 <Text style={styles.cellCenter}>
@@ -730,34 +519,15 @@ function BulletinPage({
 
         {/* SUMMARY */}
         <View style={styles.summaryGrid}>
-          <View
-            style={[
-              styles.summaryCard,
-              {
-                borderLeftColor: overallPass ? EMERALD : ORANGE,
-                backgroundColor: overallPass ? '#f0fdf4' : '#fff7ed',
-              },
-            ]}
-          >
+          <View style={[styles.summaryCard, { borderLeftColor: overallPass ? EMERALD : ORANGE, backgroundColor: overallPass ? '#f0fdf4' : '#fff7ed' }]}>
             <Text style={styles.summaryLabelAr}>المعدل العام</Text>
             <Text style={styles.summaryLabelFr}>Moyenne générale</Text>
-            <Text
-              style={[
-                styles.summaryValue,
-                { color: overallPass ? EMERALD : ORANGE },
-              ]}
-            >
+            <Text style={[styles.summaryValue, { color: overallPass ? EMERALD : ORANGE }]}>
               {overall != null ? overall.toFixed(2) : '—'}
               <Text style={styles.summaryUnit}> / {gradeMax}</Text>
             </Text>
           </View>
-
-          <View
-            style={[
-              styles.summaryCard,
-              { borderLeftColor: AMBER, backgroundColor: '#fffbeb' },
-            ]}
-          >
+          <View style={[styles.summaryCard, { borderLeftColor: AMBER, backgroundColor: '#fffbeb' }]}>
             <Text style={styles.summaryLabelAr}>الرتبة في القسم</Text>
             <Text style={styles.summaryLabelFr}>Rang en classe</Text>
             <Text style={[styles.summaryValue, { color: AMBER }]}>
@@ -765,28 +535,16 @@ function BulletinPage({
               <Text style={styles.summaryUnit}> / {classSize}</Text>
             </Text>
           </View>
-
-          <View
-            style={[
-              styles.summaryCard,
-              { borderLeftColor: C.gray, backgroundColor: '#fafafa' },
-            ]}
-          >
-            <Text style={styles.summaryLabelAr}>الغيابات (مبررة / غير مبررة)</Text>
-            <Text style={styles.summaryLabelFr}>Absences (just. / non just.)</Text>
+          <View style={[styles.summaryCard, { borderLeftColor: C.gray, backgroundColor: '#fafafa' }]}>
+            <Text style={styles.summaryLabelAr}>الغيابات</Text>
+            <Text style={styles.summaryLabelFr}>Absences</Text>
             <Text style={[styles.summaryValue, { color: C.gray }]}>
               {bulletin.absencesJustified}
               <Text style={styles.summaryUnit}> / </Text>
               {bulletin.absencesUnjustified}
             </Text>
           </View>
-
-          <View
-            style={[
-              styles.summaryCard,
-              { borderLeftColor: C.gray, backgroundColor: '#fafafa' },
-            ]}
-          >
+          <View style={[styles.summaryCard, { borderLeftColor: C.gray, backgroundColor: '#fafafa' }]}>
             <Text style={styles.summaryLabelAr}>التأخيرات</Text>
             <Text style={styles.summaryLabelFr}>Retards</Text>
             <Text style={[styles.summaryValue, { color: C.gray }]}>
@@ -796,60 +554,18 @@ function BulletinPage({
         </View>
 
         {/* DECISION */}
-        <View
-          style={[
-            styles.decisionBox,
-            {
-              backgroundColor:
-                decision === 'مقبول'
-                  ? '#f0fdf4'
-                  : decision === 'استدراك'
-                  ? '#fff7ed'
-                  : '#fef2f2',
-              borderColor:
-                decision === 'مقبول'
-                  ? '#bbf7d0'
-                  : decision === 'استدراك'
-                  ? '#fed7aa'
-                  : '#fecaca',
-            },
-          ]}
-        >
+        <View style={[styles.decisionBox, {
+          backgroundColor: decision === 'مقبول' ? '#f0fdf4' : decision === 'استدراك' ? '#fff7ed' : '#fef2f2',
+          borderColor: decision === 'مقبول' ? '#bbf7d0' : decision === 'استدراك' ? '#fed7aa' : '#fecaca',
+        }]}>
           <Text style={styles.decisionLabelAr}>القرار:</Text>
           <Text style={styles.decisionLabelFr}>Décision :</Text>
-          <Text
-            style={[
-              styles.decisionValue,
-              {
-                color:
-                  decision === 'مقبول'
-                    ? EMERALD
-                    : decision === 'استدراك'
-                    ? ORANGE
-                    : ROSE,
-              },
-            ]}
-          >
+          <Text style={[styles.decisionValue, { color: decision === 'مقبول' ? EMERALD : decision === 'استدراك' ? ORANGE : ROSE }]}>
             {decision}
           </Text>
-          <Text
-            style={[
-              styles.decisionValue,
-              {
-                fontSize: 10,
-                marginLeft: 6,
-                color:
-                  decision === 'مقبول'
-                    ? EMERALD
-                    : decision === 'استدراك'
-                    ? ORANGE
-                    : ROSE,
-              },
-            ]}
-          >
+          <Text style={[styles.decisionValue, { fontSize: 10, marginLeft: 6, color: decision === 'مقبول' ? EMERALD : decision === 'استدراك' ? ORANGE : ROSE }]}>
             ({decisionFr})
           </Text>
-
           {bulletin.behavior && (
             <>
               <Text style={[styles.decisionLabelAr, { marginLeft: 14 }]}>السلوك:</Text>
@@ -862,12 +578,10 @@ function BulletinPage({
 
         {/* COMMENT */}
         <View style={styles.commentBox}>
-          <Text style={styles.commentLabelAr}>ملاحظات المدير(ة)</Text>
+          <Text style={styles.commentLabelAr}>ملاحظات المدير</Text>
           <Text style={styles.commentLabelFr}>Commentaires du Directeur</Text>
           <Text style={styles.commentText}>
-            {bulletin.directorComment?.trim() ||
-              bulletin.decisionNotes?.trim() ||
-              ' '}
+            {bulletin.directorComment?.trim() || bulletin.decisionNotes?.trim() || ' '}
           </Text>
         </View>
 
@@ -884,7 +598,7 @@ function BulletinPage({
             <Text style={styles.footerLine}> </Text>
           </View>
           <View style={styles.footerBlock}>
-            <Text style={styles.footerLabelAr}>توقيع المدير(ة)</Text>
+            <Text style={styles.footerLabelAr}>توقيع المدير</Text>
             <Text style={styles.footerLabelFr}>Signature du Directeur</Text>
             <Text style={styles.footerLine}> </Text>
           </View>
@@ -898,13 +612,7 @@ function BulletinPage({
 // MAIN DOCUMENT
 // ═══════════════════════════════════════════════════
 export default function BulletinPDF({
-  establishment,
-  yearName,
-  termName,
-  className,
-  levelName,
-  gradeMax,
-  bulletins,
+  establishment, yearName, termName, className, levelName, gradeMax, bulletins,
 }: Props) {
   return (
     <Document>

@@ -1,11 +1,11 @@
 import path from 'path'
 import { Font } from '@react-pdf/renderer'
 
-// Détecte si on est côté navigateur (client) ou serveur (Node)
+// ═══════════════════════════════════════════════════
+// Détection : navigateur (client) vs serveur (Node)
+// ═══════════════════════════════════════════════════
 const isBrowser = typeof window !== 'undefined'
 
-// En browser: Next.js sert /public/* à la racine → URL = /fonts/...
-// En serveur: on utilise le chemin absolu
 const FONTS_BASE = isBrowser
   ? '/fonts'
   : path.resolve(process.cwd(), 'public', 'fonts')
@@ -21,15 +21,36 @@ export function registerPdfFonts() {
   if (registered) return
   registered = true
 
+  // ═══════════════════════════════════════════════════
+  // 🎯 Amiri — arabe complet (avec 4 vrais variants)
+  // ═══════════════════════════════════════════════════
   Font.register({
-    family: 'Cairo',
+    family: 'Amiri',
     fonts: [
-      { src: fontSrc('Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'normal' },
-      { src: fontSrc('Cairo-Regular.ttf'), fontWeight: 'normal', fontStyle: 'italic' },
-      { src: fontSrc('Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'normal' },
-      { src: fontSrc('Cairo-Bold.ttf'), fontWeight: 'bold', fontStyle: 'italic' },
+      { src: fontSrc('Amiri-Regular.ttf'),     fontWeight: 'normal', fontStyle: 'normal' },
+      { src: fontSrc('Amiri-Italic.ttf'),      fontWeight: 'normal', fontStyle: 'italic' },
+      { src: fontSrc('Amiri-Bold.ttf'),        fontWeight: 'bold',   fontStyle: 'normal' },
+      { src: fontSrc('Amiri-BoldItalic.ttf'),  fontWeight: 'bold',   fontStyle: 'italic' },
     ],
   })
 
+  // ═══════════════════════════════════════════════════
+  // 🔑 Alias 'Cairo' → Amiri
+  //    Les 6 PDFs utilisent fontFamily: 'Cairo'
+  //    On pointe vers Amiri sans modifier les PDFs
+  // ═══════════════════════════════════════════════════
+  Font.register({
+    family: 'Cairo',
+    fonts: [
+      { src: fontSrc('Amiri-Regular.ttf'),     fontWeight: 'normal', fontStyle: 'normal' },
+      { src: fontSrc('Amiri-Italic.ttf'),      fontWeight: 'normal', fontStyle: 'italic' },
+      { src: fontSrc('Amiri-Bold.ttf'),        fontWeight: 'bold',   fontStyle: 'normal' },
+      { src: fontSrc('Amiri-BoldItalic.ttf'),  fontWeight: 'bold',   fontStyle: 'italic' },
+    ],
+  })
+
+  // ═══════════════════════════════════════════════════
+  // Ne pas couper les mots arabes (hyphenation OFF)
+  // ═══════════════════════════════════════════════════
   Font.registerHyphenationCallback((word) => [word])
 }

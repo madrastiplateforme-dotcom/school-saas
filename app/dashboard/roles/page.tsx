@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
-import { generateInstallmentsForContract } from '@/lib/billing'
+import { generateInstallmentsForContract, type ServiceType } from '@/lib/billing'
 import { Search, CheckCircle, UserPlus } from 'lucide-react'
 
 function useDebounce(value: string, delay: number) {
@@ -65,7 +65,7 @@ type ServiceOption = {
 type SelectedService = {
   service_id: string
   name: string
-  type: string
+  type: ServiceType     // ← هنا
   price: number
   discount_percent: number
   discount_amount: number
@@ -293,7 +293,7 @@ export default function EnrollPage() {
       return [...prev, {
         service_id: serviceInfo.id,
         name: serviceInfo.name,
-        type: serviceInfo.type,
+        type: serviceInfo.type as ServiceType,
         price: serviceOption.price,
         discount_percent: 0,
         discount_amount: 0,

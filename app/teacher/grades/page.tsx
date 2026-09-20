@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import {
   ClipboardList, RefreshCw, Save, Check, Info, Users, BookOpen,
-  GraduationCap, Calendar,
+  GraduationCap, Calendar, AlertCircle,
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════
@@ -21,8 +21,11 @@ type Evaluation = {
   term: number
   class_id: string
   subject_id: string
+  max_score: number | null
 }
 type Student = { id: string; full_name: string; massar_code: string | null }
+
+const DEFAULT_MAX = 20
 
 export default function TeacherGradesPage() {
   const [loading, setLoading] = useState(true)
@@ -44,7 +47,7 @@ export default function TeacherGradesPage() {
   const [selectedEval, setSelectedEval] = useState('')
 
   // ═══════════════════════════════════════════════════
-  // 1) Initial load — teacher → levels → classes + subjects
+  // 1) Initial load
   // ═══════════════════════════════════════════════════
   useEffect(() => {
     loadInitial()
@@ -66,7 +69,6 @@ export default function TeacherGradesPage() {
         return
       }
 
-      // Profile
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('establishment_id')
@@ -81,7 +83,6 @@ export default function TeacherGradesPage() {
       }
       setEstablishmentId(estabId)
 
-      // Staff row
       const { data: staffRow } = await supabase
         .from('staff')
         .select('id')
@@ -96,7 +97,6 @@ export default function TeacherGradesPage() {
       }
       setStaffId(staffRow.id)
 
-      // teacher_subjects — PAS de class_id (utiliser level_id)
       const { data: tsList, error: tsErr } = await supabase
         .from('teacher_subjects')
         .select('subject_id, level_id')
@@ -118,7 +118,6 @@ export default function TeacherGradesPage() {
         return
       }
 
-      // Query séparée: levels
       const { data: levelsData } = await supabase
         .from('levels')
         .select('id, name')
@@ -128,7 +127,6 @@ export default function TeacherGradesPage() {
       const levelMap = new Map<string, string>()
       ;(levelsData || []).forEach((l: any) => levelMap.set(l.id, l.name || '—'))
 
-      // Query séparée: subjects
       const { data: subjectsData } = await supabase
         .from('subjects')
         .select('id, name')
@@ -138,7 +136,6 @@ export default function TeacherGradesPage() {
       const subjectMap = new Map<string, string>()
       ;(subjectsData || []).forEach((s: any) => subjectMap.set(s.id, s.name || '—'))
 
-      // Query séparée: classes WHERE level_id IN (...)
       const { data: classesData } = await supabase
         .from('classes')
         .select('id, name, level_id')
@@ -154,7 +151,6 @@ export default function TeacherGradesPage() {
       }))
       setClasses(classList)
 
-      // Subjects avec level_id
       const subjectList: SubjectOpt[] = rows
         .map((r: any) => ({
           id: r.subject_id,
@@ -163,7 +159,6 @@ export default function TeacherGradesPage() {
         }))
         .filter((s: any) => s.id && s.level_id)
 
-      // dédoublonner (teacher_subjects peut avoir doublons)
       const uniqueSubjects = Array.from(
         new Map(subjectList.map((s) => [`${s.id}:${s.level_id}`, s])).values(),
       )
@@ -198,16 +193,33 @@ export default function TeacherGradesPage() {
     setScores({})
 
     try {
+      // ⚠️ On tente de lire max_score. S'il n'existe pas en DB, on retombe sur null → DEFAULT_MAX (20).
       const { data, error: err } = await supabase
         .from('evaluations')
-        .select('id, name, date, weight, term, class_id, subject_id')
+        .select('id, name, date, weight, term, class_id, subject_id, max_score')
         .eq('class_id', selectedClass)
         .eq('subject_id', selectedSubject)
         .eq('is_active', true)
         .order('date', { ascending: false })
 
       if (err) {
-        console.error('[loadEvaluations]', err?.message || err)
+        // Fallback si la colonne max_score n'existe pas encore
+        console.warn('[loadEvaluations] retry without max_score:', err.message)
+        const { data: data2, error: err2 } = await supabase
+          .from('evaluations')
+          .select('id, name, date, weight, term, class_id, subject_id')
+          .eq('class_id', selectedClass)
+          .eq('subject_id', selectedSubject)
+          .eq('is_active', true)
+          .order('date', { ascending: false })
+
+        if (err2) {
+          console.error('[loadEvaluations]', err2?.message || err2)
+          return
+        }
+
+        const fallback = (data2 || []).map((e: any) => ({ ...e, max_score: null }))
+        setEvaluations(fallback as Evaluation[])
         return
       }
 
@@ -236,7 +248,6 @@ export default function TeacherGradesPage() {
     const supabase = createClient()
 
     try {
-      // Query séparée 1: enrollments → student_ids
       const { data: enrolls, error: enrErr } = await supabase
         .from('enrollments')
         .select('student_id')
@@ -257,7 +268,6 @@ export default function TeacherGradesPage() {
         return
       }
 
-      // Query séparée 2: students
       const { data: studentsData, error: stErr } = await supabase
         .from('students')
         .select('id, first_name, last_name, massar_code')
@@ -276,7 +286,6 @@ export default function TeacherGradesPage() {
 
       setStudents(studentList)
 
-      // Query séparée 3: grades existants
       const { data: existing, error: gErr } = await supabase
         .from('grades')
         .select('student_id, score')
@@ -315,11 +324,46 @@ export default function TeacherGradesPage() {
 
   const selectedEvalObj = evaluations.find((e) => e.id === selectedEval)
 
+  // ⭐ Barème dynamique : max_score de l'évaluation, sinon 20
+  const currentMax = selectedEvalObj?.max_score ?? DEFAULT_MAX
+
+  // ⭐ Détection des notes invalides
+  const invalidStudents = useMemo(() => {
+    const out: { id: string; name: string; value: string; reason: string }[] = []
+    students.forEach((s) => {
+      const raw = scores[s.id]
+      if (raw === undefined || raw === '') return
+      const n = parseFloat(raw)
+      if (isNaN(n)) {
+        out.push({ id: s.id, name: s.full_name, value: raw, reason: 'قيمة غير رقمية' })
+      } else if (n < 0) {
+        out.push({ id: s.id, name: s.full_name, value: raw, reason: 'النقطة سالبة' })
+      } else if (n > currentMax) {
+        out.push({ id: s.id, name: s.full_name, value: raw, reason: `أكبر من ${currentMax}` })
+      }
+    })
+    return out
+  }, [scores, students, currentMax])
+
+  const isRowInvalid = (id: string) => invalidStudents.some((x) => x.id === id)
+
   // ═══════════════════════════════════════════════════
   // Save
   // ═══════════════════════════════════════════════════
   const handleSave = async () => {
     if (!selectedEval || !establishmentId || !staffId || students.length === 0) return
+
+    // ⭐ On refuse de sauvegarder s'il y a des notes invalides
+    if (invalidStudents.length > 0) {
+      const names = invalidStudents.slice(0, 3).map((x) => x.name).join('، ')
+      const more = invalidStudents.length > 3 ? ` و ${invalidStudents.length - 3} آخرون` : ''
+      setError(
+        `❌ لا يمكن الحفظ: ${invalidStudents.length} نقطة خارج النطاق (0-${currentMax}). ` +
+          `تحقق من: ${names}${more}.`,
+      )
+      return
+    }
+
     setSaving(true)
     setError('')
     setSuccess('')
@@ -331,7 +375,7 @@ export default function TeacherGradesPage() {
           const raw = scores[s.id]
           if (raw === undefined || raw === '') return null
           const num = parseFloat(raw)
-          if (isNaN(num) || num < 0 || num > 20) return null
+          if (isNaN(num) || num < 0 || num > currentMax) return null
           return {
             evaluation_id: selectedEval,
             student_id: s.id,
@@ -342,7 +386,7 @@ export default function TeacherGradesPage() {
         .filter(Boolean) as any[]
 
       if (rows.length === 0) {
-        setError('ما كايناش نقط صحيحة للحفظ (0-20)')
+        setError(`ما كايناش نقط صحيحة للحفظ (0-${currentMax})`)
         setSaving(false)
         return
       }
@@ -399,8 +443,9 @@ export default function TeacherGradesPage() {
       </header>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-          {error}
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <span className="text-sm">{error}</span>
         </div>
       )}
       {success && (
@@ -509,17 +554,21 @@ export default function TeacherGradesPage() {
                 التلاميذ ({students.length})
               </h2>
               {selectedEvalObj && (
-                <p className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                <p className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
                   <Calendar className="h-3 w-3" />
                   {selectedEvalObj.name}
                   {selectedEvalObj.weight ? ` • المعامل: ${selectedEvalObj.weight}` : ''}
+                  {' • '}
+                  <span className="font-bold text-sky-700">
+                    Barème: <span dir="ltr">/{currentMax}</span>
+                  </span>
                 </p>
               )}
             </div>
             <button
               onClick={handleSave}
-              disabled={saving || students.length === 0}
-              className="inline-flex items-center gap-2 bg-sky-600 text-white px-4 py-2.5 rounded-lg hover:bg-sky-700 font-medium text-sm disabled:opacity-50"
+              disabled={saving || students.length === 0 || invalidStudents.length > 0}
+              className="inline-flex items-center gap-2 bg-sky-600 text-white px-4 py-2.5 rounded-lg hover:bg-sky-700 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -529,6 +578,27 @@ export default function TeacherGradesPage() {
               {saving ? 'جارٍ الحفظ...' : 'حفظ النقط'}
             </button>
           </div>
+
+          {invalidStudents.length > 0 && (
+            <div className="px-5 py-3 bg-red-50 border-b border-red-200 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-red-800">
+                <p className="font-bold mb-0.5">
+                  ⚠️ {invalidStudents.length} نقطة خارج النطاق (0-{currentMax}):
+                </p>
+                <ul className="list-disc pr-4 space-y-0.5">
+                  {invalidStudents.slice(0, 5).map((x) => (
+                    <li key={x.id}>
+                      {x.name} — <span dir="ltr" className="font-mono">{x.value}</span> ({x.reason})
+                    </li>
+                  ))}
+                  {invalidStudents.length > 5 && (
+                    <li className="text-red-600">و {invalidStudents.length - 5} آخرون...</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="p-8 text-center">
@@ -541,42 +611,63 @@ export default function TeacherGradesPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {students.map((s, idx) => (
-                <div
-                  key={s.id}
-                  className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition"
-                >
-                  <span className="w-8 text-center text-xs font-bold text-slate-400">
-                    {idx + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-slate-800 truncate text-sm">
-                      {s.full_name}
-                    </p>
-                    {s.massar_code && (
-                      <p
-                        className="text-xs text-slate-500 mt-0.5 font-mono"
-                        dir="ltr"
-                      >
-                        {s.massar_code}
+              {students.map((s, idx) => {
+                const invalid = isRowInvalid(s.id)
+                return (
+                  <div
+                    key={s.id}
+                    className={`flex items-center gap-4 px-5 py-3 transition ${
+                      invalid ? 'bg-red-50/60' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="w-8 text-center text-xs font-bold text-slate-400">
+                      {idx + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-800 truncate text-sm">
+                        {s.full_name}
                       </p>
-                    )}
+                      {s.massar_code && (
+                        <p
+                          className="text-xs text-slate-500 mt-0.5 font-mono"
+                          dir="ltr"
+                        >
+                          {s.massar_code}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max={currentMax}
+                          step="0.25"
+                          value={scores[s.id] ?? ''}
+                          onChange={(e) =>
+                            setScores((p) => ({ ...p, [s.id]: e.target.value }))
+                          }
+                          placeholder="—"
+                          dir="ltr"
+                          className={`w-20 text-center border rounded-lg px-2 py-2 text-sm font-bold focus:outline-none focus:ring-2 ${
+                            invalid
+                              ? 'border-red-400 bg-red-50 text-red-700 focus:ring-red-400'
+                              : 'border-slate-200 focus:ring-sky-500'
+                          }`}
+                        />
+                        <span className="text-xs text-slate-400 font-mono">
+                          /{currentMax}
+                        </span>
+                      </div>
+                      {invalid && (
+                        <span className="text-[10px] text-red-600 font-bold">
+                          خارج النطاق
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <input
-                    type="number"
-                    min="0"
-                    max="20"
-                    step="0.25"
-                    value={scores[s.id] ?? ''}
-                    onChange={(e) =>
-                      setScores((p) => ({ ...p, [s.id]: e.target.value }))
-                    }
-                    placeholder="—"
-                    dir="ltr"
-                    className="w-20 text-center border border-slate-200 rounded-lg px-2 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
@@ -587,12 +678,20 @@ export default function TeacherGradesPage() {
                   مسجلين: <span dir="ltr">{Object.keys(scores).filter((k) => scores[k] !== '').length}</span> / <span dir="ltr">{students.length}</span>
                 </span>
                 <span className="text-slate-400">|</span>
-                <span>الأقصى: <span dir="ltr">20</span></span>
+                <span>Barème: <span dir="ltr" className="font-bold">/{currentMax}</span></span>
+                {invalidStudents.length > 0 && (
+                  <>
+                    <span className="text-slate-400">|</span>
+                    <span className="text-red-600 font-bold">
+                      ❌ {invalidStudents.length} خطأ
+                    </span>
+                  </>
+                )}
               </div>
               <button
                 onClick={handleSave}
-                disabled={saving || students.length === 0}
-                className="inline-flex items-center gap-2 bg-sky-600 text-white px-5 py-2.5 rounded-lg hover:bg-sky-700 font-medium text-sm disabled:opacity-50"
+                disabled={saving || students.length === 0 || invalidStudents.length > 0}
+                className="inline-flex items-center gap-2 bg-sky-600 text-white px-5 py-2.5 rounded-lg hover:bg-sky-700 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />

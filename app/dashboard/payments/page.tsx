@@ -143,7 +143,7 @@ export default function PaymentsPage() {
     const { data, error } = await query.order('created_at', { ascending: false })
 
     if (error) setError(error.message)
-    else setPayments(data || [])
+    else setPayments((data as any) || [])
     setLoading(false)
   }
 

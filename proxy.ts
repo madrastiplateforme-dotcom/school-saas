@@ -173,6 +173,7 @@ export async function proxy(request: NextRequest) {
       '/dashboard/meetings',
       '/dashboard/evaluations',
       '/dashboard/bulletins',
+      '/dashboard/certificates',   // ← ✅ زيدنا هاد السطر
       '/dashboard/timetable',
       '/dashboard/contracts',
       '/dashboard/installments',

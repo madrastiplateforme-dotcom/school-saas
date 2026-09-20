@@ -1168,8 +1168,10 @@ const handleDrop = async (e: React.DragEvent, day: number, slot: Slot) => {
   }
 
   // ============ RENDER ============
+   // ============ RENDER ============
   if (loading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
   if (!canManage) return <div className="p-6">ليس لديك صلاحية</div>
+  if (!classInfo) return <div className="p-6 text-center">تعذّر تحميل معلومات القسم</div>
   const enabledDays = DAYS.filter(d => daysConfig[String(d.value)]?.enabled)
   const lessonSlots = slots.filter(s => s.type === 'lesson')
 

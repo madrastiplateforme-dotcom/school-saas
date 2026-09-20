@@ -44,7 +44,9 @@ export async function getCurrentProfile() {
 
 export async function requireRole(roleName: string) {
   const profile = await getCurrentProfile()
-  if (!profile || profile.roles?.name !== roleName) {
+  // ✅ FIX : Supabase retourne roles comme array → cast
+  const profileRoleName = (profile?.roles as any)?.name
+  if (!profile || profileRoleName !== roleName) {
     throw new Error('غير مصرح')
   }
   return profile

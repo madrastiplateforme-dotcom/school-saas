@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
@@ -18,7 +18,6 @@ type CashRegister = {
 
 export default function TransferPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
 

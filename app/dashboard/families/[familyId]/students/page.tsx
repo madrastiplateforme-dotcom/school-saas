@@ -68,8 +68,8 @@ export default function FamilyStudentsPage() {
       .eq('family_id', fid)
       .eq('establishment_id', sid)
 
-    if (error) setError(error.message)
-    else setStudents(studentsData || [])
+     if (error) setError(error.message)
+     else setStudents((studentsData as any) || [])
 
     setLoading(false)
   }

@@ -21,6 +21,7 @@ type Slot = {
   student_name?: string
 }
 
+// ✅ FIX: teacher_name / class_name acceptent null (l'API renvoie null, pas undefined)
 type Meeting = {
   id: string
   title: string
@@ -31,8 +32,8 @@ type Meeting = {
   class_id: string | null
   status: 'open' | 'closed' | 'cancelled'
   created_at: string
-  teacher_name?: string
-  class_name?: string
+  teacher_name?: string | null
+  class_name?: string | null
   slots: Slot[]
 }
 

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
-import { generateInstallmentsForContract } from '@/lib/billing'
+import { generateInstallmentsForContract, type ServiceType } from '@/lib/billing'
 import DateInput from '@/components/DateInput'
 import {
   Search, CheckCircle, UserPlus, Users, ListChecks, Pencil, X, Save,
@@ -70,7 +70,7 @@ type ServiceOption = {
 type SelectedService = {
   service_id: string
   name: string
-  type: string
+  type: ServiceType
   price: number
   discount_percent: number
   discount_amount: number
@@ -438,12 +438,12 @@ export default function EnrollPage() {
     setSelectedServices((prev) => {
       const existing = prev.find((s) => s.service_id === serviceInfo.id)
       if (existing) return prev.filter((s) => s.service_id !== serviceInfo.id)
-      return [
+            return [
         ...prev,
         {
           service_id: serviceInfo.id,
           name: serviceInfo.name,
-          type: serviceInfo.type,
+          type: serviceInfo.type as ServiceType,
           price: serviceOption.price,
           discount_percent: 0,
           discount_amount: 0,

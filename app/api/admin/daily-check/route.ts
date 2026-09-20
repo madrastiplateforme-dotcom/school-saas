@@ -45,7 +45,13 @@ export async function POST(request: Request) {
     const supabaseAdmin = createAdminClient()
     const today = new Date().toISOString().split('T')[0]
 
+    // ✅ Déclaré en haut pour être accessible dans le return final
+    let updatedInvoicesCount = 0
+    let suspendedCount = 0
+
+    // ═══════════════════════════════════════════════════════
     // 1. تحديث الفواتير المتأخرة
+    // ═══════════════════════════════════════════════════════
     const { data: pendingInvoices, error: pendingError } = await supabaseAdmin
       .from('subscription_invoices')
       .select('id, establishment_id, billing_month, status')
@@ -66,6 +72,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: updateError.message }, { status: 500 })
       }
 
+      updatedInvoicesCount = pendingInvoices.length
+
       // إشعارات + audit log لكل فاتورة متأخرة
       for (const invoice of pendingInvoices) {
         await supabaseAdmin.from('notifications').insert({
@@ -85,7 +93,9 @@ export async function POST(request: Request) {
       }
     }
 
+    // ═══════════════════════════════════════════════════════
     // 2. إيقاف المؤسسات التي تجاوزت فترة السماح
+    // ═══════════════════════════════════════════════════════
     const { data: overdueInvoices, error: overdueError } = await supabaseAdmin
       .from('subscription_invoices')
       .select('establishment_id, billing_month, status')
@@ -106,13 +116,16 @@ export async function POST(request: Request) {
       }
 
       const todayDate = new Date()
+      // ✅ Maintenant déclaré dans la bonne portée
       const establishmentsToSuspend: string[] = []
 
       for (const est of establishments || []) {
         const overdueForEst = overdueInvoices.filter((inv) => inv.establishment_id === est.id)
         if (overdueForEst.length === 0) continue
 
-        const oldestOverdue = overdueForEst.sort((a, b) => a.billing_month.localeCompare(b.billing_month))[0]
+        const oldestOverdue = overdueForEst.sort((a, b) =>
+          a.billing_month.localeCompare(b.billing_month)
+        )[0]
         const dueDate = new Date(oldestOverdue.billing_month)
         const gracePeriodDays = est.grace_period_days || 5
         const suspensionDate = new Date(dueDate)
@@ -128,6 +141,8 @@ export async function POST(request: Request) {
           .from('establishments')
           .update({ status: 'suspended' })
           .in('id', establishmentsToSuspend)
+
+        suspendedCount = establishmentsToSuspend.length
 
         // إشعارات + audit log لكل إيقاف
         for (const estId of establishmentsToSuspend) {
@@ -151,10 +166,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      updatedInvoices: pendingInvoices?.length || 0,
-      suspended: establishmentsToSuspend?.length || 0,
+      updatedInvoices: updatedInvoicesCount,
+      suspended: suspendedCount,
     })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'حدث خطأ' }, { status: 500 })
+    console.error('[admin/daily-check]', err?.message || err)
+    return NextResponse.json({ error: err?.message || 'حدث خطأ' }, { status: 500 })
   }
 }

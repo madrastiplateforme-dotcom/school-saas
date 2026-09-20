@@ -404,7 +404,8 @@ export default function MessagesPage() {
   }
 
   if (loading || roleLoading) return <div className="p-6 text-center">جارٍ التحميل...</div>
-  if (!isDirector && role !== 'teacher') return <div className="p-6">ليس لديك صلاحية</div>
+  // ✅ FIX: 'teacher' → 'enseignant' (le rôle en DB est en français)
+  if (!isDirector && role !== 'enseignant') return <div className="p-6">ليس لديك صلاحية</div>
 
   return (
     <div className="p-6 space-y-6" dir="rtl">

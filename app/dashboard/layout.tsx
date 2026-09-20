@@ -11,7 +11,7 @@ import {
   LayoutDashboard, LogOut, School, Settings, Shield, UserPlus, Users,
   Wallet, Wrench, ArrowLeft, BarChart3, Building2, Send, Link2,
   ClipboardList, ShieldCheck, Mail, MessageSquare, CreditCard,
-  ShieldAlert,
+  ShieldAlert, Award,
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════
@@ -27,7 +27,8 @@ const adminMenuSections = [
       { href: '/dashboard/messages', key: 'messages', icon: MessageSquare, label: 'Messages' },
     ],
   },
-  {
+   
+    {
     title: 'SCOLARITÉ',
     items: [
       { href: '/dashboard/students', key: 'students', icon: Users, label: 'Élèves' },
@@ -38,8 +39,11 @@ const adminMenuSections = [
       { href: '/dashboard/meetings', key: 'meetings', icon: Users, label: 'Réunions parents' },
       { href: '/dashboard/evaluations', key: 'evaluations', icon: ClipboardList, label: 'Évaluations & Notes' },
       { href: '/dashboard/bulletins', key: 'bulletins', icon: FileText, label: 'Bulletins' },
+      { href: '/dashboard/certificates', key: 'certificates', icon: Award, label: 'الشهادات' },
     ],
   },
+  
+  
   {
     title: 'FINANCE',
     items: [
@@ -85,7 +89,7 @@ const secretaryMenuSections = [
       { href: '/dashboard/messages', key: 'messages', icon: MessageSquare, label: 'Messages' },
     ],
   },
-  {
+   {
     title: 'SCOLARITÉ',
     items: [
       { href: '/dashboard/students', key: 'students', icon: Users, label: 'Élèves' },
@@ -96,8 +100,11 @@ const secretaryMenuSections = [
       { href: '/dashboard/evaluations', key: 'evaluations', icon: ClipboardList, label: 'Évaluations & Notes' },
       { href: '/dashboard/bulletins', key: 'bulletins', icon: FileText, label: 'Bulletins' },
       { href: '/dashboard/timetable', key: 'timetable', icon: Calendar, label: 'Emploi du temps' },
+      { href: '/dashboard/certificates', key: 'certificates', icon: Award, label: 'الشهادات' },
     ],
   },
+
+
   {
     title: 'FINANCE',
     items: [

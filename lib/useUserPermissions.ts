@@ -51,9 +51,12 @@ export function useUserPermissions() {
         return
       }
 
-      // 4. إذا كان المستخدم مديراً (الدور نظامي أو اسمه Directeur)
-      const roleName = (profile.roles?.name || '').trim()
-      const isSystemRole = profile.roles?.is_system || false
+      // ✅ FIX : Supabase retourne roles comme array → cast
+      const roleData = profile.roles as any
+      const roleName = (roleData?.name || '').trim()
+      const isSystemRole = roleData?.is_system || false
+
+      // 4. إذا كان المستخدم مديراً
       if (roleName.toLowerCase() === 'directeur' || roleName === 'مدير' || isSystemRole) {
         setBypassPermissions(true)
         setLoading(false)

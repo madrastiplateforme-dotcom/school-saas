@@ -1,29 +1,15 @@
 import React from 'react'
 import {
-  Document,
-  Page,
-  Text,
-  View,
-  StyleSheet,
-  Image,
-  Font,
+  Document, Page, Text, View, StyleSheet, Image, Font,
 } from '@react-pdf/renderer'
 import { registerPdfFonts } from '@/lib/pdf-fonts'
 
 registerPdfFonts()
 
-// ═══════════════════════════════════════════════════
-// Palette
-// ═══════════════════════════════════════════════════
 const C = {
-  navy: '#1e3a5f',
-  gold: '#b8860b',
-  lightGold: '#f5ecd7',
-  gray: '#555',
-  dark: '#1a1a1a',
-  line: '#d4c9a8',
+  navy: '#1e3a5f', gold: '#b8860b', lightGold: '#f5ecd7',
+  cream: '#fbf8f1', gray: '#555', dark: '#1a1a1a', line: '#d4c9a8',
 }
-
 const EMERALD = '#059669'
 
 type ReceiptData = {
@@ -43,381 +29,195 @@ type ReceiptData = {
 
 const styles = StyleSheet.create({
   page: {
-    padding: 0,
-    fontSize: 11,
-    fontFamily: 'Cairo',
-    backgroundColor: '#ffffff',
-    direction: 'rtl',
+    padding: 0, fontSize: 10, fontFamily: 'Cairo',
+    backgroundColor: C.cream, direction: 'rtl',
   },
-
+  watermark: {
+    position: 'absolute', top: '30%', left: '25%',
+    width: 240, height: 240, opacity: 0.05,
+  },
+  watermarkLetter: {
+    position: 'absolute', top: '28%', left: 0, right: 0,
+    fontSize: 240, fontWeight: 'bold', color: C.navy,
+    textAlign: 'center', opacity: 0.04,
+  },
   outerFrame: {
-    position: 'absolute',
-    top: 18,
-    left: 18,
-    right: 18,
-    bottom: 18,
-    borderWidth: 2.5,
-    borderColor: C.navy,
-    borderRadius: 4,
+    position: 'absolute', top: 18, left: 18, right: 18, bottom: 18,
+    borderWidth: 2.5, borderColor: C.navy, borderRadius: 4,
   },
   innerFrame: {
-    position: 'absolute',
-    top: 25,
-    left: 25,
-    right: 25,
-    bottom: 25,
-    borderWidth: 0.8,
-    borderColor: C.gold,
-    borderRadius: 2,
+    position: 'absolute', top: 25, left: 25, right: 25, bottom: 25,
+    borderWidth: 0.8, borderColor: C.gold, borderRadius: 2,
   },
+  content: { padding: 42, paddingTop: 38 },
 
-  content: {
-    padding: 42,
-    paddingTop: 38,
-  },
-
-  // ─── Header ───
   header: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: C.navy,
-    marginBottom: 12,
+    flexDirection: 'row-reverse', justifyContent: 'space-between',
+    alignItems: 'center', paddingBottom: 12,
+    borderBottomWidth: 2, borderBottomColor: C.navy, marginBottom: 12,
   },
   logoBox: {
-    width: 55,
-    height: 55,
-    borderRadius: 6,
-    backgroundColor: C.lightGold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: C.gold,
+    width: 55, height: 55, borderRadius: 6,
+    backgroundColor: C.lightGold, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: C.gold,
   },
   logo: { width: 55, height: 55, borderRadius: 6 },
-  logoPlaceholder: {
-    fontSize: 22,
-    color: C.navy,
-    fontWeight: 'bold',
-  },
-  headerCenter: {
-    flex: 1,
-    textAlign: 'center',
-    paddingHorizontal: 12,
-  },
+  logoPlaceholder: { fontSize: 22, color: C.navy, fontWeight: 'bold' },
+  headerCenter: { flex: 1, textAlign: 'center', paddingHorizontal: 12 },
   kingdomAr: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'center',
+    fontSize: 11, fontWeight: 'bold', color: C.navy,
+    textAlign: 'center', lineHeight: 1.5,
   },
   kingdomFr: {
-    fontSize: 8.5,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'center',
-    marginTop: 1,
+    fontSize: 8.5, fontWeight: 'bold', color: C.navy,
+    textAlign: 'center', marginTop: 1,
   },
   schoolAr: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: C.gold,
-    textAlign: 'center',
-    marginTop: 6,
+    fontSize: 14, fontWeight: 'bold', color: C.gold,
+    textAlign: 'center', marginTop: 6, lineHeight: 1.4,
   },
   schoolSub: {
-    fontSize: 8.5,
-    color: C.gray,
-    textAlign: 'center',
-    marginTop: 2,
+    fontSize: 8.5, color: C.gray, textAlign: 'center',
+    marginTop: 2, lineHeight: 1.5,
   },
   receiptBadge: {
-    backgroundColor: C.navy,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-    minWidth: 100,
-    alignItems: 'center',
+    backgroundColor: C.navy, paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 4, minWidth: 100, alignItems: 'center',
   },
   receiptBadgeText: {
-    color: '#ffffff',
-    fontSize: 9.5,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    color: '#ffffff', fontSize: 9.5, fontWeight: 'bold', textAlign: 'center',
   },
 
-  // ─── Title ───
-  titleBox: {
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 16,
-  },
+  titleBox: { alignItems: 'center', marginTop: 10, marginBottom: 16 },
   titleAr: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: C.navy,
-    textAlign: 'center',
-    letterSpacing: 0.5,
+    fontSize: 22, fontWeight: 'bold', color: C.navy,
+    textAlign: 'center', lineHeight: 1.3,
   },
   titleFr: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: C.gold,
-    textAlign: 'center',
-    letterSpacing: 2,
-    marginTop: 3,
+    fontSize: 12, fontWeight: 'bold', color: C.gold,
+    textAlign: 'center', letterSpacing: 2, marginTop: 3,
   },
-  titleDivider: {
-    width: 180,
-    height: 2,
-    backgroundColor: C.gold,
-    marginTop: 8,
-  },
+  titleDivider: { width: 180, height: 2, backgroundColor: C.gold, marginTop: 8 },
 
-  // ─── Info Grid ───
   infoGrid: {
-    flexDirection: 'row-reverse',
-    flexWrap: 'wrap',
-    marginBottom: 15,
-    backgroundColor: '#fafafa',
-    borderRadius: 3,
-    padding: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: C.gold,
+    flexDirection: 'row-reverse', flexWrap: 'wrap', marginBottom: 15,
+    backgroundColor: '#fafafa', borderRadius: 3, padding: 10,
+    borderLeftWidth: 3, borderLeftColor: C.gold,
   },
-  infoItem: {
-    width: '50%',
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
+  infoItem: { width: '50%', marginBottom: 8, paddingHorizontal: 4 },
   infoLabelAr: {
-    fontSize: 8,
-    color: C.gray,
-    marginBottom: 1,
-    textAlign: 'right',
+    fontSize: 8, color: C.gray, marginBottom: 1,
+    textAlign: 'right', lineHeight: 1.5,
   },
   infoLabelFr: {
-    fontSize: 7,
-    color: C.gray,
-    marginBottom: 3,
-    textAlign: 'right',
-    fontStyle: 'italic',
+    fontSize: 7, color: C.gray, marginBottom: 3,
+    textAlign: 'right', fontStyle: 'italic',
   },
   infoValue: {
-    fontSize: 11,
-    color: C.dark,
-    fontWeight: 'bold',
-    textAlign: 'right',
+    fontSize: 11, color: C.dark, fontWeight: 'bold',
+    textAlign: 'right', lineHeight: 1.5,
   },
 
-  divider: {
-    borderBottomWidth: 1,
-    borderBottomColor: C.line,
-    borderBottomStyle: 'dashed',
-    marginVertical: 12,
-  },
-
-  // ─── Amount Box ───
   amountBox: {
-    backgroundColor: C.lightGold,
-    borderWidth: 2,
-    borderColor: C.gold,
-    borderRadius: 6,
-    padding: 20,
-    alignItems: 'center',
-    marginVertical: 15,
+    backgroundColor: C.lightGold, borderWidth: 2, borderColor: C.gold,
+    borderRadius: 6, padding: 20, alignItems: 'center', marginVertical: 15,
   },
   amountLabelAr: {
-    fontSize: 10,
-    color: C.navy,
-    marginBottom: 2,
-    fontWeight: 'bold',
+    fontSize: 10, color: C.navy, marginBottom: 2,
+    fontWeight: 'bold', lineHeight: 1.5,
   },
   amountLabelFr: {
-    fontSize: 8,
-    color: C.gray,
-    marginBottom: 8,
-    fontStyle: 'italic',
+    fontSize: 8, color: C.gray, marginBottom: 8, fontStyle: 'italic',
   },
   amountValue: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: C.navy,
+    fontSize: 32, fontWeight: 'bold', color: C.navy, lineHeight: 1.2,
   },
-  amountUnit: {
-    fontSize: 14,
-    color: C.gold,
-    fontWeight: 'bold',
-  },
+  amountUnit: { fontSize: 14, color: C.gold, fontWeight: 'bold' },
 
-  // ─── Table ───
   table: {
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: C.navy,
-    borderRadius: 3,
-    overflow: 'hidden',
+    marginTop: 10, borderWidth: 1, borderColor: C.navy,
+    borderRadius: 3, overflow: 'hidden',
   },
   tableHeader: {
-    backgroundColor: C.navy,
-    flexDirection: 'row-reverse',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
+    backgroundColor: C.navy, flexDirection: 'row-reverse',
+    paddingVertical: 7, paddingHorizontal: 12,
   },
   tableRow: {
-    flexDirection: 'row-reverse',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderTopWidth: 0.5,
-    borderTopColor: '#e5e5e5',
-    borderTopStyle: 'dotted',
+    flexDirection: 'row-reverse', paddingVertical: 10, paddingHorizontal: 12,
+    borderTopWidth: 0.5, borderTopColor: '#e5e5e5', borderTopStyle: 'dotted',
   },
-  tableRowAlt: {
-    backgroundColor: '#fafafa',
-  },
+  tableRowAlt: { backgroundColor: '#fafafa' },
   tableColRight: {
-    flex: 1,
-    fontSize: 10,
-    color: C.dark,
-    textAlign: 'right',
-    fontWeight: 'bold',
+    flex: 1, fontSize: 10, color: C.dark,
+    textAlign: 'right', fontWeight: 'bold', lineHeight: 1.5,
   },
   tableColLeft: {
-    width: 130,
-    fontSize: 10,
-    color: C.dark,
-    textAlign: 'left',
-    fontWeight: 'bold',
+    width: 130, fontSize: 10, color: C.dark,
+    textAlign: 'left', fontWeight: 'bold',
   },
   tableHeaderText: {
-    fontSize: 9,
-    color: '#ffffff',
-    fontWeight: 'bold',
-    textTransform: 'uppercase',
+    fontSize: 9, color: '#ffffff', fontWeight: 'bold',
+    textTransform: 'uppercase', lineHeight: 1.4,
   },
 
-  // ─── Cashier ───
   cashierBox: {
-    backgroundColor: '#fffbeb',
-    borderWidth: 1,
-    borderColor: '#fcd34d',
-    borderRadius: 4,
-    padding: 12,
-    marginTop: 15,
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fcd34d',
+    borderRadius: 4, padding: 12, marginTop: 15,
+    flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between',
   },
   cashierLabelAr: {
-    fontSize: 8.5,
-    color: '#92400e',
-    marginBottom: 2,
-    textAlign: 'right',
+    fontSize: 8.5, color: '#92400e', marginBottom: 2,
+    textAlign: 'right', lineHeight: 1.5,
   },
   cashierLabelFr: {
-    fontSize: 7,
-    color: '#92400e',
-    textAlign: 'right',
-    fontStyle: 'italic',
+    fontSize: 7, color: '#92400e', textAlign: 'right', fontStyle: 'italic',
   },
   cashierValue: {
-    fontSize: 12,
-    color: '#78350f',
-    fontWeight: 'bold',
-    textAlign: 'right',
-    marginTop: 2,
+    fontSize: 12, color: '#78350f', fontWeight: 'bold',
+    textAlign: 'right', marginTop: 2, lineHeight: 1.5,
   },
   cashierStamp: {
-    backgroundColor: EMERALD,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 3,
+    backgroundColor: EMERALD, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 3,
   },
-  cashierStampText: {
-    color: '#ffffff',
-    fontSize: 8,
-    fontWeight: 'bold',
-  },
+  cashierStampText: { color: '#ffffff', fontSize: 8, fontWeight: 'bold' },
 
-  // ─── Stamp (PAGE) ───
   stamp: {
-    position: 'absolute',
-    top: 130,
-    right: 55,
-    borderWidth: 2.5,
-    borderColor: EMERALD,
-    borderRadius: 60,
-    width: 90,
-    height: 90,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: 'rotate(-18deg)',
-    opacity: 0.85,
+    position: 'absolute', top: 130, right: 55,
+    borderWidth: 2.5, borderColor: EMERALD, borderRadius: 60,
+    width: 90, height: 90, alignItems: 'center', justifyContent: 'center',
+    transform: 'rotate(-18deg)', opacity: 0.85,
   },
   stampAr: {
-    fontSize: 11,
-    color: EMERALD,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontSize: 11, color: EMERALD, fontWeight: 'bold',
+    textAlign: 'center', lineHeight: 1.5,
   },
   stampFr: {
-    fontSize: 9,
-    color: EMERALD,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: 2,
-    letterSpacing: 1,
+    fontSize: 9, color: EMERALD, fontWeight: 'bold',
+    textAlign: 'center', marginTop: 2, letterSpacing: 1,
   },
 
-  // ─── Footer ───
   footer: {
-    position: 'absolute',
-    bottom: 42,
-    left: 42,
-    right: 42,
-    borderTopWidth: 1,
-    borderTopColor: C.gold,
-    paddingTop: 15,
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
+    position: 'absolute', bottom: 42, left: 42, right: 42,
+    borderTopWidth: 1, borderTopColor: C.gold, paddingTop: 15,
+    flexDirection: 'row-reverse', justifyContent: 'space-between',
   },
-  signatureBox: {
-    width: 160,
-    alignItems: 'center',
-  },
+  signatureBox: { width: 160, alignItems: 'center' },
   signatureLabelAr: {
-    fontSize: 9,
-    color: C.navy,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontSize: 9, color: C.navy, fontWeight: 'bold',
+    textAlign: 'center', lineHeight: 1.5,
   },
   signatureLabelFr: {
-    fontSize: 7,
-    color: C.gray,
-    textAlign: 'center',
-    marginBottom: 40,
-    fontStyle: 'italic',
+    fontSize: 7, color: C.gray, textAlign: 'center',
+    marginBottom: 40, fontStyle: 'italic',
   },
   signatureLine: {
-    borderTopWidth: 1,
-    borderTopColor: C.navy,
-    width: 150,
-    marginTop: 15,
-    paddingTop: 4,
+    borderTopWidth: 1, borderTopColor: C.navy,
+    width: 150, marginTop: 15, paddingTop: 4,
   },
-  signatureText: {
-    fontSize: 8,
-    color: C.gray,
-    textAlign: 'center',
-  },
+  signatureText: { fontSize: 8, color: C.gray, textAlign: 'center' },
   footerNote: {
-    fontSize: 7.5,
-    color: C.gray,
-    textAlign: 'center',
-    marginTop: 12,
-    fontStyle: 'italic',
+    fontSize: 7.5, color: C.gray, textAlign: 'center',
+    marginTop: 12, fontStyle: 'italic',
   },
 })
 
@@ -426,11 +226,8 @@ function formatDate(dateStr: string): string {
     const d = new Date(dateStr)
     const day = String(d.getDate()).padStart(2, '0')
     const month = String(d.getMonth() + 1).padStart(2, '0')
-    const year = d.getFullYear()
-    return `${day}/${month}/${year}`
-  } catch {
-    return dateStr
-  }
+    return `${day}/${month}/${d.getFullYear()}`
+  } catch { return dateStr }
 }
 
 const methodLabels: Record<string, string> = {
@@ -448,17 +245,23 @@ export default function PaymentReceiptPDF({ data }: { data: ReceiptData }) {
 
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
-        {/* Cadres décoratifs */}
+      <Page size="A4" style={styles.page} wrap={false}>
+        {/* Watermark */}
+        {data.schoolLogo ? (
+          <Image src={data.schoolLogo} style={styles.watermark} />
+        ) : (
+          <Text style={styles.watermarkLetter}>
+            {(data.schoolName || 'م').charAt(0)}
+          </Text>
+        )}
+
         <View style={styles.outerFrame} />
         <View style={styles.innerFrame} />
 
         <View style={styles.content}>
-          {/* ═══════ HEADER ═══════ */}
           <View style={styles.header}>
             <View style={styles.logoBox}>
               {data.schoolLogo ? (
-                // eslint-disable-next-line jsx-a11y/alt-text
                 <Image src={data.schoolLogo} style={styles.logo} />
               ) : (
                 <Text style={styles.logoPlaceholder}>
@@ -480,27 +283,21 @@ export default function PaymentReceiptPDF({ data }: { data: ReceiptData }) {
             </View>
 
             <View style={styles.receiptBadge}>
-              <Text style={styles.receiptBadgeText}>
-                N° {data.receiptNumber}
-              </Text>
+              <Text style={styles.receiptBadgeText}>N° {data.receiptNumber}</Text>
             </View>
           </View>
 
-          {/* ═══════ TITLE ═══════ */}
           <View style={styles.titleBox}>
             <Text style={styles.titleAr}>وصل الدفع</Text>
             <Text style={styles.titleFr}>REÇU DE PAIEMENT</Text>
             <View style={styles.titleDivider} />
           </View>
 
-          {/* ═══════ INFO GRID ═══════ */}
           <View style={styles.infoGrid}>
             <View style={styles.infoItem}>
-              <Text style={styles.infoLabelAr}>التلميذ(ة)</Text>
+              <Text style={styles.infoLabelAr}>التلميذ</Text>
               <Text style={styles.infoLabelFr}>Élève</Text>
-              <Text style={styles.infoValue}>
-                {data.studentName || '—'}
-              </Text>
+              <Text style={styles.infoValue}>{data.studentName || '—'}</Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabelAr}>رقم الوصل</Text>
@@ -510,9 +307,7 @@ export default function PaymentReceiptPDF({ data }: { data: ReceiptData }) {
             <View style={styles.infoItem}>
               <Text style={styles.infoLabelAr}>تاريخ الدفع</Text>
               <Text style={styles.infoLabelFr}>Date de paiement</Text>
-              <Text style={styles.infoValue}>
-                {formatDate(data.paymentDate)}
-              </Text>
+              <Text style={styles.infoValue}>{formatDate(data.paymentDate)}</Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabelAr}>طريقة الدفع</Text>
@@ -528,7 +323,6 @@ export default function PaymentReceiptPDF({ data }: { data: ReceiptData }) {
             )}
           </View>
 
-          {/* ═══════ AMOUNT ═══════ */}
           <View style={styles.amountBox}>
             <Text style={styles.amountLabelAr}>المبلغ المدفوع</Text>
             <Text style={styles.amountLabelFr}>Montant payé</Text>
@@ -538,44 +332,28 @@ export default function PaymentReceiptPDF({ data }: { data: ReceiptData }) {
             </Text>
           </View>
 
-          {/* ═══════ DETAILS TABLE ═══════ */}
           <View style={styles.table}>
             <View style={styles.tableHeader}>
-              <Text style={[styles.tableColRight, styles.tableHeaderText]}>
-                البيان
-              </Text>
-              <Text style={[styles.tableColLeft, styles.tableHeaderText]}>
-                المبلغ / Montant
-              </Text>
+              <Text style={[styles.tableColRight, styles.tableHeaderText]}>البيان</Text>
+              <Text style={[styles.tableColLeft, styles.tableHeaderText]}>المبلغ / Montant</Text>
             </View>
             <View style={styles.tableRow}>
               <Text style={styles.tableColRight}>
                 {data.description || 'الرسوم الدراسية / Frais de scolarité'}
               </Text>
-              <Text style={styles.tableColLeft}>
-                {data.amount.toFixed(2)} DH
-              </Text>
+              <Text style={styles.tableColLeft}>{data.amount.toFixed(2)} DH</Text>
             </View>
             <View style={[styles.tableRow, styles.tableRowAlt]}>
-              <Text style={[styles.tableColRight, { color: C.navy }]}>
-                المجموع / Total
-              </Text>
-              <Text style={[styles.tableColLeft, { color: C.navy }]}>
-                {data.amount.toFixed(2)} DH
-              </Text>
+              <Text style={[styles.tableColRight, { color: C.navy }]}>المجموع / Total</Text>
+              <Text style={[styles.tableColLeft, { color: C.navy }]}>{data.amount.toFixed(2)} DH</Text>
             </View>
           </View>
 
-          {/* ═══════ CASHIER BOX ═══════ */}
           {data.cashierName && (
             <View style={styles.cashierBox}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cashierLabelAr}>
-                  تم استلام المبلغ من طرف
-                </Text>
-                <Text style={styles.cashierLabelFr}>
-                  Montant reçu par
-                </Text>
+                <Text style={styles.cashierLabelAr}>تم استلام المبلغ من طرف</Text>
+                <Text style={styles.cashierLabelFr}>Montant reçu par</Text>
                 <Text style={styles.cashierValue}>{data.cashierName}</Text>
               </View>
               <View style={styles.cashierStamp}>
@@ -584,32 +362,23 @@ export default function PaymentReceiptPDF({ data }: { data: ReceiptData }) {
             </View>
           )}
 
-          {/* ═══════ STAMP ═══════ */}
           <View style={styles.stamp}>
             <Text style={styles.stampAr}>مدفوع</Text>
             <Text style={styles.stampFr}>PAYÉ</Text>
           </View>
         </View>
 
-        {/* ═══════ FOOTER ═══════ */}
         <View style={styles.footer}>
           <View style={styles.signatureBox}>
             <Text style={styles.signatureLabelAr}>
-              {data.cashierName
-                ? `توقيع ${data.cashierName.split('(')[0].trim()}`
-                : 'توقيع المدرسة'}
+              {data.cashierName ? `توقيع ${data.cashierName.split('(')[0].trim()}` : 'توقيع المدرسة'}
             </Text>
-            <Text style={styles.signatureLabelFr}>
-              Signature de l'école
-            </Text>
+            <Text style={styles.signatureLabelFr}>Signature de l'école</Text>
             <View style={styles.signatureLine} />
           </View>
-
           <View style={styles.signatureBox}>
             <Text style={styles.signatureLabelAr}>توقيع ولي الأمر</Text>
-            <Text style={styles.signatureLabelFr}>
-              Signature du parent
-            </Text>
+            <Text style={styles.signatureLabelFr}>Signature du parent</Text>
             <View style={styles.signatureLine} />
           </View>
         </View>

@@ -1,5 +1,6 @@
 // lib/email.ts
 import nodemailer from 'nodemailer'
+import type { Transporter } from 'nodemailer'
 import { createAdminClient } from './supabase-admin'
 
 // ─────────────────────────────────────────────────────────
@@ -10,11 +11,7 @@ export type EmailOptions = {
   subject: string
   html: string
   text?: string
-
-  // reply-to = إيميل المدرسة باش الردود ترجع ليها
   replyTo?: string | null
-
-  // للـ logging فقط
   establishmentId?: string
   template?: string
   metadata?: Record<string, any>
@@ -56,11 +53,12 @@ function getSaaSSmtpConfig(): SMTPConfig | null {
 
 // ─────────────────────────────────────────────────────────
 // Transporter — cached
+// ✅ FIX : Transporter au lieu de nodemailer.Transporter
 // ─────────────────────────────────────────────────────────
-let cachedTransporter: nodemailer.Transporter | null = null
+let cachedTransporter: Transporter | null = null
 let cachedKey = ''
 
-function getTransporter(config: SMTPConfig): nodemailer.Transporter {
+function getTransporter(config: SMTPConfig): Transporter {
   const key = `${config.host}:${config.port}:${config.user}`
   if (cachedTransporter && cachedKey === key) return cachedTransporter
 
