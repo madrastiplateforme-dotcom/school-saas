@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import DateInput from '@/components/DateInput'
 import * as XLSX from 'xlsx'
 import {
@@ -37,6 +38,7 @@ export default function AttendanceReportsPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -60,20 +62,23 @@ export default function AttendanceReportsPage() {
   const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !yearId) return
     loadData()
-  }, [establishmentId, role, dateFrom, dateTo, classFilter])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, yearId, dateFrom, dateTo, classFilter])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
 
-    // 1. Classes
+    // 1. Classes dyal l'année active
     const { data: classesData } = await supabase
       .from('classes')
       .select('id, name, level_id, levels(name)')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
       .order('name')
 
     setClasses((classesData || []).map((c: any) => ({
@@ -82,20 +87,33 @@ export default function AttendanceReportsPage() {
       level_name: c.levels?.name || '-',
     })))
 
-    // 2. Students
-    const { data: studentsData } = await supabase
-      .from('students')
-      .select('id, first_name, last_name, massar_code, status')
-      .eq('establishment_id', establishmentId)
+    // 2. Élèves de l'année active (via enrollments)
+    const { data: enrollmentsData } = await supabase
+      .from('enrollments')
+      .select('student_id')
+      .eq('academic_year_id', yearId)
       .eq('status', 'active')
 
-    setStudents(studentsData || [])
+    const studentIds = (enrollmentsData || []).map((e: any) => e.student_id)
 
-    // 3. Attendances
+    let studentsData: any[] = []
+    if (studentIds.length > 0) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, first_name, last_name, massar_code, status')
+        .eq('establishment_id', establishmentId)
+        .eq('status', 'active')
+        .in('id', studentIds)
+      studentsData = data || []
+    }
+    setStudents(studentsData)
+
+    // 3. Attendances dyal l'année active
     let query = supabase
       .from('attendances')
       .select('id, student_id, class_id, status, attendance_date, check_in_time, check_out_time, note')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
       .gte('attendance_date', dateFrom)
       .lte('attendance_date', dateTo)
 
