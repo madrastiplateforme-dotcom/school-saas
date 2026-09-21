@@ -1,10 +1,12 @@
 // lib/email.ts
-import nodemailer from 'nodemailer'
-import type { Transporter } from 'nodemailer'
+// ═══════════════════════════════════════════════════════════════════════
+// 📧 Email — Resend SDK (بديل nodemailer / SMTP)
+// ═══════════════════════════════════════════════════════════════════════
+import { Resend } from 'resend'
 import { createAdminClient } from './supabase-admin'
 
 // ─────────────────────────────────────────────────────────
-// Types
+// Types (IDENTIQUES — لـ backward compatibility)
 // ─────────────────────────────────────────────────────────
 export type EmailOptions = {
   to: string | string[]
@@ -23,58 +25,41 @@ export type SendEmailResult = {
   messageId?: string
 }
 
-type SMTPConfig = {
-  host: string
-  port: number
-  secure: boolean
-  user: string
-  password: string
+// ─────────────────────────────────────────────────────────
+// Configuration Resend
+// ─────────────────────────────────────────────────────────
+type ResendConfig = {
+  apiKey: string
   fromName: string
   fromEmail: string
 }
 
-// ─────────────────────────────────────────────────────────
-// SMTP ديال SaaS — من env فقط
-// ─────────────────────────────────────────────────────────
-function getSaaSSmtpConfig(): SMTPConfig | null {
-  const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD } = process.env
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD) return null
+function getResendConfig(): ResendConfig | null {
+  const { RESEND_API_KEY, SMTP_FROM_NAME, SMTP_FROM_EMAIL } = process.env
+  if (!RESEND_API_KEY) return null
 
   return {
-    host: SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === 'true',
-    user: SMTP_USER,
-    password: SMTP_PASSWORD,
-    fromName: process.env.SMTP_FROM_NAME || 'Madrasti',
-    fromEmail: process.env.SMTP_FROM_EMAIL || SMTP_USER,
+    apiKey: RESEND_API_KEY,
+    fromName: SMTP_FROM_NAME || 'Madrasti',
+    fromEmail: SMTP_FROM_EMAIL || 'noreply@madrasti.win',
   }
 }
 
 // ─────────────────────────────────────────────────────────
-// Transporter — cached
-// ✅ FIX : Transporter au lieu de nodemailer.Transporter
+// Client Resend — cached
 // ─────────────────────────────────────────────────────────
-let cachedTransporter: Transporter | null = null
+let cachedResend: Resend | null = null
 let cachedKey = ''
 
-function getTransporter(config: SMTPConfig): Transporter {
-  const key = `${config.host}:${config.port}:${config.user}`
-  if (cachedTransporter && cachedKey === key) return cachedTransporter
-
-  cachedTransporter = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
-    auth: { user: config.user, pass: config.password },
-    connectionTimeout: 10000,
-  })
-  cachedKey = key
-  return cachedTransporter
+function getResend(config: ResendConfig): Resend {
+  if (cachedResend && cachedKey === config.apiKey) return cachedResend
+  cachedResend = new Resend(config.apiKey)
+  cachedKey = config.apiKey
+  return cachedResend
 }
 
 // ─────────────────────────────────────────────────────────
-// Log helper
+// Log helper (SUPABASE email_log — identique)
 // ─────────────────────────────────────────────────────────
 async function logEmail(args: {
   establishmentId?: string | null
@@ -102,22 +87,24 @@ async function logEmail(args: {
 }
 
 // ─────────────────────────────────────────────────────────
-// sendEmail — الدالة الرئيسية
+// sendEmail — الدالة الرئيسية (via Resend)
 // ─────────────────────────────────────────────────────────
 export async function sendEmail(
   options: EmailOptions,
 ): Promise<SendEmailResult> {
   const recipients = Array.isArray(options.to)
-    ? options.to.join(', ')
-    : options.to
+    ? options.to
+    : [options.to]
+  const recipientsStr = recipients.join(', ')
 
-  const config = getSaaSSmtpConfig()
+  const config = getResendConfig()
 
   if (!config) {
-    const err = 'SMTP ديال SaaS غير مهيأ (SMTP_HOST/SMTP_USER/SMTP_PASSWORD)'
+    const err =
+      'Resend غير مهيأ (RESEND_API_KEY مفقود فـ env)'
     await logEmail({
       establishmentId: options.establishmentId,
-      recipient: recipients,
+      recipient: recipientsStr,
       subject: options.subject,
       template: options.template,
       status: 'failed',
@@ -128,36 +115,56 @@ export async function sendEmail(
   }
 
   try {
-    const transporter = getTransporter(config)
+    const resend = getResend(config)
 
-    const info = await transporter.sendMail({
-      from: `"${config.fromName}" <${config.fromEmail}>`,
+    const { data, error } = await resend.emails.send({
+      from: `${config.fromName} <${config.fromEmail}>`,
       to: recipients,
       replyTo: options.replyTo || undefined,
       subject: options.subject,
       html: options.html,
-      text: options.text,
+      text: options.text || undefined,
     })
+
+    if (error) {
+      const errorMsg =
+        (error as any)?.message || JSON.stringify(error) || 'Resend error'
+
+      await logEmail({
+        establishmentId: options.establishmentId,
+        recipient: recipientsStr,
+        subject: options.subject,
+        template: options.template,
+        status: 'failed',
+        errorMessage: errorMsg,
+        metadata: options.metadata,
+      })
+
+      return { ok: false, error: errorMsg }
+    }
+
+    const messageId = data?.id
 
     await logEmail({
       establishmentId: options.establishmentId,
-      recipient: recipients,
+      recipient: recipientsStr,
       subject: options.subject,
       template: options.template,
       status: 'sent',
       metadata: {
         ...(options.metadata || {}),
-        message_id: info.messageId,
+        message_id: messageId,
+        provider: 'resend',
       },
     })
 
-    return { ok: true, messageId: info.messageId }
+    return { ok: true, messageId }
   } catch (err: any) {
     const errorMsg = err?.message || 'خطأ غير معروف'
 
     await logEmail({
       establishmentId: options.establishmentId,
-      recipient: recipients,
+      recipient: recipientsStr,
       subject: options.subject,
       template: options.template,
       status: 'failed',
@@ -170,23 +177,36 @@ export async function sendEmail(
 }
 
 // ─────────────────────────────────────────────────────────
-// testSmtp — اختبار SMTP ديال SaaS
+// testSmtp — اختبار Resend
 // ─────────────────────────────────────────────────────────
 export async function testSmtp(): Promise<SendEmailResult> {
-  const config = getSaaSSmtpConfig()
+  const config = getResendConfig()
   if (!config) {
-    return { ok: false, error: 'SMTP غير مهيأ فـ env' }
+    return { ok: false, error: 'RESEND_API_KEY مفقود فـ env' }
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host: config.host,
-      port: config.port,
-      secure: config.secure,
-      auth: { user: config.user, pass: config.password },
-      connectionTimeout: 10000,
-    })
-    await transporter.verify()
+    const resend = getResend(config)
+
+    // نختبرو الـ API key بـ list domains
+    const { data, error } = await (resend as any).domains.list()
+
+    if (error) {
+      return { ok: false, error: (error as any)?.message || 'فشل الاختبار' }
+    }
+
+    const domains = (data?.data || []) as any[]
+    const hasDomain = domains.some(
+      (d) => d.name === 'madrasti.win' && d.status === 'verified',
+    )
+
+    if (!hasDomain) {
+      return {
+        ok: false,
+        error: 'madrasti.win ماشي verified فـ Resend',
+      }
+    }
+
     return { ok: true }
   } catch (err: any) {
     return { ok: false, error: err?.message || 'فشل الاتصال' }
