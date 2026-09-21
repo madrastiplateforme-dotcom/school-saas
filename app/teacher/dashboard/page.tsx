@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { fetchTeacherData } from '@/lib/useTeacherData'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   LayoutDashboard, Calendar, BookOpen, Users, Clock, GraduationCap,
   ChevronLeft, RefreshCw, ClipboardList, UserCheck, Sparkles,
@@ -49,6 +50,8 @@ const QUICK_ACTIONS = [
 ]
 
 export default function TeacherDashboardPage() {
+  const { yearId } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [fullName, setFullName] = useState('')
@@ -62,10 +65,13 @@ export default function TeacherDashboardPage() {
   const [todaySlots, setTodaySlots] = useState<TodaySlot[]>([])
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
@@ -92,9 +98,10 @@ export default function TeacherDashboardPage() {
       }
 
       const { staffId, classes, totalStudents } = await fetchTeacherData(
-        supabase,
-        user.id,
-      )
+  supabase,
+  user.id,
+  yearId,   // ← ZID HADI
+)
 
       if (!staffId) {
         setLoading(false)
@@ -110,6 +117,7 @@ export default function TeacherDashboardPage() {
         .select('id, start_time, end_time, room, subjects(name), classes(name)')
         .eq('teacher_id', staffId)
         .eq('day_of_week', todayDow)
+        .eq('academic_year_id', yearId)
         .order('start_time')
 
       const formattedSlots: TodaySlot[] = (slots || []).map((s: any) => ({

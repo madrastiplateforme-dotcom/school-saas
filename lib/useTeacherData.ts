@@ -19,6 +19,7 @@ export type TeacherData = {
 export async function fetchTeacherData(
   supabase: SupabaseClient,
   userId: string,
+  academicYearId?: string | null,
 ): Promise<TeacherData> {
   // 1) Profile
   const { data: profile } = await supabase
@@ -42,7 +43,7 @@ export async function fetchTeacherData(
 
   const staffId = staffRow.id
 
-  // 3) teacher_subjects — SANS JOIN
+  // 3) teacher_subjects — SANS JOIN (données nues, pas de filtre année)
   const { data: ts } = await supabase
     .from('teacher_subjects')
     .select('subject_id, level_id')
@@ -63,7 +64,7 @@ export async function fetchTeacherData(
     return { staffId, establishmentId, classes: [], totalStudents: 0 }
   }
 
-  // 4) Subjects — query منفصل
+  // 4) Subjects — query منفصل (données nues)
   const { data: subjectsData } = await supabase
     .from('subjects')
     .select('id, name')
@@ -72,13 +73,19 @@ export async function fetchTeacherData(
   const subjectsMap = new Map<string, string>()
   ;(subjectsData || []).forEach((s: any) => subjectsMap.set(s.id, s.name))
 
-  // 5) Classes — SANS JOIN على levels
-  const { data: classes } = await supabase
+  // 5) Classes — SANS JOIN على levels + ✅ filtre academic_year_id
+  let classesQuery = supabase
     .from('classes')
     .select('id, name, level_id')
     .in('level_id', levelIds)
 
-  // 6) Levels — query منفصل
+  if (academicYearId) {
+    classesQuery = classesQuery.eq('academic_year_id', academicYearId)
+  }
+
+  const { data: classes } = await classesQuery
+
+  // 6) Levels — query منفصل (données nues)
   const { data: levelsData } = await supabase
     .from('levels')
     .select('id, name')
@@ -111,15 +118,21 @@ export async function fetchTeacherData(
     }
   })
 
-  // 8) Students count
+  // 8) Students count — ✅ filtre academic_year_id 7ta howa
   const classIds = teacherClasses.map((c) => c.id)
   let totalStudents = 0
   if (classIds.length > 0) {
-    const { count } = await supabase
+    let enrollQuery = supabase
       .from('enrollments')
       .select('*', { count: 'exact', head: true })
       .in('class_id', classIds)
       .eq('status', 'active')
+
+    if (academicYearId) {
+      enrollQuery = enrollQuery.eq('academic_year_id', academicYearId)
+    }
+
+    const { count } = await enrollQuery
     totalStudents = count || 0
   }
 
