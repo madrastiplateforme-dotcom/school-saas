@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useLanguage } from '@/lib/LanguageContext'
+import AcademicYearSwitcher from '@/components/AcademicYearSwitcher'
 import {
   LayoutDashboard, Calendar, BookOpen, ClipboardList, UserCheck,
   BarChart3, MessageSquare, User, Bell, LogOut, School, Check,
@@ -38,10 +39,8 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const [fullName, setFullName] = useState('')
   const [schoolName, setSchoolName] = useState('')
 
-  // Mobile drawer
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  // Notifications
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [bellOpen, setBellOpen] = useState(false)
@@ -57,12 +56,10 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Close drawer on route change
   useEffect(() => {
     setSidebarOpen(false)
   }, [pathname])
 
-  // Lock body scroll when drawer open
   useEffect(() => {
     if (sidebarOpen) {
       document.body.style.overflow = 'hidden'
@@ -165,7 +162,6 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
     return `${Math.floor(diff / 86400)} ي`
   }
 
-  // ═══ Sidebar content (shared desktop + mobile) ═══
   const sidebarContent = (
     <>
       <div className="border-b border-white/10 px-6 py-6">
@@ -227,12 +223,10 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   return (
     <div className="app-shell flex min-h-screen flex-col">
       <div className="flex min-h-screen">
-        {/* ═══ DESKTOP SIDEBAR ═══ */}
         <aside className="hidden w-[280px] flex-shrink-0 flex-col bg-[#1a2b4a] text-white lg:flex">
           {sidebarContent}
         </aside>
 
-        {/* ═══ MOBILE DRAWER ═══ */}
         {sidebarOpen && (
           <div
             className="fixed inset-0 z-50 lg:hidden"
@@ -257,7 +251,6 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
           </div>
         )}
 
-        {/* ═══ Main ═══ */}
         <main className="min-w-0 flex-1">
           <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-[#f6f8fc]/90 px-5 py-4 backdrop-blur lg:px-8">
             <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3">
@@ -285,7 +278,10 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* ═══ ACADEMIC YEAR SWITCHER ═══ */}
+                <AcademicYearSwitcher />
+
                 {/* Bell */}
                 <div className="relative" ref={bellRef}>
                   <button
@@ -388,7 +384,6 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
               </div>
             </div>
 
-            {/* Mobile nav */}
             <nav className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
               {menuItems.slice(0, 4).map((item) => {
                 const active = isActive(item.href)

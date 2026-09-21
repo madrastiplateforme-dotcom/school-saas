@@ -1,6 +1,7 @@
 import './globals.css'
 import { LanguageProvider } from '@/lib/LanguageContext'
 import { SettingsProvider } from '@/lib/SettingsContext'
+import { AcademicYearProvider } from '@/lib/AcademicYearContext'
 import CookieBanner from '@/components/CookieBanner'
 import PWAInit from '@/components/PWAInit'
 import Toaster from '@/components/ui/Toaster'
@@ -52,10 +53,12 @@ export default function RootLayout({
       <body>
         <SettingsProvider>
           <LanguageProvider>
-            {children}
-            <CookieBanner />
-            <PWAInit />
-            <Toaster />
+            <AcademicYearProvider>
+              {children}
+              <CookieBanner />
+              <PWAInit />
+              <Toaster />
+            </AcademicYearProvider>
           </LanguageProvider>
         </SettingsProvider>
       </body>

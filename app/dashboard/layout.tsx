@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { User, Bell, Check, CheckCheck, CheckCircle2, Menu, X } from 'lucide-react'
 import { useLanguage } from '@/lib/LanguageContext'
+import AcademicYearSwitcher from '@/components/AcademicYearSwitcher'
 import {
   AlertCircle, BookOpen, Calendar, ChevronDown, FileText, GraduationCap,
   LayoutDashboard, LogOut, School, Settings, Shield, UserPlus, Users,
@@ -74,9 +75,6 @@ const adminSettingsItems = [
   { href: '/dashboard/settings/privacy', key: 'privacy', icon: ShieldCheck, label: 'الخصوصية' },
 ]
 
-// ═══════════════════════════════════════════════════
-// SECRÉTAIRE — Sections administratives (sans settings)
-// ═══════════════════════════════════════════════════
 const secretaryMenuSections = [
   {
     title: 'PRINCIPAL',
@@ -118,9 +116,6 @@ const secretarySettingsItems = [
   { href: '/dashboard/notifications', key: 'notifications', icon: Bell, label: 'الإشعارات' },
 ]
 
-// ═══════════════════════════════════════════════════
-// Build sections helper
-// ═══════════════════════════════════════════════════
 function buildSections(isSecretaire: boolean) {
   if (isSecretaire) {
     return [
@@ -159,7 +154,6 @@ export default function DashboardLayout({
   const [assistanceName, setAssistanceName] = useState<string | null>(null)
   const [roleName, setRoleName] = useState<string | null>(null)
 
-  // ─── Mobile drawer state ───
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const isSecretaire = (roleName || '').toLowerCase().includes('secr')
@@ -167,23 +161,19 @@ export default function DashboardLayout({
   const allSections = buildSections(isSecretaire)
   const storageKey = isSecretaire ? STORAGE_KEY_SECR : STORAGE_KEY_ADMIN
 
-  // ─── Menu sections state ───
   const [openSections, setOpenSections] =
     useState<Record<string, boolean>>(DEFAULT_OPEN)
   const prevActiveRef = useRef<string | null>(null)
 
-  // Notifications
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
 
-  // ═══ Mobile drawer: close on route change ═══
   useEffect(() => {
     setSidebarOpen(false)
   }, [pathname])
 
-  // ═══ Mobile drawer: lock body scroll when open ═══
   useEffect(() => {
     if (sidebarOpen) {
       document.body.style.overflow = 'hidden'
@@ -195,7 +185,6 @@ export default function DashboardLayout({
     }
   }, [sidebarOpen])
 
-  // ─── Load saved sections state ───
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey)
@@ -208,7 +197,6 @@ export default function DashboardLayout({
     }
   }, [storageKey])
 
-  // ─── Auto-open section containing active page ───
   useEffect(() => {
     const activeSection = allSections.find((sec) =>
       sec.items.some((item) => {
@@ -232,7 +220,6 @@ export default function DashboardLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
 
-  // ─── Toggle section ───
   const toggleSection = (title: string) => {
     setOpenSections((prev) => {
       const next = { ...prev, [title]: !prev[title] }
@@ -243,7 +230,6 @@ export default function DashboardLayout({
     })
   }
 
-  // Close bell outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
@@ -269,14 +255,12 @@ export default function DashboardLayout({
 
         loadNotifications(user.id)
 
-        // Fetch profile + role name (query séparée pour roles)
         const { data: profile } = await supabase
           .from('user_profiles')
           .select('establishment_id, role_id')
           .eq('user_id', user.id)
           .maybeSingle()
 
-        // Get role name via separate query (avoid JOIN FK issues)
         let rName = ''
         if (profile?.role_id) {
           const { data: roleData } = await supabase
@@ -402,7 +386,7 @@ export default function DashboardLayout({
     if (diff < 86400) return `${Math.floor(diff / 3600)} س`
     return `${Math.floor(diff / 86400)} ي`
   }
-  // ═══ Colors based on role ═══
+
   const sidebarBg = isSecretaire ? 'bg-[#3b0764]' : 'bg-[#0b2f35]'
   const accentBg = isSecretaire ? 'bg-violet-400' : 'bg-emerald-400'
   const accentText = isSecretaire ? 'text-[#3b0764]' : 'text-[#0b2f35]'
@@ -421,9 +405,6 @@ export default function DashboardLayout({
     : 'bg-emerald-100 text-emerald-800'
   const roleLabel = isSecretaire ? 'فضاء السكرتيرة' : t('administrationSpace')
 
-  // ═══════════════════════════════════════════════════
-  // Sidebar content (shared between desktop + mobile drawer)
-  // ═══════════════════════════════════════════════════
   const sidebarContent = (
     <>
       <div className="border-b border-white/10 px-6 py-6">
@@ -560,14 +541,12 @@ export default function DashboardLayout({
       )}
 
       <div className="flex min-h-screen">
-        {/* ═══ DESKTOP SIDEBAR ═══ */}
         <aside
           className={`hidden w-[280px] flex-shrink-0 flex-col ${sidebarBg} text-white lg:flex`}
         >
           {sidebarContent}
         </aside>
 
-        {/* ═══ MOBILE DRAWER ═══ */}
         {sidebarOpen && (
           <div
             className="fixed inset-0 z-50 lg:hidden"
@@ -575,17 +554,14 @@ export default function DashboardLayout({
             aria-modal="true"
             aria-label="القائمة"
           >
-            {/* Backdrop */}
             <div
               className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
               onClick={() => setSidebarOpen(false)}
             />
 
-            {/* Drawer panel */}
             <aside
               className={`absolute inset-y-0 right-0 flex w-[280px] max-w-[85vw] flex-col ${sidebarBg} text-white shadow-2xl animate-in slide-in-from-right duration-300`}
             >
-              {/* Close button */}
               <button
                 onClick={() => setSidebarOpen(false)}
                 className="absolute left-3 top-4 z-10 grid h-9 w-9 place-items-center rounded-lg bg-white/10 transition hover:bg-white/20"
@@ -602,7 +578,6 @@ export default function DashboardLayout({
         <main className="min-w-0 flex-1">
           <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-[#f6f8fc]/90 px-5 py-4 backdrop-blur lg:px-8">
             <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3">
-              {/* ═══ Mobile: Burger + Logo ═══ */}
               <div className="flex items-center gap-2 lg:hidden">
                 <button
                   onClick={() => setSidebarOpen(true)}
@@ -621,7 +596,6 @@ export default function DashboardLayout({
                 </span>
               </div>
 
-              {/* ═══ Desktop: Header text ═══ */}
               <div className="hidden lg:block">
                 <p
                   className={`text-xs font-bold uppercase tracking-[.14em] ${headerAccentText}`}
@@ -635,7 +609,10 @@ export default function DashboardLayout({
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* ═══ ACADEMIC YEAR SWITCHER ═══ */}
+                <AcademicYearSwitcher />
+
                 {/* BELL */}
                 <div className="relative" ref={bellRef}>
                   <button
@@ -734,14 +711,13 @@ export default function DashboardLayout({
                   {userEmail}
                 </span>
                 <span
-                  className={`grid h-10 w-10 place-items-center rounded-full font-bold ${avatarBg}`}
+                  className={`grid h-10 w-10 place-items-center rounded-full font-bold ${accentBg} ${accentText}`}
                 >
                   {(displayName || 'E').slice(0, 1).toUpperCase()}
                 </span>
               </div>
             </div>
 
-            {/* Mobile quick nav (horizontal scroll) */}
             <nav className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
               {allSections[0].items.map((item) => {
                 const active = isActive(item.href)
