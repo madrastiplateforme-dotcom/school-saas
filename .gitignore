@@ -44,3 +44,5 @@ node_modules/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+_audit_changements.txt
