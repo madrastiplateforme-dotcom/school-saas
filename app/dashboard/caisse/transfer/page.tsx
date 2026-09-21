@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import DateInput from '@/components/DateInput'
 import { ArrowLeft, Send, Loader2, Lock } from 'lucide-react'
 
@@ -20,6 +21,7 @@ export default function TransferPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
 
   const [registers, setRegisters] = useState<CashRegister[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
@@ -39,9 +41,10 @@ export default function TransferPage() {
   const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !yearId) return
     loadData()
-  }, [establishmentId, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, yearId])
 
   const loadData = async () => {
     const supabase = createClient()
@@ -49,7 +52,6 @@ export default function TransferPage() {
     if (!user) return
     setCurrentUserId(user.id)
 
-    // Jib smiyt user
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('full_name')
@@ -57,10 +59,12 @@ export default function TransferPage() {
       .maybeSingle()
     setCurrentUserName(profile?.full_name || 'مستخدم')
 
+    // ✅ Caisses filtrées par année active
     const { data: cashData } = await supabase
       .from('cash_registers')
       .select('id, name, type, owner_user_id, initial_balance')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
       .order('type', { ascending: true })
 
     const allRegs = cashData || []
@@ -86,25 +90,53 @@ export default function TransferPage() {
   const availableToRegisters = registers.filter((r) => r.id !== mySourceRegister?.id)
 
   const getCurrentBalance = async (regId: string): Promise<number> => {
+    if (!yearId) return 0
     const supabase = createClient()
     const reg = registers.find((r) => r.id === regId)
     const initial = Number(reg?.initial_balance || 0)
 
-    const { data: payments } = await supabase.from('payments').select('amount').eq('cash_register_id', regId)
-    const { data: expenses } = await supabase.from('expenses').select('amount').eq('cash_register_id', regId)
-    const { data: tIn } = await supabase.from('cash_transfers').select('amount').eq('to_cash_register_id', regId).eq('status', 'accepted')
-    const { data: tOut } = await supabase.from('cash_transfers').select('amount').eq('from_cash_register_id', regId).eq('status', 'accepted')
+    // ✅ Payments filtrés par année
+    const { data: payments } = await supabase
+      .from('payments')
+      .select('amount')
+      .eq('cash_register_id', regId)
+      .eq('academic_year_id', yearId)
+      .is('deleted_at', null)
 
-    const totalIn = (payments?.reduce((s, p: any) => s + Number(p.amount), 0) || 0) + (tIn?.reduce((s, t: any) => s + Number(t.amount), 0) || 0)
-    const totalOut = (expenses?.reduce((s, e: any) => s + Number(e.amount), 0) || 0) + (tOut?.reduce((s, t: any) => s + Number(t.amount), 0) || 0)
+    // ✅ Expenses per-year via registerId
+    const { data: expenses } = await supabase
+      .from('expenses')
+      .select('amount')
+      .eq('cash_register_id', regId)
+
+    // ✅ Transfers per-year via registerId
+    const { data: tIn } = await supabase
+      .from('cash_transfers')
+      .select('amount')
+      .eq('to_cash_register_id', regId)
+      .eq('status', 'accepted')
+
+    const { data: tOut } = await supabase
+      .from('cash_transfers')
+      .select('amount')
+      .eq('from_cash_register_id', regId)
+      .eq('status', 'accepted')
+
+    const totalIn =
+      (payments?.reduce((s, p: any) => s + Number(p.amount), 0) || 0) +
+      (tIn?.reduce((s, t: any) => s + Number(t.amount), 0) || 0)
+    const totalOut =
+      (expenses?.reduce((s, e: any) => s + Number(e.amount), 0) || 0) +
+      (tOut?.reduce((s, t: any) => s + Number(t.amount), 0) || 0)
 
     return initial + totalIn - totalOut
   }
-const getRecipientUserId = async (toReg: CashRegister | undefined): Promise<string | null> => {
-  if (!toReg) return null
-  if (toReg.owner_user_id) return toReg.owner_user_id
-  return null
-}  
+
+  const getRecipientUserId = async (toReg: CashRegister | undefined): Promise<string | null> => {
+    if (!toReg) return null
+    if (toReg.owner_user_id) return toReg.owner_user_id
+    return null
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -126,7 +158,7 @@ const getRecipientUserId = async (toReg: CashRegister | undefined): Promise<stri
         return
       }
 
-      // 1. Insert transfer
+      // Insert transfer (cash_transfers n'a pas academic_year_id — scopé via caisses per-year)
       const { data: transfer, error: tError } = await supabase
         .from('cash_transfers')
         .insert({
@@ -144,7 +176,6 @@ const getRecipientUserId = async (toReg: CashRegister | undefined): Promise<stri
 
       if (tError) throw tError
 
-      // 2. ✅ Notification l destinataire
       const toCaisse = registers.find((r) => r.id === toId)
       const recipientId = await getRecipientUserId(toCaisse)
 

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useIsStaff } from '@/lib/useIsStaff'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   ClipboardList, Plus, Trash2, Pencil, X, Save, RefreshCw,
   Search, Info, GraduationCap, Calendar, Clock, BookOpen,
@@ -26,7 +27,6 @@ type Evaluation = {
   date: string | null
   is_active: boolean
   created_at: string
-  // joined
   class_name?: string
   subject_name?: string
   subject_color?: string
@@ -37,6 +37,7 @@ type Evaluation = {
 export default function EvaluationsPage() {
   const establishmentId = useEstablishmentId()
   const { isStaff, role, loading: roleLoading } = useIsStaff()
+  const { yearId: contextYearId } = useAcademicYear()
   const canManage = role === 'directeur' || role === 'secretaire'
   const [years, setYears] = useState<AcademicYear[]>([])
   const [classes, setClasses] = useState<ClassRow[]>([])
@@ -51,14 +52,12 @@ export default function EvaluationsPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // Filters
   const [filterYear, setFilterYear] = useState('')
   const [filterClass, setFilterClass] = useState('')
   const [filterTerm, setFilterTerm] = useState('')
   const [filterSubject, setFilterSubject] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
 
-  // Modal
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Evaluation | null>(null)
   const [formClass, setFormClass] = useState('')
@@ -70,16 +69,18 @@ export default function EvaluationsPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !contextYearId) return
     loadData()
-  }, [establishmentId, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, contextYearId])
 
   const loadData = async () => {
+    if (!contextYearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
 
-    // 1. Academic years
+    // Academic years
     const { data: yearsData } = await supabase
       .from('academic_years')
       .select('id, name, is_current')
@@ -87,10 +88,10 @@ export default function EvaluationsPage() {
       .order('start_date', { ascending: false })
     setYears(yearsData || [])
 
-    const current = (yearsData || []).find(y => y.is_current)
-    if (current) setFilterYear(current.id)
+    // ✅ Default filter = context year
+    setFilterYear(contextYearId)
 
-    // 2. Settings (terms)
+    // Settings
     const { data: settings } = await supabase
       .from('school_settings')
       .select('terms_count, term_names')
@@ -104,11 +105,12 @@ export default function EvaluationsPage() {
     setTermsCount(tc)
     setTermNames(tn)
 
-    // 3. Classes + levels
+    // ✅ Classes dyal l'année active
     const { data: cls } = await supabase
       .from('classes')
       .select('id, name, level_id, levels(name)')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', contextYearId)
       .order('name')
     setClasses((cls || []).map((c: any) => ({
       id: c.id,
@@ -117,7 +119,7 @@ export default function EvaluationsPage() {
       level_name: c.levels?.name || null,
     })))
 
-    // 4. Subjects
+    // Subjects (globales)
     const { data: subs } = await supabase
       .from('subjects')
       .select('id, name, code, color')
@@ -126,7 +128,7 @@ export default function EvaluationsPage() {
       .order('name')
     setSubjects(subs || [])
 
-    // 5. Evaluation Types
+    // Eval types
     const { data: tps } = await supabase
       .from('evaluation_types')
       .select('id, name_ar, code')
@@ -135,13 +137,12 @@ export default function EvaluationsPage() {
       .order('order_index', { ascending: true })
     setTypes(tps || [])
 
-    // 6. Evaluations (with joins)
-    await loadEvaluations()
+    await loadEvaluations(cls || [], subs || [], tps || [])
 
     setLoading(false)
   }
 
-  const loadEvaluations = async () => {
+  const loadEvaluations = async (cls: ClassRow[] = classes, subs: Subject[] = subjects, tps: EvaluationType[] = types) => {
     const supabase = createClient()
     const { data: evals, error: eErr } = await supabase
       .from('evaluations')
@@ -157,7 +158,6 @@ export default function EvaluationsPage() {
       return
     }
 
-    // Count grades per evaluation
     const evalIds = (evals || []).map(e => e.id)
     const counts: Record<string, number> = {}
     if (evalIds.length > 0) {
@@ -170,14 +170,13 @@ export default function EvaluationsPage() {
       })
     }
 
-    // Enrich
     const enriched: Evaluation[] = (evals || []).map(e => {
-      const cls = classes.find(c => c.id === e.class_id)
-      const sub = subjects.find(s => s.id === e.subject_id)
-      const tp = types.find(t => t.id === e.evaluation_type_id)
+      const clsRow = cls.find(c => c.id === e.class_id)
+      const sub = subs.find(s => s.id === e.subject_id)
+      const tp = tps.find(t => t.id === e.evaluation_type_id)
       return {
         ...e,
-        class_name: cls?.name || '—',
+        class_name: clsRow?.name || '—',
         subject_name: sub?.name || '—',
         subject_color: sub?.color || '#4F46E5',
         type_name: tp?.name_ar || '—',
@@ -186,25 +185,6 @@ export default function EvaluationsPage() {
     })
     setEvaluations(enriched)
   }
-
-  // Reload evaluations when filters change (mostly handled client-side)
-  useEffect(() => {
-    if (classes.length === 0 || subjects.length === 0) return
-    // re-enrich
-    const enriched = evaluations.map(e => {
-      const cls = classes.find(c => c.id === e.class_id)
-      const sub = subjects.find(s => s.id === e.subject_id)
-      const tp = types.find(t => t.id === e.evaluation_type_id)
-      return {
-        ...e,
-        class_name: cls?.name || e.class_name,
-        subject_name: sub?.name || e.subject_name,
-        subject_color: sub?.color || e.subject_color,
-        type_name: tp?.name_ar || e.type_name,
-      }
-    })
-    setEvaluations(enriched)
-  }, [classes, subjects, types])
 
   const resetForm = () => {
     setEditing(null)
@@ -219,10 +199,7 @@ export default function EvaluationsPage() {
 
   const openCreate = () => {
     resetForm()
-    if (!filterYear) {
-      const cur = years.find(y => y.is_current)
-      if (cur) setFilterYear(cur.id)
-    }
+    setFilterYear(contextYearId)
     if (filterClass) setFormClass(filterClass)
     if (filterTerm) setFormTerm(Number(filterTerm))
     setShowModal(true)
@@ -242,7 +219,7 @@ export default function EvaluationsPage() {
 
   const handleSave = async () => {
     if (!establishmentId) return
-    if (!filterYear && !editing) { setError('اختر السنة الدراسية'); return }
+    if (!contextYearId && !editing) { setError('لا توجد سنة دراسية'); return }
     if (!formClass) { setError('اختر القسم'); return }
     if (!formSubject) { setError('اختر المادة'); return }
     if (!formType) { setError('اختر نوع التقييم'); return }
@@ -251,7 +228,7 @@ export default function EvaluationsPage() {
     setError('')
     const supabase = createClient()
 
-    const yearId = editing?.academic_year_id || filterYear
+    const yearId = editing?.academic_year_id || contextYearId
     const payload = {
       establishment_id: establishmentId,
       academic_year_id: yearId,
@@ -309,7 +286,6 @@ export default function EvaluationsPage() {
     else await loadEvaluations()
   }
 
-  // ============ FILTERS ============
   const filteredEvaluations = useMemo(() => {
     return evaluations.filter(e => {
       if (filterYear && e.academic_year_id !== filterYear) return false
@@ -352,7 +328,7 @@ export default function EvaluationsPage() {
           </button>
           <button
             onClick={openCreate}
-            disabled={years.length === 0 || types.length === 0 || classes.length === 0 || subjects.length === 0}
+            disabled={!contextYearId || types.length === 0 || classes.length === 0 || subjects.length === 0}
             className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm"
           >
             <Plus className="h-4 w-4" /> تقييم جديد
@@ -363,13 +339,12 @@ export default function EvaluationsPage() {
       {error && !showModal && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
       {success && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg">{success}</div>}
 
-      {/* Warning prerequisites */}
-      {(years.length === 0 || types.length === 0 || classes.length === 0 || subjects.length === 0) && (
+      {(!contextYearId || types.length === 0 || classes.length === 0 || subjects.length === 0) && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg flex items-start gap-2 text-sm">
           <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
           <div>
             <strong>قبل ما تبدا، خاصك:</strong>
-            {years.length === 0 && <span> <Link href="/dashboard/academic-years" className="underline">سنة دراسية</Link> ·</span>}
+            {!contextYearId && <span> <Link href="/dashboard/academic-years" className="underline">سنة دراسية</Link> ·</span>}
             {classes.length === 0 && <span> <Link href="/dashboard/classes" className="underline">أقسام</Link> ·</span>}
             {subjects.length === 0 && <span> <Link href="/dashboard/subjects" className="underline">مواد</Link> ·</span>}
             {types.length === 0 && <span> <Link href="/dashboard/evaluation-types" className="underline">أنواع التقييمات</Link> ·</span>}
@@ -377,7 +352,6 @@ export default function EvaluationsPage() {
         </div>
       )}
 
-      {/* Info */}
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
         <Info className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
         <div className="text-sm text-blue-800">
@@ -385,7 +359,6 @@ export default function EvaluationsPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-3">
         <div className="relative">
           <Search className="absolute right-3 top-3 h-5 w-5 text-gray-400" />
@@ -462,7 +435,6 @@ export default function EvaluationsPage() {
         )}
       </div>
 
-      {/* Stats summary */}
       {filteredEvaluations.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
@@ -490,7 +462,6 @@ export default function EvaluationsPage() {
         </div>
       )}
 
-      {/* List */}
       {filteredEvaluations.length === 0 ? (
         <div className="bg-white rounded-2xl p-16 text-center border border-gray-100">
           <ClipboardList className="h-16 w-16 text-slate-300 mx-auto mb-4" />
@@ -551,7 +522,6 @@ export default function EvaluationsPage() {
                     <div className="flex items-center gap-2 text-slate-600">
                       <Calendar className="h-3.5 w-3.5 opacity-60" />
                       <span>{termNames[ev.term - 1] || `الفصل ${ev.term}`}</span>
-                      {/* ✅ FIX: ev.eval_date → ev.date + guard sur new Date() */}
                       {ev.date && (
                         <span className="text-slate-400">· {new Date(ev.date).toLocaleDateString('fr-FR')}</span>
                       )}
@@ -599,7 +569,6 @@ export default function EvaluationsPage() {
         </div>
       )}
 
-      {/* ========== MODAL ========== */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 my-8">
@@ -613,7 +582,6 @@ export default function EvaluationsPage() {
             </div>
 
             <div className="space-y-4">
-              {/* Year (only for new) */}
               {!editing && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -634,7 +602,6 @@ export default function EvaluationsPage() {
                 </div>
               )}
 
-              {/* Class */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   القسم <span className="text-red-500">*</span>
@@ -653,7 +620,6 @@ export default function EvaluationsPage() {
                 </select>
               </div>
 
-              {/* Subject */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   المادة <span className="text-red-500">*</span>
@@ -672,7 +638,6 @@ export default function EvaluationsPage() {
                 </select>
               </div>
 
-              {/* Type + Term */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -707,7 +672,6 @@ export default function EvaluationsPage() {
                 </div>
               </div>
 
-              {/* Name + Date */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">

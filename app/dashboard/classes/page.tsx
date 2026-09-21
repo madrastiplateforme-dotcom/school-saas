@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { Plus, Trash2, BookOpen } from 'lucide-react'
 
 type Classe = {
@@ -31,6 +32,8 @@ export default function ClassesPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
+  const { yearId: contextYearId, year: contextYear } = useAcademicYear()
+
   const canViewClasses = hasPermission('classes', 'view')
   const canCreateClasses = hasPermission('classes', 'create')
 
@@ -45,14 +48,23 @@ export default function ClassesPage() {
   const [academicYearId, setAcademicYearId] = useState('')
   const [adding, setAdding] = useState(false)
 
+  // ✅ Année active par défaut dans le formulaire
   useEffect(() => {
-    if (!establishmentId) return
-    fetchData(establishmentId)
-  }, [establishmentId])
+    if (contextYearId) {
+      setAcademicYearId(contextYearId)
+    }
+  }, [contextYearId])
 
-  const fetchData = async (sid: string) => {
+  useEffect(() => {
+    if (!establishmentId || !contextYearId) return
+    fetchData(establishmentId, contextYearId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, contextYearId])
+
+  const fetchData = async (sid: string, yid: string) => {
     const supabase = createClient()
 
+    // ✅ Classes dyal l'année active
     const { data: classesData, error: classesError } = await supabase
       .from('classes')
       .select(`
@@ -61,6 +73,7 @@ export default function ClassesPage() {
         academic_years (name)
       `)
       .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
       .order('created_at', { ascending: false })
 
     if (classesError) setError(classesError.message)
@@ -86,6 +99,10 @@ export default function ClassesPage() {
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!establishmentId || !name.trim()) return
+    if (!academicYearId) {
+      setError('يرجى اختيار السنة الدراسية')
+      return
+    }
     setAdding(true)
     setError('')
 
@@ -96,7 +113,7 @@ export default function ClassesPage() {
         establishment_id: establishmentId,
         name: name.trim(),
         level_id: levelId || null,
-        academic_year_id: academicYearId || null,
+        academic_year_id: academicYearId,
       })
       .select()
       .single()
@@ -106,29 +123,29 @@ export default function ClassesPage() {
     } else {
       setName('')
       setLevelId('')
-      setAcademicYearId('')
-      fetchData(establishmentId)
+      setAcademicYearId(contextYearId || '')
+      if (contextYearId) fetchData(establishmentId, contextYearId)
     }
     setAdding(false)
   }
 
-     const handleDeleteClass = async (classId: string) => {
-  const supabase = createClient()
-  const { count: enrollmentCount } = await supabase
-    .from('enrollments')
-    .select('*', { count: 'exact', head: true })
-    .eq('class_id', classId)
+  const handleDeleteClass = async (classId: string) => {
+    const supabase = createClient()
+    const { count: enrollmentCount } = await supabase
+      .from('enrollments')
+      .select('*', { count: 'exact', head: true })
+      .eq('class_id', classId)
 
-  if ((enrollmentCount || 0) > 0) {
-    alert('لا يمكن حذف هذا القسم لأنه مرتبط بتسجيلات.')
-    return
+    if ((enrollmentCount || 0) > 0) {
+      alert('لا يمكن حذف هذا القسم لأنه مرتبط بتسجيلات.')
+      return
+    }
+
+    if (!confirm('Voulez-vous vraiment supprimer cette classe ?')) return
+    const { error } = await supabase.from('classes').delete().eq('id', classId)
+    if (error) setError(error.message)
+    else if (contextYearId) fetchData(establishmentId!, contextYearId)
   }
-
-  if (!confirm('Voulez-vous vraiment supprimer cette classe ?')) return
-  const { error } = await supabase.from('classes').delete().eq('id', classId)
-  if (error) setError(error.message)
-  else fetchData(establishmentId!)
-}
 
   if (loading || permissionsLoading) {
     return <div className="p-6">Chargement...</div>
@@ -145,7 +162,10 @@ export default function ClassesPage() {
           <BookOpen className="h-6 w-6 text-indigo-600" />
           Classes
         </h1>
-        <p className="text-gray-600">Gérez les classes de votre établissement</p>
+        <p className="text-gray-600">
+          {contextYear?.name && `${contextYear.name} — `}
+          Gérez les classes de votre établissement
+        </p>
       </header>
 
       {error && <div className="mb-4 text-red-600">{error}</div>}
@@ -187,7 +207,9 @@ export default function ClassesPage() {
               >
                 <option value="">-- Sélectionner --</option>
                 {academicYears.map((year) => (
-                  <option key={year.id} value={year.id}>{year.name}{year.is_current ? ' (Actuelle)' : ''}</option>
+                  <option key={year.id} value={year.id}>
+                    {year.name}{year.is_current ? ' (الحالية)' : ''}
+                  </option>
                 ))}
               </select>
             </div>
@@ -210,9 +232,18 @@ export default function ClassesPage() {
       )}
 
       <div className="bg-white p-6 rounded-xl shadow-sm">
-        <h2 className="text-lg font-semibold mb-4">Liste des classes ({classes.length})</h2>
+        <h2 className="text-lg font-semibold mb-4">
+          Liste des classes ({classes.length})
+          {contextYear?.name && (
+            <span className="text-sm font-normal text-slate-500 mr-2">
+              — {contextYear.name}
+            </span>
+          )}
+        </h2>
         {classes.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">Aucune classe.</p>
+          <p className="text-center text-gray-500 py-8">
+            لا توجد أقسام في هذه السنة. أضف قسماً جديداً.
+          </p>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">

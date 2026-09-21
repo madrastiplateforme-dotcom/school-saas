@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import Link from 'next/link'
 import { useUserRole } from '@/lib/useUserRole'
 import { Wallet, TrendingUp, TrendingDown, ArrowDownLeft, ArrowUpRight, Search, Building2, User as UserIcon, Filter, Send } from 'lucide-react'
@@ -34,6 +35,7 @@ export default function CaissePage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
 
   const [registers, setRegisters] = useState<CashRegister[]>([])
   const [selectedRegisterId, setSelectedRegisterId] = useState<string>('all')
@@ -47,19 +49,22 @@ export default function CaissePage() {
   const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!establishmentId || !role) return
-    loadData(establishmentId)
-  }, [establishmentId, role])
+    if (!establishmentId || !role || !yearId) return
+    loadData(establishmentId, yearId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, yearId])
 
-  const loadData = async (sid: string) => {
+  const loadData = async (sid: string, yid: string) => {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
+    // ✅ Caisses filtrées par année active
     let query = supabase
       .from('cash_registers')
       .select('id, name, type, owner_user_id, initial_balance')
       .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
 
     if (isSecretary) {
       query = query.eq('owner_user_id', user.id)
@@ -76,15 +81,16 @@ export default function CaissePage() {
     const allMovements: Movement[] = []
 
     // ═════════════════════════════════════════════════════════════
-    // 1. Payments (exclut deleted_at SET, garde is_refunded=true)
+    // 1. Payments (filtrés par année active + par caisse)
     // ═════════════════════════════════════════════════════════════
     const { data: payments } = await supabase
       .from('payments')
       .select('id, amount, payment_date, cash_register_id, student_id, is_refunded')
+      .eq('academic_year_id', yid)
       .in('cash_register_id', registerIds)
       .is('deleted_at', null)
 
-    // Récupérer les noms des étudiants séparément (R1)
+    // Noms des étudiants séparément (R1)
     const studentIds = Array.from(
       new Set((payments || []).map((p: any) => p.student_id).filter(Boolean))
     )
@@ -122,7 +128,7 @@ export default function CaissePage() {
     })
 
     // ═════════════════════════════════════════════════════════════
-    // 2. Expenses
+    // 2. Expenses (via cash_registers → déjà per-year)
     // ═════════════════════════════════════════════════════════════
     const { data: expenses } = await supabase
       .from('expenses')
@@ -154,24 +160,25 @@ export default function CaissePage() {
     })
 
     // ═════════════════════════════════════════════════════════════
-    // 3. Transfers — 2 queries séparées (évite le bug .or() + .in.())
+    // 3. Transfers — 2 queries séparées (évite .or() + .in())
+    //    + filtrés via cash_registers (per-year)
     // ═════════════════════════════════════════════════════════════
 
-    // 3a. Transfers SORTANTS (from dans nos registres)
+    // 3a. Transfers SORTANTS
     const { data: transfersOut } = await supabase
       .from('cash_transfers')
       .select('id, amount, transfer_date, from_cash_register_id, to_cash_register_id, note, status')
       .eq('status', 'accepted')
       .in('from_cash_register_id', registerIds)
 
-    // 3b. Transfers ENTRANTS (to dans nos registres)
+    // 3b. Transfers ENTRANTS
     const { data: transfersIn } = await supabase
       .from('cash_transfers')
       .select('id, amount, transfer_date, from_cash_register_id, to_cash_register_id, note, status')
       .eq('status', 'accepted')
       .in('to_cash_register_id', registerIds)
 
-    // Récupérer les noms des caisses liées
+    // Noms des caisses liées
     const linkedCaisseIds = new Set<string>()
     ;(transfersOut || []).forEach((t: any) => {
       linkedCaisseIds.add(t.from_cash_register_id)
@@ -420,7 +427,7 @@ export default function CaissePage() {
                       <td className={`px-5 py-4 text-sm font-bold whitespace-nowrap ${
                         m.direction === 'in' ? 'text-emerald-600' : 'text-red-600'
                       }`}>
-                        {m.direction === 'in' ? '+' : '-'} {m.amount.toFixed(2)} DH
+                        {m.direction === 'in' ? '+' : '-'} {m.amount.toFixed(2)}
                       </td>
                     </tr>
                   )

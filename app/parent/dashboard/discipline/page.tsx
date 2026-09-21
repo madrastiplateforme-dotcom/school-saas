@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   Shield, RefreshCw, Users, Calendar, BookOpen, User as UserIcon,
   AlertCircle, AlertTriangle, Info, GraduationCap,
@@ -60,23 +61,26 @@ const dayName = (d: string) => {
 }
 
 export default function ParentDisciplinePage() {
+  const { yearId, year } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [children, setChildren] = useState<Child[]>([])
   const [activeChild, setActiveChild] = useState('')
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: profile } = await supabase
@@ -105,17 +109,30 @@ export default function ParentDisciplinePage() {
         return
       }
 
-      const { data: year } = await supabase
-        .from('academic_years')
-        .select('id')
+      // ✅ Enrollments dyal l'année active → childIds
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('student_id, classes(name, levels(name))')
         .eq('establishment_id', estabId)
-        .eq('is_current', true)
-        .maybeSingle()
+        .eq('academic_year_id', yearId)
+        .eq('status', 'active')
 
+      const enrolledStudentIds = Array.from(
+        new Set((enrollmentsData || []).map((e: any) => e.student_id).filter(Boolean))
+      ) as string[]
+
+      if (enrolledStudentIds.length === 0) {
+        setChildren([])
+        setLoading(false)
+        return
+      }
+
+      // ✅ Students li 3ndhom enrollment f l'année active + dyal had famille
       const { data: students } = await supabase
         .from('students')
         .select('id, first_name, last_name')
         .eq('family_id', family.id)
+        .in('id', enrolledStudentIds)
         .order('first_name')
 
       if (!students || students.length === 0) {
@@ -126,30 +143,27 @@ export default function ParentDisciplinePage() {
 
       const childIds = students.map((s) => s.id)
 
-      // Enrollments → class
-      let enrollmentsData: any[] = []
-      if (year?.id) {
-        const { data } = await supabase
-          .from('enrollments')
-          .select('student_id, classes(name, levels(name))')
-          .in('student_id', childIds)
-          .eq('academic_year_id', year.id)
-        enrollmentsData = data || []
-      }
-
-      // Disciplines
-      const { data: disciplinesData } = await supabase
+      // ✅ Disciplines : filtre par student + plage de dates de l'année active
+      //    (disciplines n'a PAS academic_year_id → filtre via incident_date)
+      let disciplinesQuery = supabase
         .from('disciplines')
-        .select(
-          'id, student_id, incident_date, category, severity, title, description',
-        )
+        .select('id, student_id, incident_date, category, severity, title, description')
         .in('student_id', childIds)
         .order('incident_date', { ascending: false })
 
+      if (year?.start_date) {
+        disciplinesQuery = disciplinesQuery.gte('incident_date', year.start_date)
+      }
+      if (year?.end_date) {
+        disciplinesQuery = disciplinesQuery.lte('incident_date', year.end_date)
+      }
+
+      const { data: disciplinesData } = await disciplinesQuery
+
       const result: Child[] = students.map((st) => {
-        const enr = enrollmentsData.find((e) => e.student_id === st.id)
-        const cls = enr?.classes
-        const childDisc = (disciplinesData || [])
+        const enr = (enrollmentsData || []).find((e: any) => e.student_id === st.id)
+        const cls = enr?.classes as any
+        const childDisc: Discipline[] = (disciplinesData || [])
           .filter((d: any) => d.student_id === st.id)
           .map((d: any) => ({
             id: d.id,
@@ -173,8 +187,8 @@ export default function ParentDisciplinePage() {
       setChildren(result)
       if (result.length > 0) setActiveChild(result[0].id)
     } catch (e: any) {
-      console.error('[parent-discipline]', e)
-      setError(e.message || 'خطأ')
+      console.error('[parent-discipline]', e?.message || e)
+      setError(e?.message || 'خطأ')
     } finally {
       setLoading(false)
     }
@@ -200,6 +214,7 @@ export default function ParentDisciplinePage() {
             الانضباط والسلوك
           </h1>
           <p className="text-sm text-gray-500 mt-1">
+            {year?.name && `${year.name} — `}
             متابعة سلوك أبنائك في المؤسسة
           </p>
         </div>
@@ -220,7 +235,7 @@ export default function ParentDisciplinePage() {
       {children.length === 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <Users className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 font-medium">لا يوجد أبناء مسجلون</p>
+          <p className="text-slate-500 font-medium">لا يوجد أبناء مسجلون في السنة الحالية</p>
         </div>
       )}
 

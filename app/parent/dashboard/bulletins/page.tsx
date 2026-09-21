@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   Award, RefreshCw, Users, FileText, Download, ExternalLink,
   ChevronLeft, GraduationCap, BookOpen,
@@ -31,24 +32,26 @@ type ChildData = {
 
 export default function ParentBulletinsPage() {
   const router = useRouter()
+  const { yearId, year } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [children, setChildren] = useState<ChildData[]>([])
-  const [yearName, setYearName] = useState('')
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
         router.push('/login')
         return
@@ -80,15 +83,6 @@ export default function ParentBulletinsPage() {
         return
       }
 
-      const { data: year } = await supabase
-        .from('academic_years')
-        .select('id, name')
-        .eq('establishment_id', estabId)
-        .eq('is_current', true)
-        .maybeSingle()
-
-      if (year?.name) setYearName(year.name)
-
       const { data: students } = await supabase
         .from('students')
         .select('id, first_name, last_name, massar_code')
@@ -103,33 +97,25 @@ export default function ParentBulletinsPage() {
 
       const childIds = students.map((s) => s.id)
 
-      // Enrollments
-      let enrollmentsData: any[] = []
-      if (year?.id) {
-        const { data } = await supabase
-          .from('enrollments')
-          .select('student_id, classes(name, levels(name, grade_max))')
-          .in('student_id', childIds)
-          .eq('academic_year_id', year.id)
-        enrollmentsData = data || []
-      }
+      // ✅ Enrollments dyal l'année active
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('student_id, classes(name, levels(name, grade_max))')
+        .in('student_id', childIds)
+        .eq('academic_year_id', yearId)
 
-      // Bulletins (published only)
-      let bulletinsData: any[] = []
-      if (year?.id) {
-        const { data } = await supabase
-          .from('bulletins')
-          .select('id, student_id, term, average, rank, class_size, is_published')
-          .in('student_id', childIds)
-          .eq('academic_year_id', year.id)
-          .eq('is_published', true)
-          .order('term', { ascending: true })
-        bulletinsData = data || []
-      }
+      // ✅ Bulletins dyal l'année active
+      const { data: bulletinsData } = await supabase
+        .from('bulletins')
+        .select('id, student_id, term, average, rank, class_size, is_published')
+        .in('student_id', childIds)
+        .eq('academic_year_id', yearId)
+        .eq('is_published', true)
+        .order('term', { ascending: true })
 
       const result: ChildData[] = students.map((st) => {
-        const enr = enrollmentsData.find((e) => e.student_id === st.id)
-        const cls = enr?.classes
+        const enr = (enrollmentsData || []).find((e: any) => e.student_id === st.id)
+        const cls = (enr as any)?.classes
         const lvl = cls?.levels
         return {
           id: st.id,
@@ -139,14 +125,14 @@ export default function ParentBulletinsPage() {
           class_name: cls?.name || null,
           level_name: lvl?.name || null,
           grade_max: Number(lvl?.grade_max) || 20,
-          bulletins: bulletinsData.filter((b) => b.student_id === st.id),
+          bulletins: (bulletinsData || []).filter((b: any) => b.student_id === st.id),
         }
       })
 
       setChildren(result)
     } catch (e: any) {
-      console.error('[parent-bulletins]', e)
-      setError(e.message || 'خطأ')
+      console.error('[parent-bulletins]', e?.message || e)
+      setError(e?.message || 'خطأ')
     } finally {
       setLoading(false)
     }
@@ -170,7 +156,7 @@ export default function ParentBulletinsPage() {
             الكشوف المدرسية
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {yearName && `${yearName} — `}
+            {year?.name && `${year.name} — `}
             {children.length} تلميذ
           </p>
         </div>
@@ -200,7 +186,6 @@ export default function ParentBulletinsPage() {
           key={child.id}
           className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
         >
-          {/* Child header */}
           <div className="px-5 py-4 border-b border-gray-100 bg-slate-50/50">
             <div className="flex items-center gap-3 flex-wrap">
               <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white font-bold text-lg flex-shrink-0">
@@ -233,7 +218,6 @@ export default function ParentBulletinsPage() {
             </div>
           </div>
 
-          {/* Bulletins */}
           {child.bulletins.length === 0 ? (
             <div className="p-12 text-center">
               <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />

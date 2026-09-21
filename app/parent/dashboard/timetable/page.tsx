@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   Calendar, RefreshCw, Clock, MapPin, BookOpen, GraduationCap,
   Users, ChevronDown,
@@ -30,23 +31,26 @@ const AR_DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأرب
 const DAY_ORDER = [1, 2, 3, 4, 5, 6]
 
 export default function ParentTimetablePage() {
+  const { yearId, year } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [children, setChildren] = useState<Child[]>([])
   const [activeChild, setActiveChild] = useState<string>('')
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: profile } = await supabase
@@ -75,13 +79,6 @@ export default function ParentTimetablePage() {
         return
       }
 
-      const { data: year } = await supabase
-        .from('academic_years')
-        .select('id')
-        .eq('establishment_id', estabId)
-        .eq('is_current', true)
-        .maybeSingle()
-
       const { data: students } = await supabase
         .from('students')
         .select('id, first_name, last_name')
@@ -96,36 +93,35 @@ export default function ParentTimetablePage() {
 
       const childIds = students.map((s) => s.id)
 
-      let enrollmentsData: any[] = []
-      if (year?.id) {
-        const { data } = await supabase
-          .from('enrollments')
-          .select('student_id, class_id, classes(name, levels(name))')
-          .in('student_id', childIds)
-          .eq('academic_year_id', year.id)
-        enrollmentsData = data || []
-      }
+      // ✅ Enrollments dyal l'année active
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('student_id, class_id, classes(name, levels(name))')
+        .in('student_id', childIds)
+        .eq('academic_year_id', yearId)
 
-      const classIds = enrollmentsData
+      const classIds = (enrollmentsData || [])
         .map((e) => e.class_id)
         .filter(Boolean) as string[]
 
+      // ✅ Timetables filtrés par année active + classes
       let slotsData: any[] = []
       if (classIds.length > 0) {
         const { data } = await supabase
           .from('timetables')
           .select(
-            'id, day_of_week, start_time, end_time, room, class_id, subjects(name), staff(full_name)',
+            'id, day_of_week, start_time, end_time, room, class_id, academic_year_id, subjects(name), staff(full_name)',
           )
           .in('class_id', classIds)
+          .eq('academic_year_id', yearId)
           .order('day_of_week')
           .order('start_time')
         slotsData = data || []
       }
 
       const result: Child[] = students.map((st) => {
-        const enr = enrollmentsData.find((e) => e.student_id === st.id)
-        const cls = enr?.classes
+        const enr = (enrollmentsData || []).find((e) => e.student_id === st.id)
+        const cls = enr?.classes as any
         const lvl = cls?.levels
         const slots: Slot[] = slotsData
           .filter((s) => s.class_id === enr?.class_id)
@@ -151,8 +147,8 @@ export default function ParentTimetablePage() {
       setChildren(result)
       if (result.length > 0) setActiveChild(result[0].id)
     } catch (e: any) {
-      console.error('[parent-timetable]', e)
-      setError(e.message || 'خطأ')
+      console.error('[parent-timetable]', e?.message || e)
+      setError(e?.message || 'خطأ')
     } finally {
       setLoading(false)
     }
@@ -184,6 +180,7 @@ export default function ParentTimetablePage() {
             جدول الحصص
           </h1>
           <p className="text-sm text-gray-500 mt-1">
+            {year?.name && `${year.name} — `}
             الجدول الأسبوعي لأبنائك
           </p>
         </div>
@@ -226,7 +223,7 @@ export default function ParentTimetablePage() {
       {children.length === 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <Users className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 font-medium">لا يوجد أبناء مسجلون</p>
+          <p className="text-slate-500 font-medium">لا يوجد أبناء مسجلون في السنة الحالية</p>
         </div>
       )}
 

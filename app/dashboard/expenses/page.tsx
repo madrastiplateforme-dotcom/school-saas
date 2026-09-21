@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import DateInput from '@/components/DateInput'
 import { Plus, Trash2, Search, Wallet, Lock, Users, User } from 'lucide-react'
 
@@ -52,6 +53,7 @@ export default function ExpensesPage() {
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
   const canViewExpenses = hasPermission('expenses', 'view')
   const canCreateExpenses = hasPermission('expenses', 'create')
 
@@ -66,7 +68,6 @@ export default function ExpensesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [currentUserId, setCurrentUserId] = useState('')
 
-  // Form
   const [nature, setNature] = useState('autre')
   const [staffId, setStaffId] = useState('')
   const [description, setDescription] = useState('')
@@ -78,11 +79,11 @@ export default function ExpensesPage() {
   const [adding, setAdding] = useState(false)
 
   useEffect(() => {
-    if (!establishmentId || !role) return
-    fetchData(establishmentId)
-  }, [establishmentId, role])
+    if (!establishmentId || !role || !yearId) return
+    fetchData(establishmentId, yearId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, yearId])
 
-  // ✅ Mli tbdel nature, 3mer automatic
   useEffect(() => {
     if (nature === 'salaire' && staffId) {
       const s = staffList.find(x => x.id === staffId)
@@ -122,94 +123,98 @@ export default function ExpensesPage() {
     }
   }, [nature, staffId])
 
-  const fetchData = async (sid: string) => {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  const fetchData = async (sid: string, yid: string) => {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
 
-  setCurrentUserId(user.id)
+    setCurrentUserId(user.id)
 
-  // 1. Caisses
-  let caisseQuery = supabase
-    .from('cash_registers')
-    .select('id, name, type, owner_user_id')
-    .eq('establishment_id', sid)
-
-  if (isSecretary) {
-    caisseQuery = caisseQuery.eq('owner_user_id', user.id)
-  } else if (isDirector) {
-    caisseQuery = caisseQuery.or('type.eq.central,type.eq.principal')
-  }
-
-  const { data: cashData, error: cashError } = await caisseQuery
-
-  if (cashError) setError(cashError.message)
-  else {
-    setCashRegisters(cashData || [])
-    if (cashData && cashData.length > 0) setCashRegisterId(cashData[0].id)
-  }
-
-  // 2. Staff
-  if (isDirector || isSecretary) {
-    const { data: staffData } = await supabase
-      .from('staff')
-      .select('id, full_name, type, custom_type, salary_amount')
+    // ✅ 1. Caisses dyal l'année active
+    let caisseQuery = supabase
+      .from('cash_registers')
+      .select('id, name, type, owner_user_id')
       .eq('establishment_id', sid)
-      .eq('status', 'active')
-      .order('full_name', { ascending: true })
-    setStaffList(staffData || [])
-  }
+      .eq('academic_year_id', yid)
 
-  // 3. Expenses (BLA staff join)
-  let expensesQuery = supabase
-    .from('expenses')
-    .select(`
-      *,
-      cash_registers (name)
-    `)
-    .eq('establishment_id', sid)
+    if (isSecretary) {
+      caisseQuery = caisseQuery.eq('owner_user_id', user.id)
+    } else if (isDirector) {
+      caisseQuery = caisseQuery.or('type.eq.central,type.eq.principal')
+    }
 
-  if (isSecretary && cashData && cashData.length > 0) {
-    expensesQuery = expensesQuery.in('cash_register_id', cashData.map(c => c.id))
-  } else if (isDirector && cashData && cashData.length > 0) {
-    expensesQuery = expensesQuery.in('cash_register_id', cashData.map(c => c.id))
-  }
+    const { data: cashData, error: cashError } = await caisseQuery
 
-  const { data: expensesData, error: expensesError } = await expensesQuery
-    .order('expense_date', { ascending: false })
+    if (cashError) setError(cashError.message)
+    else {
+      setCashRegisters(cashData || [])
+      if (cashData && cashData.length > 0) setCashRegisterId(cashData[0].id)
+    }
 
-  if (expensesError) {
-    setError(expensesError.message)
-    setLoading(false)
-    return
-  }
-
-  // 4. Merge staff b expenses (bla join)
-  if (expensesData && expensesData.length > 0) {
-    const staffIds = [...new Set(expensesData.map((e: any) => e.staff_id).filter(Boolean))]
-    
-    if (staffIds.length > 0) {
+    // 2. Staff (per-établissement, pas per-year)
+    if (isDirector || isSecretary) {
       const { data: staffData } = await supabase
         .from('staff')
-        .select('id, full_name')
-        .in('id', staffIds as string[])
-
-      const staffMap = new Map((staffData || []).map((s: any) => [s.id, s]))
-
-      const merged = expensesData.map((e: any) => ({
-        ...e,
-        staff: e.staff_id ? staffMap.get(e.staff_id) || null : null,
-      }))
-      setExpenses(merged)
-    } else {
-      setExpenses(expensesData)
+        .select('id, full_name, type, custom_type, salary_amount')
+        .eq('establishment_id', sid)
+        .eq('status', 'active')
+        .order('full_name', { ascending: true })
+      setStaffList(staffData || [])
     }
-  } else {
-    setExpenses([])
-  }
 
-  setLoading(false)
-}
+    // ✅ 3. Expenses — scopés via cash_register_id dyal l'année
+    let expensesQuery = supabase
+      .from('expenses')
+      .select(`
+        *,
+        cash_registers (name)
+      `)
+      .eq('establishment_id', sid)
+
+    if (cashData && cashData.length > 0) {
+      expensesQuery = expensesQuery.in('cash_register_id', cashData.map(c => c.id))
+    } else {
+      // Aucune caisse dyal l'année → aucune dépense
+      setExpenses([])
+      setLoading(false)
+      return
+    }
+
+    const { data: expensesData, error: expensesError } = await expensesQuery
+      .order('expense_date', { ascending: false })
+
+    if (expensesError) {
+      setError(expensesError.message)
+      setLoading(false)
+      return
+    }
+
+    // 4. Merge staff b expenses
+    if (expensesData && expensesData.length > 0) {
+      const staffIds = [...new Set(expensesData.map((e: any) => e.staff_id).filter(Boolean))]
+
+      if (staffIds.length > 0) {
+        const { data: staffData } = await supabase
+          .from('staff')
+          .select('id, full_name')
+          .in('id', staffIds as string[])
+
+        const staffMap = new Map((staffData || []).map((s: any) => [s.id, s]))
+
+        const merged = expensesData.map((e: any) => ({
+          ...e,
+          staff: e.staff_id ? staffMap.get(e.staff_id) || null : null,
+        }))
+        setExpenses(merged)
+      } else {
+        setExpenses(expensesData)
+      }
+    } else {
+      setExpenses([])
+    }
+
+    setLoading(false)
+  }
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -261,7 +266,7 @@ export default function ExpensesPage() {
       setCategory('')
       setExpenseDate(new Date().toISOString().split('T')[0])
       setPaymentMethod('cash')
-      fetchData(establishmentId)
+      if (yearId) fetchData(establishmentId, yearId)
     }
     setAdding(false)
   }
@@ -275,7 +280,7 @@ export default function ExpensesPage() {
       .eq('id', expenseId)
 
     if (error) setError(error.message)
-    else fetchData(establishmentId!)
+    else if (yearId) fetchData(establishmentId!, yearId)
   }
 
   const totalAmount = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0)
@@ -335,7 +340,6 @@ export default function ExpensesPage() {
         <div className="bg-white p-6 rounded-xl shadow-sm mb-8">
           <h2 className="text-lg font-semibold mb-4">إضافة مصروف جديد</h2>
 
-          {/* Nature selector */}
           <div className="mb-4 flex gap-2 flex-wrap">
             {NATURES.map((n) => (
               <button
@@ -354,7 +358,6 @@ export default function ExpensesPage() {
           </div>
 
           <form onSubmit={handleAddExpense} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Staff selector — ghir ila Salary/Prime/etc */}
             {isSalary && (
               <div className="md:col-span-3">
                 <label className="block text-sm font-medium text-gray-700 mb-1">

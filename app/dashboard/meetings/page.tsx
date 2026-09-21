@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { openWhatsApp } from '@/lib/whatsapp'
 import { toast } from 'sonner'
 import {
@@ -49,6 +50,7 @@ const dayName = (d: string) => {
 
 export default function MeetingsPage() {
   const establishmentId = useEstablishmentId()
+  const { yearId: contextYearId, year: contextYear } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -79,11 +81,12 @@ export default function MeetingsPage() {
   const [count, setCount] = useState(8)
 
   useEffect(() => {
-    if (establishmentId) {
+    if (establishmentId && contextYearId) {
       loadData()
       loadSchoolName()
     }
-  }, [establishmentId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, contextYearId])
 
   const loadSchoolName = async () => {
     if (!establishmentId) return
@@ -97,6 +100,7 @@ export default function MeetingsPage() {
   }
 
   const loadData = async () => {
+    if (!contextYearId) return
     setLoading(true)
     const supabase = createClient()
 
@@ -109,14 +113,19 @@ export default function MeetingsPage() {
         .order('full_name')
       setTeachers(staffData || [])
 
+      // ✅ Classes dyal l'année active
       const { data: classData } = await supabase
         .from('classes')
         .select('id, name, levels(name)')
         .eq('establishment_id', establishmentId)
+        .eq('academic_year_id', contextYearId)
         .order('name')
       setClasses(classData || [])
 
-      const { data: meetingsData, error: mErr } = await supabase
+      const classIds = (classData || []).map((c: any) => c.id)
+
+      // ✅ Meetings filtrés par plage de dates dyal l'année active
+      let meetingsQuery = supabase
         .from('meetings')
         .select(`
           id, title, description, meeting_date, location,
@@ -125,11 +134,27 @@ export default function MeetingsPage() {
           classes (name, levels(name))
         `)
         .eq('establishment_id', establishmentId)
+
+      // Filtrer par plage de dates dyal l'année active
+      if (contextYear?.start_date) {
+        meetingsQuery = meetingsQuery.gte('meeting_date', contextYear.start_date)
+      }
+      if (contextYear?.end_date) {
+        meetingsQuery = meetingsQuery.lte('meeting_date', contextYear.end_date)
+      }
+
+      const { data: meetingsData, error: mErr } = await meetingsQuery
         .order('meeting_date', { ascending: false })
 
       if (mErr) throw mErr
 
-      const meetingIds = (meetingsData || []).map((m: any) => m.id)
+      // Filtrer côté JS: meetings li 3ndhom class_id li machi dyal l'année active
+      const filteredMeetings = (meetingsData || []).filter((m: any) => {
+        if (!m.class_id) return true // meeting global → kayn
+        return classIds.includes(m.class_id)
+      })
+
+      const meetingIds = filteredMeetings.map((m: any) => m.id)
 
       let slotsData: any[] = []
       if (meetingIds.length > 0) {
@@ -181,7 +206,7 @@ export default function MeetingsPage() {
       }
       setParentPhones(phoneMap)
 
-      const list: Meeting[] = (meetingsData || []).map((m: any) => ({
+      const list: Meeting[] = filteredMeetings.map((m: any) => ({
         id: m.id,
         title: m.title,
         description: m.description,
@@ -291,7 +316,7 @@ export default function MeetingsPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
 
-      const payload = {
+      const payload: any = {
         establishment_id: establishmentId,
         title: formTitle.trim(),
         description: formDesc.trim() || null,
@@ -301,6 +326,12 @@ export default function MeetingsPage() {
         class_id: formClass || null,
         status: 'open',
         created_by: user?.id || null,
+      }
+
+      // ✅ Si la table meetings a academic_year_id, on le remplit
+      // Sinon on laisse tomber (fallback: filtrage par date)
+      if (contextYearId) {
+        payload.academic_year_id = contextYearId
       }
 
       if (editingId) {
@@ -479,6 +510,7 @@ export default function MeetingsPage() {
             لقاءات الأولياء
           </h1>
           <p className="text-sm text-gray-500 mt-1">
+            {contextYear?.name && `${contextYear.name} — `}
             تنظيم مواعيد اللقاءات مع الأساتذة
           </p>
         </div>
@@ -540,7 +572,7 @@ export default function MeetingsPage() {
       {meetings.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
           <Users className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-          <p className="text-slate-500 font-medium mb-4">ما كايناش لقاءات</p>
+          <p className="text-slate-500 font-medium mb-4">ما كايناش لقاءات في هذه السنة</p>
           <button
             onClick={openCreate}
             className="inline-flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-lg hover:bg-indigo-700 font-medium"

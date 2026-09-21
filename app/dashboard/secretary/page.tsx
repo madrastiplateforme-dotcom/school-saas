@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   Wallet, TrendingUp, TrendingDown, Send, Users, Plus, RefreshCw,
   Building2, ClipboardList, BookOpen, FileText, Calendar, CreditCard,
@@ -15,9 +16,6 @@ import {
   CartesianGrid,
 } from 'recharts'
 
-// ═══════════════════════════════════════════════════
-// Types
-// ═══════════════════════════════════════════════════
 type Caisse = {
   id: string
   name: string
@@ -44,9 +42,6 @@ type RecentItem = {
 
 type DayBar = { day: string; in: number; out: number }
 
-// ═══════════════════════════════════════════════════
-// Quick Actions
-// ═══════════════════════════════════════════════════
 const QUICK_ACTIONS = [
   { href: '/dashboard/payments/new', label: 'دفعة جديدة', desc: 'تسجيل دفعة', icon: Plus, gradient: 'from-emerald-500 to-emerald-700' },
   { href: '/dashboard/expenses', label: 'مصروف جديد', desc: 'تسجيل مصروف', icon: TrendingDown, gradient: 'from-rose-500 to-rose-700' },
@@ -62,11 +57,9 @@ const QUICK_ACTIONS = [
   { href: '/dashboard/messages', label: 'الرسائل', desc: 'التواصل', icon: MessageSquare, gradient: 'from-slate-500 to-slate-700' },
 ]
 
-// ═══════════════════════════════════════════════════
-// Page
-// ═══════════════════════════════════════════════════
 export default function SecretaryDashboard() {
   const router = useRouter()
+  const { yearId } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -91,14 +84,13 @@ export default function SecretaryDashboard() {
   const [chartData, setChartData] = useState<DayBar[]>([])
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [yearId])
 
-  // ─────────────────────────────────────────
-  // Load
-  // ─────────────────────────────────────────
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
@@ -112,7 +104,6 @@ export default function SecretaryDashboard() {
         return
       }
 
-      // 1) Profile — query séparée (pas de JOIN)
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('full_name, establishment_id')
@@ -128,7 +119,6 @@ export default function SecretaryDashboard() {
         return
       }
 
-      // 2) School name
       const { data: est } = await supabase
         .from('establishments')
         .select('name')
@@ -136,16 +126,17 @@ export default function SecretaryDashboard() {
         .maybeSingle()
       setSchoolName(est?.name || '')
 
-      // 3) Ma caisse — avec initial_balance
+      // ✅ Caisse de l'année active
       const { data: caisse } = await supabase
         .from('cash_registers')
         .select('id, name, initial_balance')
         .eq('owner_user_id', user.id)
         .eq('establishment_id', establishmentId)
+        .eq('academic_year_id', yearId)
         .maybeSingle()
 
       if (!caisse) {
-        setError('لم يتم العثور على صندوقك. تواصل مع الإدارة.')
+        setError('لم يتم العثور على صندوقك لهذه السنة. تواصل مع الإدارة.')
         setLoading(false)
         return
       }
@@ -154,18 +145,19 @@ export default function SecretaryDashboard() {
       setCaisseName(caisse.name || 'صندوقي')
       const initialBalance = Number(caisse.initial_balance || 0)
 
-      // 4) Payments — FILTRÉS : exclut deleted_at SET, garde is_refunded=true
+      // ✅ Payments filtrés par année active
       const { data: payments, error: pErr } = await supabase
         .from('payments')
         .select('id, amount, payment_date, created_at, student_id, is_refunded')
         .eq('cash_register_id', caisse.id)
+        .eq('academic_year_id', yearId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(500)
 
       if (pErr) throw new Error(pErr.message)
 
-      // 5) Expenses
+      // ✅ Expenses (per-year via registerId)
       const { data: expenses, error: eErr } = await supabase
         .from('expenses')
         .select('id, description, amount, expense_date, created_at, nature, category')
@@ -175,21 +167,21 @@ export default function SecretaryDashboard() {
 
       if (eErr) throw new Error(eErr.message)
 
-      // 6) Transfers OUT (depuis cette caisse)
+      // ✅ Transfers OUT (per-year via registerId)
       const { data: transfersOut } = await supabase
         .from('cash_transfers')
         .select('id, amount, transfer_date, to_cash_register_id, note, status')
         .eq('from_cash_register_id', caisse.id)
         .eq('status', 'accepted')
 
-      // 7) Transfers IN (vers cette caisse)
+      // ✅ Transfers IN (per-year via registerId)
       const { data: transfersIn } = await supabase
         .from('cash_transfers')
         .select('id, amount, transfer_date, from_cash_register_id, note, status')
         .eq('to_cash_register_id', caisse.id)
         .eq('status', 'accepted')
 
-      // 8) Student names
+      // Student names
       const studentIds = Array.from(
         new Set((payments || []).map((p: any) => p.student_id).filter(Boolean)),
       ) as string[]
@@ -205,7 +197,6 @@ export default function SecretaryDashboard() {
         })
       }
 
-      // 9) Compute totals
       const totalPaymentsIn = (payments || []).reduce(
         (sum, p) => sum + Number(p.amount || 0),
         0,
@@ -223,7 +214,6 @@ export default function SecretaryDashboard() {
         0,
       )
 
-      // BALANCE = initial + payments + transfers_in − expenses − transfers_out
       const balance =
         initialBalance +
         totalPaymentsIn +
@@ -231,33 +221,34 @@ export default function SecretaryDashboard() {
         totalExpensesOut -
         totalTransfersOut
 
-      // 10) Pending transfers (vers ma caisse)
+      // ✅ Pending transfers vers ma caisse (per-year via registerId)
       const { count: pendingCount } = await supabase
         .from('cash_transfers')
         .select('*', { count: 'exact', head: true })
         .eq('to_cash_register_id', caisse.id)
         .eq('status', 'pending')
 
-      // 11) Students de l'établissement
+      // ✅ Students de l'année active via enrollments
       const { count: stCount } = await supabase
-        .from('students')
+        .from('enrollments')
         .select('*', { count: 'exact', head: true })
         .eq('establishment_id', establishmentId)
+        .eq('academic_year_id', yearId)
         .eq('status', 'active')
 
-      // 12) Paiements d'aujourd'hui
       const today = new Date().toISOString().slice(0, 10)
       const todayPayments = (payments || []).filter(
         (p: any) => p.payment_date === today,
       ).length
 
-      // 13) Impayés (count via contracts → installments)
+      // ✅ Impayés: contracts de l'année active → installments en retard
       let unpaidCount = 0
       try {
         const { data: contracts } = await supabase
           .from('contracts')
           .select('id')
           .eq('establishment_id', establishmentId)
+          .eq('academic_year_id', yearId)
 
         const contractIds = (contracts || []).map((c: any) => c.id)
 
@@ -297,7 +288,6 @@ export default function SecretaryDashboard() {
         unpaidCount,
       })
 
-      // 14) Recent items
       const rPayments: RecentItem[] = (payments || []).slice(0, 5).map((p: any) => ({
         id: p.id,
         label: studentMap.get(p.student_id) || 'تلميذ',
@@ -317,7 +307,6 @@ export default function SecretaryDashboard() {
       setRecentPayments(rPayments)
       setRecentExpenses(rExpenses)
 
-      // 15) Chart — 7 derniers jours (payments + expenses seulement, sans transfers)
       const days: DayBar[] = []
       for (let i = 6; i >= 0; i--) {
         const d = new Date()
@@ -346,9 +335,6 @@ export default function SecretaryDashboard() {
     }
   }
 
-  // ─────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────
   if (loading) {
     return (
       <div className="p-6 text-center" dir="rtl">
@@ -360,7 +346,6 @@ export default function SecretaryDashboard() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-      {/* Header */}
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -386,7 +371,6 @@ export default function SecretaryDashboard() {
         </div>
       )}
 
-      {/* Hero Caisse card */}
       <div className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-violet-700 to-fuchsia-700 rounded-2xl p-6 text-white shadow-lg">
         <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/10" />
         <div className="absolute -bottom-12 -left-8 w-32 h-32 rounded-full bg-white/5" />
@@ -410,7 +394,6 @@ export default function SecretaryDashboard() {
         </div>
       </div>
 
-      {/* KPI stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center gap-2 mb-2">
@@ -459,7 +442,6 @@ export default function SecretaryDashboard() {
         </div>
       </div>
 
-      {/* Alert for pending transfers */}
       {stats.pendingTransfers > 0 && (
         <Link
           href="/dashboard/caisse/transfers"
@@ -481,7 +463,6 @@ export default function SecretaryDashboard() {
         </Link>
       )}
 
-      {/* Quick Actions */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <div className="flex items-center gap-2 mb-5">
           <Sparkles className="h-5 w-5 text-violet-600" />
@@ -512,7 +493,6 @@ export default function SecretaryDashboard() {
         </div>
       </div>
 
-      {/* Chart */}
       {chartData.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <h2 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
@@ -534,9 +514,7 @@ export default function SecretaryDashboard() {
         </div>
       )}
 
-      {/* Recent lists */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Recent payments */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-bold text-slate-800 flex items-center gap-2">
@@ -569,7 +547,6 @@ export default function SecretaryDashboard() {
           )}
         </div>
 
-        {/* Recent expenses */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-bold text-slate-800 flex items-center gap-2">
@@ -603,7 +580,6 @@ export default function SecretaryDashboard() {
         </div>
       </div>
 
-      {/* Info footer */}
       <div className="bg-gradient-to-br from-violet-50 to-fuchsia-50 border border-violet-200 rounded-2xl p-5 flex items-start gap-3">
         <Sparkles className="h-5 w-5 text-violet-600 flex-shrink-0 mt-0.5" />
         <div className="text-sm text-violet-900">

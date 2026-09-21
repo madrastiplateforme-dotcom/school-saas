@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { ArrowLeft, Check, X, Clock, ArrowRight, Wallet, Plus, Send } from 'lucide-react'
 
 type Transfer = {
@@ -25,6 +26,7 @@ export default function TransfersPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
 
   const [transfers, setTransfers] = useState<Transfer[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,17 +39,18 @@ export default function TransfersPage() {
   const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !yearId) return
     loadData()
-  }, [establishmentId, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     setCurrentUserId(user.id)
 
-    // Jib smiyt user
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('full_name')
@@ -55,6 +58,25 @@ export default function TransfersPage() {
       .maybeSingle()
     setCurrentUserName(profile?.full_name || 'مستخدم')
 
+    // ✅ 1. Caisses dyal l'année active
+    const { data: yearCaisses, error: caisseErr } = await supabase
+      .from('cash_registers')
+      .select('id, name, owner_user_id, type')
+      .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
+
+    if (caisseErr) {
+      setError(caisseErr.message)
+      setLoading(false)
+      return
+    }
+
+    const caisseMap = new Map<string, any>(
+      (yearCaisses || []).map((c: any) => [c.id, c])
+    )
+    const yearCaisseIds = new Set(caisseMap.keys())
+
+    // ✅ 2. Charge les transfers de l'établissement (broad)
     const { data: transfersData, error: tError } = await supabase
       .from('cash_transfers')
       .select('*')
@@ -63,39 +85,49 @@ export default function TransfersPage() {
 
     if (tError) { setError(tError.message); setLoading(false); return }
 
-    const caisseIds = new Set<string>()
-    ;(transfersData || []).forEach((t: any) => {
-      caisseIds.add(t.from_cash_register_id)
-      caisseIds.add(t.to_cash_register_id)
+    // ✅ 3. Filtrer côté JS: garder ghir li kayn f caisses dyal l'année
+    const relevant = (transfersData || []).filter(
+      (t: any) =>
+        yearCaisseIds.has(t.from_cash_register_id) ||
+        yearCaisseIds.has(t.to_cash_register_id)
+    )
+
+    // ✅ 4. Charger les noms dyal caisses liées (li momkin ma kayninch f yearCaisses)
+    const linkedIds = new Set<string>()
+    relevant.forEach((t: any) => {
+      linkedIds.add(t.from_cash_register_id)
+      linkedIds.add(t.to_cash_register_id)
     })
 
-    const { data: caisses } = await supabase
-      .from('cash_registers')
-      .select('id, name, owner_user_id, type')
-      .in('id', Array.from(caisseIds))
+    const fullCaisseMap = new Map(caisseMap)
+    const missingIds = Array.from(linkedIds).filter((id) => !fullCaisseMap.has(id))
+    if (missingIds.length > 0) {
+      const { data: extraCaisses } = await supabase
+        .from('cash_registers')
+        .select('id, name, owner_user_id, type')
+        .in('id', missingIds)
+      ;(extraCaisses || []).forEach((c: any) => fullCaisseMap.set(c.id, c))
+    }
 
-    const caisseMap = new Map((caisses || []).map((c: any) => [c.id, c]))
-
-    const formatted: Transfer[] = (transfersData || []).map((t: any) => ({
+    const formatted: Transfer[] = relevant.map((t: any) => ({
       ...t,
       amount: Number(t.amount),
-      from_caisse: caisseMap.get(t.from_cash_register_id) as any,
-      to_caisse: caisseMap.get(t.to_cash_register_id) as any,
+      from_caisse: fullCaisseMap.get(t.from_cash_register_id) as any,
+      to_caisse: fullCaisseMap.get(t.to_cash_register_id) as any,
     }))
 
     setTransfers(formatted)
     setLoading(false)
   }
 
-  // ✅ Chkoun kay-accepti : l'user li 3ndo caisse destination
-const canValidate = (t: Transfer): boolean => {
-  if (t.status !== 'pending') return false
-  if (!t.to_caisse) return false
-  if (t.to_caisse.owner_user_id) {
-    return t.to_caisse.owner_user_id === currentUserId
+  const canValidate = (t: Transfer): boolean => {
+    if (t.status !== 'pending') return false
+    if (!t.to_caisse) return false
+    if (t.to_caisse.owner_user_id) {
+      return t.to_caisse.owner_user_id === currentUserId
+    }
+    return false
   }
-  return false
-}
 
   const handleAccept = async (transfer: Transfer) => {
     if (!confirm('هل تريد قبول هذا التحويل؟')) return
@@ -112,7 +144,6 @@ const canValidate = (t: Transfer): boolean => {
 
     if (error) { setError(error.message); return }
 
-    // ✅ Notification l créateur (li dar transfert)
     if (transfer.created_by && transfer.created_by !== currentUserId) {
       const { error: notifError } = await supabase
         .from('notifications')
@@ -147,7 +178,6 @@ const canValidate = (t: Transfer): boolean => {
 
     if (error) { setError(error.message); return }
 
-    // ✅ Notification l créateur
     if (transfer.created_by && transfer.created_by !== currentUserId) {
       const { error: notifError } = await supabase
         .from('notifications')

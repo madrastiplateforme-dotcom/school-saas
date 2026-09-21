@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   Search, Users, Pencil, Trash2, Eye, UserPlus, X, CheckCircle,
   AlertTriangle, Loader2, Mail, GraduationCap,
@@ -28,6 +29,7 @@ export default function FamiliesPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
+  const { yearId } = useAcademicYear()
   const canViewFamilies = hasPermission('families', 'view')
   const canEditFamilies = hasPermission('families', 'edit')
 
@@ -37,7 +39,6 @@ export default function FamiliesPage() {
   const [success, setSuccess] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
 
-  // ── Edit modal state ──
   const [editFamily, setEditFamily] = useState<FamilyWithCount | null>(null)
   const [eName, setEName] = useState('')
   const [eFather, setEFather] = useState('')
@@ -50,12 +51,10 @@ export default function FamiliesPage() {
   const [eUpdateAuth, setEUpdateAuth] = useState(true)
   const [savingEdit, setSavingEdit] = useState(false)
 
-  // ── Delete modal state ──
   const [deleteFamily, setDeleteFamily] = useState<FamilyWithCount | null>(null)
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [deleting, setDeleting] = useState(false)
 
-  // ── Parent modal ──
   const [parentFamily, setParentFamily] = useState<Family | null>(null)
   const [parentName, setParentName] = useState('')
   const [parentEmail, setParentEmail] = useState('')
@@ -63,18 +62,75 @@ export default function FamiliesPage() {
   const [savingParent, setSavingParent] = useState(false)
 
   useEffect(() => {
-    if (!establishmentId) return
-    fetchFamilies(establishmentId)
-  }, [establishmentId])
+    if (!establishmentId || !yearId) return
+    fetchFamilies(establishmentId, yearId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, yearId])
 
-  const fetchFamilies = async (sid: string) => {
+  const fetchFamilies = async (sid: string, yid: string) => {
     const supabase = createClient()
     setLoading(true)
 
+    // ✅ 1. Enrollments dyal l'année active
+    const { data: enrollmentsData, error: enrErr } = await supabase
+      .from('enrollments')
+      .select('student_id')
+      .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
+      .eq('status', 'active')
+
+    if (enrErr) {
+      setError(enrErr.message)
+      setLoading(false)
+      return
+    }
+
+    const studentIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.student_id).filter(Boolean))
+    )
+
+    if (studentIds.length === 0) {
+      setFamilies([])
+      setLoading(false)
+      return
+    }
+
+    // ✅ 2. Students → famille + count dyal élèves inscrits
+    const { data: studentsData, error: studentsError } = await supabase
+      .from('students')
+      .select('id, family_id')
+      .eq('establishment_id', sid)
+      .in('id', studentIds)
+
+    if (studentsError) {
+      setError(studentsError.message)
+      setLoading(false)
+      return
+    }
+
+    const counts = new Map<string, number>()
+    const familyIdsSet = new Set<string>()
+    ;(studentsData || []).forEach((s: any) => {
+      if (s.family_id) {
+        counts.set(s.family_id, (counts.get(s.family_id) || 0) + 1)
+        familyIdsSet.add(s.family_id)
+      }
+    })
+
+    const familyIds = Array.from(familyIdsSet)
+
+    if (familyIds.length === 0) {
+      setFamilies([])
+      setLoading(false)
+      return
+    }
+
+    // ✅ 3. Familles li 3ndhom élèves inscrits f l'année
     const { data, error } = await supabase
       .from('families')
       .select('*')
       .eq('establishment_id', sid)
+      .in('id', familyIds)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -82,20 +138,6 @@ export default function FamiliesPage() {
       setLoading(false)
       return
     }
-
-    // جيب عدد التلاميذ لكل عائلة
-    const { data: studentsData } = await supabase
-      .from('students')
-      .select('family_id')
-      .eq('establishment_id', sid)
-      .neq('status', 'inactive')
-
-    const counts = new Map<string, number>()
-    ;(studentsData || []).forEach((s: any) => {
-      if (s.family_id) {
-        counts.set(s.family_id, (counts.get(s.family_id) || 0) + 1)
-      }
-    })
 
     const enriched: FamilyWithCount[] = (data || []).map((f) => ({
       ...f,
@@ -106,9 +148,6 @@ export default function FamiliesPage() {
     setLoading(false)
   }
 
-  // ─────────────────────────────────────────────
-  // Edit
-  // ─────────────────────────────────────────────
   const openEdit = (family: FamilyWithCount) => {
     setEditFamily(family)
     setEName(family.family_name || '')
@@ -124,7 +163,7 @@ export default function FamiliesPage() {
   }
 
   const handleSaveEdit = async () => {
-    if (!editFamily || !establishmentId) return
+    if (!editFamily || !establishmentId || !yearId) return
     if (!eName.trim()) {
       setError('اسم العائلة مطلوب')
       return
@@ -159,7 +198,7 @@ export default function FamiliesPage() {
       }
       setTimeout(() => setSuccess(''), 4000)
       setEditFamily(null)
-      fetchFamilies(establishmentId)
+      fetchFamilies(establishmentId, yearId)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -167,9 +206,6 @@ export default function FamiliesPage() {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // Delete
-  // ─────────────────────────────────────────────
   const openDelete = (family: FamilyWithCount) => {
     setDeleteFamily(family)
     setDeleteConfirmName('')
@@ -177,7 +213,7 @@ export default function FamiliesPage() {
   }
 
   const handleDelete = async () => {
-    if (!deleteFamily || !establishmentId) return
+    if (!deleteFamily || !establishmentId || !yearId) return
     setDeleting(true)
     setError('')
 
@@ -196,7 +232,6 @@ export default function FamiliesPage() {
 
       const data = await res.json()
 
-      // ⚠️ إلا كاينين تلاميذ و ما أكدش
       if (res.status === 409 && data.needsConfirmation) {
         setError(
           `هذه العائلة فيها ${data.studentsCount} تلميذ: ${data.students.join('، ')}`,
@@ -213,7 +248,7 @@ export default function FamiliesPage() {
       }
       setTimeout(() => setSuccess(''), 4000)
       setDeleteFamily(null)
-      fetchFamilies(establishmentId)
+      fetchFamilies(establishmentId, yearId)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -221,9 +256,6 @@ export default function FamiliesPage() {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // Parent
-  // ─────────────────────────────────────────────
   const openParentModal = (family: Family) => {
     setParentFamily(family)
     setParentName(family.father_name || family.family_name || '')
@@ -263,7 +295,7 @@ export default function FamiliesPage() {
       setSuccess('تم إنشاء حساب ولي الأمر')
       setTimeout(() => setSuccess(''), 4000)
       setParentFamily(null)
-      fetchFamilies(establishmentId!)
+      if (yearId) fetchFamilies(establishmentId!, yearId)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -288,7 +320,6 @@ export default function FamiliesPage() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -296,7 +327,7 @@ export default function FamiliesPage() {
             العائلات
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {families.length} عائلة — {families.reduce((s, f) => s + f.students_count, 0)} تلميذ
+            {families.length} عائلة نشطة — {families.reduce((s, f) => s + f.students_count, 0)} تلميذ مسجل
           </p>
         </div>
         <div className="relative">
@@ -311,7 +342,6 @@ export default function FamiliesPage() {
         </div>
       </div>
 
-      {/* Messages */}
       {error && !editFamily && !deleteFamily && !parentFamily && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
           <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
@@ -325,7 +355,6 @@ export default function FamiliesPage() {
         </div>
       )}
 
-      {/* Table */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -342,7 +371,7 @@ export default function FamiliesPage() {
             {filteredFamilies.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
-                  {families.length === 0 ? 'لا توجد عائلات' : 'لا توجد نتائج'}
+                  {families.length === 0 ? 'لا توجد عائلات نشطة في هذه السنة' : 'لا توجد نتائج'}
                 </td>
               </tr>
             ) : (
@@ -357,9 +386,7 @@ export default function FamiliesPage() {
                     </p>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
-                    {family.father_name && (
-                      <p>👨 {family.father_name}</p>
-                    )}
+                    {family.father_name && <p>👨 {family.father_name}</p>}
                     {family.mother_name && (
                       <p className="text-xs text-gray-500">👩 {family.mother_name}</p>
                     )}
@@ -436,9 +463,7 @@ export default function FamiliesPage() {
         </table>
       </div>
 
-      {/* ═══════════════════════════════════════════
-          Modal: Edit
-      ═══════════════════════════════════════════ */}
+      {/* Modal: Edit */}
       {editFamily && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
@@ -533,7 +558,6 @@ export default function FamiliesPage() {
                 />
               </div>
 
-              {/* Sync auth section */}
               {editFamily.parent_user_id && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -598,9 +622,7 @@ export default function FamiliesPage() {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════
-          Modal: Delete (avec warning تلاميذ)
-      ═══════════════════════════════════════════ */}
+      {/* Modal: Delete */}
       {deleteFamily && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6">
@@ -704,9 +726,7 @@ export default function FamiliesPage() {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════
-          Modal: Parent account
-      ═══════════════════════════════════════════ */}
+      {/* Modal: Parent account */}
       {parentFamily && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6">

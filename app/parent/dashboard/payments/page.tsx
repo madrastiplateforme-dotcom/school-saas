@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   CreditCard, RefreshCw, Users, Wallet, CheckCircle2, AlertCircle,
   Calendar, TrendingUp,
@@ -47,24 +48,26 @@ const formatDate = (d?: string | null) => {
 }
 
 export default function ParentPaymentsPage() {
+  const { yearId, year } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [children, setChildren] = useState<Child[]>([])
   const [activeChild, setActiveChild] = useState('')
-  const [yearName, setYearName] = useState('')
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: profile } = await supabase
@@ -93,15 +96,6 @@ export default function ParentPaymentsPage() {
         return
       }
 
-      const { data: year } = await supabase
-        .from('academic_years')
-        .select('id, name')
-        .eq('establishment_id', estabId)
-        .eq('is_current', true)
-        .maybeSingle()
-
-      if (year?.name) setYearName(year.name)
-
       const { data: students } = await supabase
         .from('students')
         .select('id, first_name, last_name')
@@ -116,20 +110,16 @@ export default function ParentPaymentsPage() {
 
       const childIds = students.map((s) => s.id)
 
-      // Contracts
-      let contractsData: any[] = []
-      if (year?.id) {
-        const { data } = await supabase
-          .from('contracts')
-          .select('id, student_id')
-          .in('student_id', childIds)
-          .eq('academic_year_id', year.id)
-        contractsData = data || []
-      }
+      // ✅ Contracts dyal l'année active
+      const { data: contractsData } = await supabase
+        .from('contracts')
+        .select('id, student_id')
+        .in('student_id', childIds)
+        .eq('academic_year_id', yearId)
 
-      const contractIds = contractsData.map((c) => c.id)
+      const contractIds = (contractsData || []).map((c: any) => c.id)
 
-      // Installments
+      // ✅ Installments via contracts dyal l'année
       let installmentsData: any[] = []
       if (contractIds.length > 0) {
         const { data } = await supabase
@@ -140,28 +130,29 @@ export default function ParentPaymentsPage() {
         installmentsData = data || []
       }
 
-      // Payments
-      const instIds = installmentsData.map((i) => i.id)
+      // ✅ Payments via installments dyal l'année
+      const instIds = installmentsData.map((i: any) => i.id)
       let paymentsData: any[] = []
       if (instIds.length > 0) {
         const { data } = await supabase
           .from('payments')
           .select('id, installment_id, amount, payment_date, method')
           .in('installment_id', instIds)
+          .is('deleted_at', null)
           .order('payment_date', { ascending: false })
         paymentsData = data || []
       }
 
       const result: Child[] = students.map((st) => {
-        const childContracts = contractsData.filter((c) => c.student_id === st.id)
-        const childContractIds = childContracts.map((c) => c.id)
-        const childInsts = installmentsData.filter((i) =>
+        const childContracts = (contractsData || []).filter((c: any) => c.student_id === st.id)
+        const childContractIds = childContracts.map((c: any) => c.id)
+        const childInsts = installmentsData.filter((i: any) =>
           childContractIds.includes(i.contract_id),
         )
 
         const instList: Installment[] = childInsts.map((inst: any) => {
-          const instPays = paymentsData.filter((p) => p.installment_id === inst.id)
-          const paidSum = instPays.reduce((s, p) => s + Number(p.amount || 0), 0)
+          const instPays = paymentsData.filter((p: any) => p.installment_id === inst.id)
+          const paidSum = instPays.reduce((s, p: any) => s + Number(p.amount || 0), 0)
           return {
             id: inst.id,
             amount: Number(inst.amount || 0),
@@ -173,7 +164,7 @@ export default function ParentPaymentsPage() {
         })
 
         const childPays: Payment[] = paymentsData
-          .filter((p) => childInsts.some((i) => i.id === p.installment_id))
+          .filter((p: any) => childInsts.some((i: any) => i.id === p.installment_id))
           .map((p: any) => ({
             id: p.id,
             amount: Number(p.amount || 0),
@@ -199,8 +190,8 @@ export default function ParentPaymentsPage() {
       setChildren(result)
       if (result.length > 0) setActiveChild(result[0].id)
     } catch (e: any) {
-      console.error('[parent-payments]', e)
-      setError(e.message || 'خطأ')
+      console.error('[parent-payments]', e?.message || e)
+      setError(e?.message || 'خطأ')
     } finally {
       setLoading(false)
     }
@@ -229,7 +220,7 @@ export default function ParentPaymentsPage() {
             المدفوعات
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {yearName && `${yearName} — `}
+            {year?.name && `${year.name} — `}
             تتبع مدفوعات أبنائك
           </p>
         </div>
@@ -254,7 +245,6 @@ export default function ParentPaymentsPage() {
         </div>
       )}
 
-      {/* Global stats */}
       {children.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -299,7 +289,6 @@ export default function ParentPaymentsPage() {
         </div>
       )}
 
-      {/* Children tabs */}
       {children.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
           {children.map((c) => (
@@ -323,7 +312,6 @@ export default function ParentPaymentsPage() {
         </div>
       )}
 
-      {/* Installments */}
       {current && (
         <>
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -400,7 +388,6 @@ export default function ParentPaymentsPage() {
             )}
           </div>
 
-          {/* Payments history */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-3 bg-slate-50 border-b border-slate-200">
               <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   MessageSquare, Plus, Search, RefreshCw, X, Send, User, Users,
   GraduationCap, Megaphone, Inbox, ArrowLeft, Bell,
@@ -69,6 +70,7 @@ export default function MessagesPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId: contextYearId, year: contextYear } = useAcademicYear()
   const isDirector = role === 'directeur' || role === 'secretaire'
 
   const [userId, setUserId] = useState<string | null>(null)
@@ -80,7 +82,6 @@ export default function MessagesPage() {
   const [success, setSuccess] = useState('')
   const [search, setSearch] = useState('')
 
-  // Modal
   const [showModal, setShowModal] = useState(false)
   const [modalStep, setModalStep] = useState<'type' | 'recipient' | 'message'>('type')
   const [newType, setNewType] = useState<'direct' | 'broadcast'>('direct')
@@ -94,16 +95,17 @@ export default function MessagesPage() {
   const [contactSearch, setContactSearch] = useState('')
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !contextYearId) return
     loadAll()
-  }, [establishmentId, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, contextYearId])
 
   const loadAll = async () => {
+    if (!contextYearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
 
-    // 1. Current user
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       setLoading(false)
@@ -111,7 +113,7 @@ export default function MessagesPage() {
     }
     setUserId(user.id)
 
-    // 2. Roles map
+    // Roles map
     const { data: rolesData } = await supabase
       .from('roles')
       .select('id, name')
@@ -121,7 +123,7 @@ export default function MessagesPage() {
       roleNameMap.set(r.id, r.name || '')
     })
 
-    // 3. User profiles (with full_name + role_id)
+    // User profiles
     const { data: profiles } = await supabase
       .from('user_profiles')
       .select('user_id, full_name, role_id')
@@ -137,15 +139,15 @@ export default function MessagesPage() {
 
     setContacts(contactsList)
 
-    // 4. Classes (للـ broadcast)
+    // ✅ Classes dyal l'année active (broadcast)
     const { data: cls } = await supabase
       .from('classes')
       .select('id, name')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', contextYearId)
       .order('name')
     setClasses(cls || [])
 
-    // 5. Conversations
     await loadConversations(user.id, contactsList)
 
     setLoading(false)
@@ -181,7 +183,6 @@ export default function MessagesPage() {
     const rows: ConversationRow[] = []
 
     for (const c of convs || []) {
-      // آخر رسالة
       const { data: lastMsg } = await supabase
         .from('messages')
         .select('body, sender_user_id, created_at')
@@ -191,7 +192,6 @@ export default function MessagesPage() {
         .limit(1)
         .maybeSingle()
 
-      // رسائل غير مقروءة
       const lastRead = lastReadMap.get(c.id)
       let unreadQ = supabase
         .from('messages')
@@ -202,7 +202,6 @@ export default function MessagesPage() {
       if (lastRead) unreadQ = unreadQ.gt('created_at', lastRead)
       const { count } = await unreadQ
 
-      // المشاركون الآخرون
       const otherIds = (allParts || [])
         .filter(p => p.conversation_id === c.id && p.user_id !== currentUserId)
         .map(p => p.user_id)
@@ -240,7 +239,7 @@ export default function MessagesPage() {
   }
 
   const handleSendNew = async () => {
-    if (!establishmentId || !userId) return
+    if (!establishmentId || !userId || !contextYearId) return
     if (!body.trim()) { setError('الرسالة فارغة'); return }
 
     if (newType === 'direct' && selectedRecipients.length === 0) {
@@ -269,29 +268,58 @@ export default function MessagesPage() {
         convType = 'broadcast'
 
         if (broadcastTarget === 'all_parents') {
-          // جيب كل الآباء من user_profiles + roles
-          const parentRoleId = await getRoleIdByName('parent')
-          if (!parentRoleId) {
-            setError('دور الأولياء غير موجود في النظام')
+          // ✅ Parents des élèves ENROLLED dans l'année active
+          const { data: enrollmentsData } = await supabase
+            .from('enrollments')
+            .select('student_id')
+            .eq('establishment_id', establishmentId)
+            .eq('academic_year_id', contextYearId)
+            .eq('status', 'active')
+
+          const studentIds = Array.from(
+            new Set((enrollmentsData || []).map((e: any) => e.student_id).filter(Boolean))
+          ) as string[]
+
+          if (studentIds.length === 0) {
+            setError('لا يوجد أولياء في هذه السنة')
             setSending(false)
             return
           }
 
-          const { data: parents } = await supabase
-            .from('user_profiles')
-            .select('user_id')
-            .eq('establishment_id', establishmentId)
-            .eq('role_id', parentRoleId)
+          const { data: studentsData } = await supabase
+            .from('students')
+            .select('id, family_id')
+            .in('id', studentIds)
 
-          recipientUserIds = (parents || []).map((p: any) => p.user_id)
-          convTitle = subject.trim() || 'إعلان لكل الأولياء'
+          const familyIds = Array.from(
+            new Set((studentsData || []).map((s: any) => s.family_id).filter(Boolean))
+          ) as string[]
+
+          if (familyIds.length === 0) {
+            setError('لا يوجد أولياء في هذه السنة')
+            setSending(false)
+            return
+          }
+
+          const { data: fams } = await supabase
+            .from('families')
+            .select('id, parent_user_id')
+            .in('id', familyIds)
+            .eq('establishment_id', establishmentId)
+
+          recipientUserIds = (fams || [])
+            .map((f: any) => f.parent_user_id)
+            .filter(Boolean)
+
+          convTitle = subject.trim() || `إعلان لكل الأولياء - ${contextYear?.name || ''}`
         } else {
-          // class
+          // ✅ Class → enrollments dyal l'année active
           const { data: enrs } = await supabase
             .from('enrollments')
             .select('student_id, students(family_id)')
             .eq('class_id', broadcastClassId)
             .eq('establishment_id', establishmentId)
+            .eq('academic_year_id', contextYearId)
 
           const familyIds = (enrs || [])
             .map((e: any) => e.students?.family_id)
@@ -324,7 +352,6 @@ export default function MessagesPage() {
         return
       }
 
-      // إنشاء المحادثة
       const { data: conv, error: convErr } = await supabase
         .from('conversations')
         .insert({
@@ -337,7 +364,6 @@ export default function MessagesPage() {
         .single()
       if (convErr) throw convErr
 
-      // المشاركون
       const participants = [
         { conversation_id: conv.id, user_id: userId, role: role || 'other' },
         ...recipientUserIds.map(uid => ({
@@ -351,7 +377,6 @@ export default function MessagesPage() {
         .insert(participants)
       if (pErr) throw pErr
 
-      // أول رسالة
       const { error: mErr } = await supabase
         .from('messages')
         .insert({
@@ -367,22 +392,10 @@ export default function MessagesPage() {
       setTimeout(() => setSuccess(''), 2500)
       router.push(`/dashboard/messages/${conv.id}`)
     } catch (err: any) {
-      setError(err.message || 'حدث خطأ')
+      setError(err?.message || 'حدث خطأ')
     } finally {
       setSending(false)
     }
-  }
-
-  const getRoleIdByName = async (substring: string): Promise<string | null> => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('roles')
-      .select('id, name')
-      .eq('establishment_id', establishmentId)
-    const found = (data || []).find((r: any) =>
-      (r.name || '').toLowerCase().includes(substring.toLowerCase())
-    )
-    return found?.id || null
   }
 
   const filteredConvs = conversations.filter(c => {
@@ -404,7 +417,6 @@ export default function MessagesPage() {
   }
 
   if (loading || roleLoading) return <div className="p-6 text-center">جارٍ التحميل...</div>
-  // ✅ FIX: 'teacher' → 'enseignant' (le rôle en DB est en français)
   if (!isDirector && role !== 'enseignant') return <div className="p-6">ليس لديك صلاحية</div>
 
   return (
@@ -440,7 +452,6 @@ export default function MessagesPage() {
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg">{success}</div>
       )}
 
-      {/* Search */}
       <div className="relative bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
         <Search className="absolute right-7 top-7 h-5 w-5 text-gray-400" />
         <input
@@ -452,7 +463,6 @@ export default function MessagesPage() {
         />
       </div>
 
-      {/* Liste */}
       {filteredConvs.length === 0 ? (
         <div className="bg-white rounded-2xl p-16 text-center border border-gray-100">
           <Inbox className="h-16 w-16 text-slate-300 mx-auto mb-4" />
@@ -521,7 +531,6 @@ export default function MessagesPage() {
         </div>
       )}
 
-      {/* ========== MODAL ========== */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 my-8">
@@ -532,7 +541,6 @@ export default function MessagesPage() {
               </button>
             </div>
 
-            {/* Step indicator */}
             <div className="flex items-center gap-2 mb-6">
               {(['type', 'recipient', 'message'] as const).map((s, i) => (
                 <div key={s} className="flex items-center gap-2 flex-1">
@@ -552,7 +560,6 @@ export default function MessagesPage() {
               ))}
             </div>
 
-            {/* STEP 1: Type */}
             {modalStep === 'type' && (
               <div className="space-y-3">
                 <button
@@ -587,7 +594,6 @@ export default function MessagesPage() {
               </div>
             )}
 
-            {/* STEP 2: Recipient */}
             {modalStep === 'recipient' && newType === 'direct' && (
               <div className="space-y-3">
                 <div className="relative">
@@ -669,7 +675,9 @@ export default function MessagesPage() {
                       />
                       <div>
                         <p className="font-medium text-sm">كل الأولياء</p>
-                        <p className="text-xs text-slate-500">جميع أولياء التلاميذ بالمؤسسة</p>
+                        <p className="text-xs text-slate-500">
+                          أولياء التلاميذ المسجلين في {contextYear?.name || 'السنة الحالية'}
+                        </p>
                       </div>
                     </label>
                     <label
@@ -723,7 +731,6 @@ export default function MessagesPage() {
               </div>
             )}
 
-            {/* STEP 3: Message */}
             {modalStep === 'message' && (
               <div className="space-y-4">
                 <div>

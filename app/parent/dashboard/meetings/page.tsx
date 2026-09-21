@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   Users, RefreshCw, Calendar, Clock, MapPin, BookOpen, UserCheck,
   CheckCircle2, X, AlertCircle, Info, ChevronDown, ChevronUp,
@@ -57,6 +58,8 @@ const dayName = (d: string) => {
 }
 
 export default function ParentMeetingsPage() {
+  const { yearId, year } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [booking, setBooking] = useState(false)
   const [error, setError] = useState('')
@@ -74,17 +77,18 @@ export default function ParentMeetingsPage() {
   const [bookingNotes, setBookingNotes] = useState('')
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       setMyUserId(user.id)
 
@@ -114,13 +118,6 @@ export default function ParentMeetingsPage() {
         return
       }
 
-      const { data: year } = await supabase
-        .from('academic_years')
-        .select('id')
-        .eq('establishment_id', estabId)
-        .eq('is_current', true)
-        .maybeSingle()
-
       const { data: students } = await supabase
         .from('students')
         .select('id, first_name, last_name')
@@ -136,25 +133,21 @@ export default function ParentMeetingsPage() {
 
       const childIds = students.map((s) => s.id)
 
-      // Enrollments → class
-      let enrollmentsData: any[] = []
-      if (year?.id) {
-        const { data } = await supabase
-          .from('enrollments')
-          .select('student_id, class_id, classes(name, levels(name))')
-          .in('student_id', childIds)
-          .eq('academic_year_id', year.id)
-        enrollmentsData = data || []
-      }
+      // ✅ Enrollments dyal l'année active
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('student_id, class_id, classes(name, levels(name))')
+        .in('student_id', childIds)
+        .eq('academic_year_id', yearId)
 
       const childrenList: Child[] = students.map((st) => {
-        const enr = enrollmentsData.find((e) => e.student_id === st.id)
+        const enr = (enrollmentsData || []).find((e: any) => e.student_id === st.id)
         return {
           id: st.id,
           first_name: st.first_name,
           last_name: st.last_name,
           class_id: enr?.class_id || null,
-          class_name: enr?.classes?.name || null,
+          class_name: (enr?.classes as any)?.name || null,
         }
       })
       setChildren(childrenList)
@@ -169,8 +162,8 @@ export default function ParentMeetingsPage() {
         return
       }
 
-      // Meetings de ces classes (ou sans classe = tous)
-      const { data: meetingsData } = await supabase
+      // ✅ Meetings filtrés par plage de dates + statut
+      let meetingsQuery = supabase
         .from('meetings')
         .select(`
           id, title, description, meeting_date, location, status,
@@ -180,17 +173,25 @@ export default function ParentMeetingsPage() {
         `)
         .eq('establishment_id', estabId)
         .in('status', ['open', 'closed'])
+
+      if (year?.start_date) {
+        meetingsQuery = meetingsQuery.gte('meeting_date', year.start_date)
+      }
+      if (year?.end_date) {
+        meetingsQuery = meetingsQuery.lte('meeting_date', year.end_date)
+      }
+
+      const { data: meetingsData } = await meetingsQuery
         .order('meeting_date', { ascending: true })
 
+      // ✅ Filtrage JS: class_id null (global) OU f classes dyal l'année
       const filtered = (meetingsData || []).filter((m: any) => {
-        // Inclure si: pas de class_id (tous) OU class_id est dans les classes de l'enfant
         if (!m.class_id) return true
         return classIds.includes(m.class_id)
       })
 
       const meetingIds = filtered.map((m: any) => m.id)
 
-      // Slots
       let slotsData: any[] = []
       if (meetingIds.length > 0) {
         const { data: slots } = await supabase
@@ -232,8 +233,8 @@ export default function ParentMeetingsPage() {
 
       setMeetings(list)
     } catch (e: any) {
-      console.error('[parent-meetings]', e)
-      setError(e.message || 'خطأ')
+      console.error('[parent-meetings]', e?.message || e)
+      setError(e?.message || 'خطأ')
     } finally {
       setLoading(false)
     }
@@ -246,51 +247,50 @@ export default function ParentMeetingsPage() {
     setBookingNotes('')
   }
 
- const handleBook = async () => {
-  if (!bookingSlot || !selectedChild) return
-  setBooking(true)
-  setError('')
-  const supabase = createClient()
-  try {
-    const { error: upErr } = await supabase
-      .from('meeting_slots')
-      .update({
-        parent_user_id: myUserId,
-        student_id: selectedChild,
-        booked_at: new Date().toISOString(),
-        notes: bookingNotes.trim() || null,
-      })
-      .eq('id', bookingSlot.id)
-
-    if (upErr) throw upErr
-
-    // 📧 إرسال تأكيد
-    let msg = '✅ تم حجز الموعد بنجاح'
+  const handleBook = async () => {
+    if (!bookingSlot || !selectedChild) return
+    setBooking(true)
+    setError('')
+    const supabase = createClient()
     try {
-      const res = await fetch('/api/establishment/meeting-confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slotId: bookingSlot.id }),
-      })
-      const json = await res.json()
-      if (json.sent) {
-        msg = '✅ تم حجز الموعد + إرسال تأكيد بالإيميل'
-      }
-    } catch (e) {
-      console.error('Email confirm failed:', e)
-    }
+      const { error: upErr } = await supabase
+        .from('meeting_slots')
+        .update({
+          parent_user_id: myUserId,
+          student_id: selectedChild,
+          booked_at: new Date().toISOString(),
+          notes: bookingNotes.trim() || null,
+        })
+        .eq('id', bookingSlot.id)
 
-    setSuccess(msg)
-    setTimeout(() => setSuccess(''), 4000)
-    setBookingSlot(null)
-    setBookingMeeting(null)
-    await loadData()
-  } catch (e: any) {
-    setError(e.message || 'فشل الحجز')
-  } finally {
-    setBooking(false)
+      if (upErr) throw upErr
+
+      let msg = '✅ تم حجز الموعد بنجاح'
+      try {
+        const res = await fetch('/api/establishment/meeting-confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slotId: bookingSlot.id }),
+        })
+        const json = await res.json()
+        if (json.sent) {
+          msg = '✅ تم حجز الموعد + إرسال تأكيد بالإيميل'
+        }
+      } catch (e) {
+        console.error('Email confirm failed:', e)
+      }
+
+      setSuccess(msg)
+      setTimeout(() => setSuccess(''), 4000)
+      setBookingSlot(null)
+      setBookingMeeting(null)
+      await loadData()
+    } catch (e: any) {
+      setError(e?.message || 'فشل الحجز')
+    } finally {
+      setBooking(false)
+    }
   }
-}
 
   const handleCancel = async (slot: Slot) => {
     if (!confirm('إلغاء الحجز؟')) return
@@ -313,7 +313,7 @@ export default function ParentMeetingsPage() {
       setTimeout(() => setSuccess(''), 3000)
       await loadData()
     } catch (e: any) {
-      setError(e.message || 'فشل الإلغاء')
+      setError(e?.message || 'فشل الإلغاء')
     }
   }
 
@@ -347,6 +347,7 @@ export default function ParentMeetingsPage() {
             لقاءات الأولياء
           </h1>
           <p className="text-sm text-gray-500 mt-1">
+            {year?.name && `${year.name} — `}
             احجز موعداً للقاء مع أستاذ ابنك
           </p>
         </div>
@@ -373,11 +374,10 @@ export default function ParentMeetingsPage() {
       {children.length === 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <Users className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 font-medium">لا يوجد أبناء مسجلون</p>
+          <p className="text-slate-500 font-medium">لا يوجد أبناء مسجلون في السنة الحالية</p>
         </div>
       )}
 
-      {/* Upcoming meetings */}
       {children.length > 0 && upcomingMeetings.length === 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <Calendar className="h-12 w-12 text-slate-300 mx-auto mb-3" />
@@ -408,7 +408,6 @@ export default function ParentMeetingsPage() {
                   mySlot ? 'border-emerald-300' : 'border-gray-100'
                 }`}
               >
-                {/* Header */}
                 <div className="p-5 flex items-start justify-between gap-3 flex-wrap">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -471,7 +470,6 @@ export default function ParentMeetingsPage() {
                   </button>
                 </div>
 
-                {/* My booking summary */}
                 {mySlot && !isExpanded && (
                   <div className="px-5 pb-4">
                     <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center justify-between flex-wrap gap-2">
@@ -496,7 +494,6 @@ export default function ParentMeetingsPage() {
                   </div>
                 )}
 
-                {/* Slots expanded */}
                 {isExpanded && (
                   <div className="border-t border-gray-100 bg-slate-50/50 p-4">
                     {m.slots.length === 0 ? (
@@ -568,7 +565,6 @@ export default function ParentMeetingsPage() {
         </div>
       )}
 
-      {/* Past meetings */}
       {pastMeetings.length > 0 && (
         <details className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <summary className="px-5 py-4 cursor-pointer hover:bg-slate-50 font-bold text-slate-700 flex items-center gap-2">
@@ -598,7 +594,6 @@ export default function ParentMeetingsPage() {
         </details>
       )}
 
-      {/* Modal Booking */}
       {bookingSlot && bookingMeeting && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-md w-full my-8">

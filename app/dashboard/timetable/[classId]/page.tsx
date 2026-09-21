@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
@@ -71,6 +72,7 @@ export default function ClassTimetablePage() {
 
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId: contextYearId, year: contextYear } = useAcademicYear()  // 👈 AJOUTER
   const canManage = role === 'directeur' || role === 'secretaire'
   const [classInfo, setClassInfo] = useState<{ id: string; name: string; level_id: string | null; level_name: string | null } | null>(null)
   const [yearId, setYearId] = useState<string | null>(null)
@@ -139,11 +141,11 @@ export default function ClassTimetablePage() {
   const [duplicating, setDuplicating] = useState(false)
 
   useEffect(() => {
-    if (!establishmentId || !classId || !role) return
-    loadAll()
-  }, [establishmentId, classId, role])
+  if (!establishmentId || !classId || !role || !contextYearId) return
+  loadAll()
+}, [establishmentId, classId, role, contextYearId])
 
-  const loadAll = async () => {
+    const loadAll = async () => {
     setLoading(true)
     setError('')
     const supabase = createClient()
@@ -163,15 +165,9 @@ export default function ClassTimetablePage() {
       })
     }
 
-    const { data: years } = await supabase
-      .from('academic_years')
-      .select('id, name')
-      .eq('establishment_id', establishmentId)
-      .eq('is_current', true)
-      .maybeSingle()
-
-    setYearId(years?.id || null)
-    setYearName(years?.name || '')
+    // ✅ Année active du context
+    setYearId(contextYearId)
+    setYearName(contextYear?.name || '')
 
     const { data: settings } = await supabase
       .from('school_settings')
@@ -211,19 +207,20 @@ export default function ClassTimetablePage() {
     const firstEnabledDay = DAYS.find(d => dcfg[String(d.value)]?.enabled)
     setSlots(generateSlots(firstEnabledDay?.value || 1, dcfg, brk, pd))
 
-    let ttQuery = supabase.from('timetables').select('*').eq('class_id', classId)
-    if (years?.id) ttQuery = ttQuery.eq('academic_year_id', years.id)
-    const { data: ttData } = await ttQuery
+    // ✅ Timetables dyal l'année active
+    const { data: ttData } = await supabase
+      .from('timetables')
+      .select('*')
+      .eq('class_id', classId)
+      .eq('academic_year_id', contextYearId)
     setTimetables(ttData || [])
 
-    if (years?.id) {
-      const { data: allTt } = await supabase
-        .from('timetables')
-        .select('*')
-        .eq('establishment_id', establishmentId)
-        .eq('academic_year_id', years.id)
-      setAllTimetables(allTt || [])
-    }
+    const { data: allTt } = await supabase
+      .from('timetables')
+      .select('*')
+      .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', contextYearId)
+    setAllTimetables(allTt || [])
 
     const { data: subs } = await supabase
       .from('subjects')
@@ -251,6 +248,7 @@ export default function ClassTimetablePage() {
       .from('classes')
       .select('id, name')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', contextYearId)   // ✅ ghyr classes dyal l'année
       .order('name')
     setAllClasses(clsAll || [])
 
@@ -1167,7 +1165,6 @@ const handleDrop = async (e: React.DragEvent, day: number, slot: Slot) => {
     }
   }
 
-  // ============ RENDER ============
    // ============ RENDER ============
   if (loading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
   if (!canManage) return <div className="p-6">ليس لديك صلاحية</div>

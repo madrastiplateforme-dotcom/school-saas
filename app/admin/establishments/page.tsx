@@ -44,6 +44,7 @@ type Establishment = {
   subscription_due_date: string | null
   grace_period_days?: number
   student_count: number
+  active_student_count: number
   user_profiles: {
     user_id: string
     full_name: string
@@ -90,35 +91,47 @@ export default function EstablishmentsPage() {
   const [newDirectorPassword, setNewDirectorPassword] = useState('')
   const [changingDirector, setChangingDirector] = useState(false)
 
-  // Pending count
   const pendingCount = establishments.filter((e) => e.status === 'pending').length
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) {
-        router.push('/login')
-        return
-      }
+    supabase.auth
+      .getUser()
+      .then(({ data: { user } }) => {
+        if (!user) {
+          router.push('/login')
+          return
+        }
 
-      supabase
-        .from('admin_users')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .single()
-        .then(({ data: adminData }) => {
-          if (!adminData) {
-            setError('ليس لديك صلاحية الوصول لهذه الصفحة')
-            setLoading(false)
-            return
-          }
-          fetchEstablishments()
-        })
-    })
-  }, [])
+        // ✅ FIX: maybeSingle() au lieu de single()
+        supabase
+          .from('admin_users')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .maybeSingle()
+          .then(({ data: adminData, error: adminErr }) => {
+            if (adminErr) {
+              console.error('[admin/establishments]', adminErr.message || adminErr)
+            }
+            if (!adminData) {
+              setError('ليس لديك صلاحية الوصول لهذه الصفحة')
+              setLoading(false)
+              return
+            }
+            fetchEstablishments()
+          })
+      })
+      .catch((e: any) => {
+        console.error('[admin/establishments-auth]', e?.message || e)
+        setError('خطأ في المصادقة')
+        setLoading(false)
+      })
+  }, [router])
 
   const fetchEstablishments = async () => {
     const supabase = createClient()
+
+    // 1) Établissements + user_profiles + count étudiants
     const { data, error } = await supabase
       .from('establishments')
       .select(`
@@ -134,13 +147,67 @@ export default function EstablishmentsPage() {
 
     if (error) {
       setError(error.message)
-    } else {
-      const formatted = data?.map((est: any) => ({
-        ...est,
-        student_count: est.students?.[0]?.count || 0,
-      }))
-      setEstablishments(formatted || [])
+      setLoading(false)
+      return
     }
+
+    const estList: any[] = data || []
+    const establishmentIds = estList.map((e: any) => e.id)
+
+    // ✅ 2) Années courantes par établissement
+    const currentYearByEstab = new Map<string, string>()
+    if (establishmentIds.length > 0) {
+      const { data: currentYears } = await supabase
+        .from('academic_years')
+        .select('id, establishment_id')
+        .eq('is_current', true)
+        .in('establishment_id', establishmentIds)
+
+      ;(currentYears || []).forEach((y: any) => {
+        if (y.establishment_id && y.id) {
+          currentYearByEstab.set(y.establishment_id, y.id)
+        }
+      })
+    }
+
+    const yearIds = Array.from(currentYearByEstab.values())
+
+    // ✅ 3) Élèves actifs f l'année courante
+    const activeCountByEstab = new Map<string, number>()
+    if (yearIds.length > 0) {
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('student_id, academic_year_id')
+        .in('academic_year_id', yearIds)
+        .eq('status', 'active')
+
+      const yearToEstab = new Map<string, string>()
+      currentYearByEstab.forEach((yearId, estabId) => {
+        yearToEstab.set(yearId, estabId)
+      })
+
+      const studentSetByEstab = new Map<string, Set<string>>()
+      ;(enrollmentsData || []).forEach((e: any) => {
+        const estabId = yearToEstab.get(e.academic_year_id)
+        if (!estabId || !e.student_id) return
+        if (!studentSetByEstab.has(estabId)) {
+          studentSetByEstab.set(estabId, new Set())
+        }
+        studentSetByEstab.get(estabId)!.add(e.student_id)
+      })
+
+      studentSetByEstab.forEach((set, estabId) => {
+        activeCountByEstab.set(estabId, set.size)
+      })
+    }
+
+    const formatted: Establishment[] = estList.map((est: any) => ({
+      ...est,
+      student_count: est.students?.[0]?.count || 0,
+      active_student_count: activeCountByEstab.get(est.id) || 0,
+    }))
+
+    setEstablishments(formatted)
     setLoading(false)
   }
 
@@ -396,10 +463,10 @@ export default function EstablishmentsPage() {
     return matchesSearch && matchesStatus
   })
 
-  // Stats totales
   const totalActive = establishments.filter((e) => e.status === 'active').length
   const totalSuspended = establishments.filter((e) => e.status === 'suspended').length
   const totalStudents = establishments.reduce((s, e) => s + (e.student_count || 0), 0)
+  const totalActiveStudents = establishments.reduce((s, e) => s + (e.active_student_count || 0), 0)
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
@@ -440,7 +507,7 @@ export default function EstablishmentsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3 text-emerald-600 mb-2">
             <CheckCircle2 className="h-5 w-5" />
@@ -467,10 +534,18 @@ export default function EstablishmentsPage() {
           <p className="text-2xl font-bold text-slate-800">{totalSuspended}</p>
         </div>
 
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-xl p-5 shadow-sm">
+          <div className="flex items-center gap-3 mb-2 opacity-90">
+            <Users className="h-5 w-5" />
+            <span className="text-sm font-medium">النشطون (السنة الحالية)</span>
+          </div>
+          <p className="text-2xl font-bold">{totalActiveStudents}</p>
+        </div>
+
         <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3 text-indigo-600 mb-2">
             <Users className="h-5 w-5" />
-            <span className="text-sm font-medium">إجمالي التلاميذ</span>
+            <span className="text-sm font-medium">إجمالي التلاميذ (كلي)</span>
           </div>
           <p className="text-2xl font-bold text-slate-800">{totalStudents}</p>
         </div>
@@ -571,7 +646,8 @@ export default function EstablishmentsPage() {
               <tr>
                 <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">المؤسسة</th>
                 <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase">الحالة</th>
-                <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase">التلاميذ</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase">النشطون</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase">الكلي</th>
                 <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">المدير</th>
                 <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase">الشعار</th>
                 <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase w-40">إجراءات</th>
@@ -605,10 +681,13 @@ export default function EstablishmentsPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <span className="inline-flex items-center gap-1 text-sm font-bold text-slate-700">
-                      <Users className="h-3.5 w-3.5 text-slate-400" />
-                      {est.student_count}
+                    <span className="inline-flex items-center gap-1 text-sm font-bold text-emerald-700">
+                      <Users className="h-3.5 w-3.5" />
+                      {est.active_student_count}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-slate-500 font-medium">
+                    {est.student_count}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                     {est.user_profiles && est.user_profiles.length > 0 ? (

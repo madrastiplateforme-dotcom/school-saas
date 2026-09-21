@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import DateInput from '@/components/DateInput'
 import { buildAbsenceMessage, openWhatsApp } from '@/lib/whatsapp'
 import { toast } from 'sonner'
@@ -54,6 +55,8 @@ export default function AttendancePage() {
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
+
   const canView = hasPermission('attendance', 'view') || hasPermission('students', 'view')
   const canCreate = hasPermission('attendance', 'create') || hasPermission('students', 'create')
 
@@ -70,15 +73,17 @@ export default function AttendancePage() {
   const [schoolName, setSchoolName] = useState('')
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !yearId) return
     loadClasses()
     loadSchoolName()
-  }, [establishmentId, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, yearId])
 
   useEffect(() => {
-    if (!selectedClass || !date) return
+    if (!selectedClass || !date || !yearId) return
     loadAttendance()
-  }, [selectedClass, date])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClass, date, yearId])
 
   const loadSchoolName = async () => {
     if (!establishmentId) return
@@ -92,13 +97,16 @@ export default function AttendancePage() {
   }
 
   const loadClasses = async () => {
+    if (!yearId) return
     const supabase = createClient()
     setLoading(true)
 
+    // ✅ Classes filtrées par année active
     const { data: classesData, error: err } = await supabase
       .from('classes')
       .select('id, name, level_id, levels(name)')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
       .order('name', { ascending: true })
 
     if (err) {
@@ -122,9 +130,11 @@ export default function AttendancePage() {
   }
 
   const loadAttendance = async () => {
+    if (!yearId) return
     setLoading(true)
     const supabase = createClient()
 
+    // ✅ Enrollments dyal l'année active
     const { data: enrollmentsData, error: stErr } = await supabase
       .from('enrollments')
       .select(`
@@ -136,6 +146,7 @@ export default function AttendancePage() {
       `)
       .eq('class_id', selectedClass)
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
       .eq('status', 'active')
 
     if (stErr) {
@@ -173,10 +184,12 @@ export default function AttendancePage() {
       return
     }
 
+    // ✅ Attendances dyal l'année active
     const { data: attData, error: attErr } = await supabase
       .from('attendances')
       .select('student_id, status, check_in_time, check_out_time, note')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
       .eq('attendance_date', date)
       .in('student_id', studentList.map(s => s.id))
 
@@ -309,7 +322,7 @@ export default function AttendancePage() {
   }
 
   const handleSave = async () => {
-    if (!establishmentId || !selectedClass || students.length === 0) return
+    if (!establishmentId || !selectedClass || students.length === 0 || !yearId) return
     setSaving(true)
 
     const supabase = createClient()
@@ -321,6 +334,7 @@ export default function AttendancePage() {
 
       const attToSave = Array.from(attendances.values()).map(a => ({
         establishment_id: establishmentId,
+        academic_year_id: yearId,           // 🎯 NEW
         student_id: a.student_id,
         class_id: selectedClass,
         level_id: selectedClassData?.level_id || null,
@@ -533,7 +547,7 @@ export default function AttendancePage() {
               className="w-full h-11 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             >
               {classes.length === 0 ? (
-                <option value="">لا توجد أقسام</option>
+                <option value="">لا توجد أقسام في هذه السنة</option>
               ) : (
                 classes.map(c => (
                   <option key={c.id} value={c.id}>{c.level_name} - {c.name}</option>
@@ -629,7 +643,7 @@ export default function AttendancePage() {
         <div className="bg-white rounded-2xl p-16 text-center border border-gray-100">
           <Users className="h-16 w-16 text-slate-300 mx-auto mb-4" />
           <p className="text-slate-500 font-medium">
-            {classes.length === 0 ? 'لا توجد أقسام. أضف أقسام أولاً' : 'لا يوجد تلاميذ في هذا القسم'}
+            {classes.length === 0 ? 'لا توجد أقسام في السنة الحالية' : 'لا يوجد تلاميذ في هذا القسم'}
           </p>
         </div>
       ) : (

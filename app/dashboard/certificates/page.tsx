@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   Award, RefreshCw, Search, X, User, Download, BookOpen,
   GraduationCap, CheckCircle2, AlertCircle, FileText,
@@ -26,6 +27,7 @@ const CERT_TYPES = [
 
 export default function DashboardCertificatesPage() {
   const establishmentId = useEstablishmentId()
+  const { yearId: contextYearId, year: contextYear } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -43,10 +45,10 @@ export default function DashboardCertificatesPage() {
   const studentBoxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!establishmentId) return
+    if (!establishmentId || !contextYearId) return
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [establishmentId])
+  }, [establishmentId, contextYearId])
 
   // Close dropdown outside
   useEffect(() => {
@@ -60,6 +62,7 @@ export default function DashboardCertificatesPage() {
   }, [])
 
   const loadData = async () => {
+    if (!contextYearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
@@ -68,40 +71,44 @@ export default function DashboardCertificatesPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // 1. Récupérer les étudiants actifs
+      // ✅ 1) Enrollments dyal l'année active → studentIds
+      const { data: enrollmentsData, error: enrErr } = await supabase
+        .from('enrollments')
+        .select('student_id, class_id')
+        .eq('establishment_id', establishmentId)
+        .eq('academic_year_id', contextYearId)
+        .eq('status', 'active')
+
+      if (enrErr) throw new Error(enrErr.message)
+
+      const studentIds = Array.from(
+        new Set((enrollmentsData || []).map((e: any) => e.student_id).filter(Boolean))
+      ) as string[]
+
+      if (studentIds.length === 0) {
+        setStudents([])
+        setLoading(false)
+        return
+      }
+
+      // ✅ 2) Students actifs dyal l'année active
       const { data: studentsData, error: stErr } = await supabase
         .from('students')
         .select('id, first_name, last_name, massar_code')
         .eq('establishment_id', establishmentId)
         .eq('status', 'active')
+        .in('id', studentIds)
         .order('first_name')
 
       if (stErr) throw new Error(stErr.message)
 
       const studentList = studentsData || []
-      const studentIds = studentList.map((s: any) => s.id)
 
-      // 2. Récupérer les enrollments pour connaître la classe actuelle
-      const { data: yearData } = await supabase
-        .from('academic_years')
-        .select('id')
-        .eq('establishment_id', establishmentId)
-        .eq('is_current', true)
-        .maybeSingle()
+      // ✅ 3) Classes + levels
+      const classIds = Array.from(
+        new Set((enrollmentsData || []).map((e: any) => e.class_id).filter(Boolean))
+      ) as string[]
 
-      let enrollmentsData: any[] = []
-      if (yearData?.id && studentIds.length > 0) {
-        const { data } = await supabase
-          .from('enrollments')
-          .select('student_id, class_id')
-          .in('student_id', studentIds)
-          .eq('academic_year_id', yearData.id)
-          .eq('status', 'active')
-        enrollmentsData = data || []
-      }
-
-      // 3. Récupérer les noms des classes + levels séparément
-      const classIds = Array.from(new Set(enrollmentsData.map((e: any) => e.class_id).filter(Boolean))) as string[]
       const classMap = new Map<string, { name: string; level_name: string | null }>()
 
       if (classIds.length > 0) {
@@ -110,9 +117,11 @@ export default function DashboardCertificatesPage() {
           .select('id, name, level_id')
           .in('id', classIds)
 
-        const levelIds = Array.from(new Set((classesData || []).map((c: any) => c.level_id).filter(Boolean))) as string[]
-        const levelMap = new Map<string, string>()
+        const levelIds = Array.from(
+          new Set((classesData || []).map((c: any) => c.level_id).filter(Boolean))
+        ) as string[]
 
+        const levelMap = new Map<string, string>()
         if (levelIds.length > 0) {
           const { data: levelsData } = await supabase
             .from('levels')
@@ -129,9 +138,9 @@ export default function DashboardCertificatesPage() {
         })
       }
 
-      // 4. Merge
+      // 4) Merge
       const result: Student[] = studentList.map((st: any) => {
-        const enr = enrollmentsData.find((e: any) => e.student_id === st.id)
+        const enr = (enrollmentsData || []).find((e: any) => e.student_id === st.id)
         const cls = enr?.class_id ? classMap.get(enr.class_id) : null
         return {
           id: st.id,
@@ -212,6 +221,7 @@ export default function DashboardCertificatesPage() {
             الشهادات المدرسية
           </h1>
           <p className="text-sm text-gray-500 mt-1">
+            {contextYear?.name && `${contextYear.name} — `}
             إصدار شهادات للتلاميذ
           </p>
         </div>
@@ -468,7 +478,9 @@ export default function DashboardCertificatesPage() {
       {students.length === 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <GraduationCap className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 font-medium">لا يوجد تلاميذ مسجلون فالمؤسسة</p>
+          <p className="text-slate-500 font-medium">
+            لا يوجد تلاميذ مسجلون في السنة الحالية
+          </p>
         </div>
       )}
     </div>

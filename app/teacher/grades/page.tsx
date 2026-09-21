@@ -2,14 +2,12 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   ClipboardList, RefreshCw, Save, Check, Info, Users, BookOpen,
   GraduationCap, Calendar, AlertCircle,
 } from 'lucide-react'
 
-// ═══════════════════════════════════════════════════
-// Types
-// ═══════════════════════════════════════════════════
 type LevelOpt = { id: string; name: string }
 type ClassOpt = { id: string; name: string; level_id: string; level_name: string }
 type SubjectOpt = { id: string; name: string; level_id: string }
@@ -28,6 +26,8 @@ type Student = { id: string; full_name: string; massar_code: string | null }
 const DEFAULT_MAX = 20
 
 export default function TeacherGradesPage() {
+  const { yearId } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -46,9 +46,6 @@ export default function TeacherGradesPage() {
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedEval, setSelectedEval] = useState('')
 
-  // ═══════════════════════════════════════════════════
-  // 1) Initial load
-  // ═══════════════════════════════════════════════════
   useEffect(() => {
     loadInitial()
   }, [])
@@ -171,11 +168,8 @@ export default function TeacherGradesPage() {
     }
   }
 
-  // ═══════════════════════════════════════════════════
-  // 2) Evaluations quand class + subject changent
-  // ═══════════════════════════════════════════════════
   useEffect(() => {
-    if (!selectedClass || !selectedSubject) {
+    if (!selectedClass || !selectedSubject || !yearId) {
       setEvaluations([])
       setSelectedEval('')
       setStudents([])
@@ -183,9 +177,10 @@ export default function TeacherGradesPage() {
       return
     }
     loadEvaluations()
-  }, [selectedClass, selectedSubject])
+  }, [selectedClass, selectedSubject, yearId])
 
   const loadEvaluations = async () => {
+    if (!yearId) return
     const supabase = createClient()
     setEvaluations([])
     setSelectedEval('')
@@ -193,23 +188,23 @@ export default function TeacherGradesPage() {
     setScores({})
 
     try {
-      // ⚠️ On tente de lire max_score. S'il n'existe pas en DB, on retombe sur null → DEFAULT_MAX (20).
       const { data, error: err } = await supabase
         .from('evaluations')
         .select('id, name, date, weight, term, class_id, subject_id, max_score')
         .eq('class_id', selectedClass)
         .eq('subject_id', selectedSubject)
+        .eq('academic_year_id', yearId)
         .eq('is_active', true)
         .order('date', { ascending: false })
 
       if (err) {
-        // Fallback si la colonne max_score n'existe pas encore
         console.warn('[loadEvaluations] retry without max_score:', err.message)
         const { data: data2, error: err2 } = await supabase
           .from('evaluations')
           .select('id, name, date, weight, term, class_id, subject_id')
           .eq('class_id', selectedClass)
           .eq('subject_id', selectedSubject)
+          .eq('academic_year_id', yearId)
           .eq('is_active', true)
           .order('date', { ascending: false })
 
@@ -229,9 +224,6 @@ export default function TeacherGradesPage() {
     }
   }
 
-  // ═══════════════════════════════════════════════════
-  // 3) Students + grades quand evaluation change
-  // ═══════════════════════════════════════════════════
   useEffect(() => {
     if (!selectedEval) {
       setStudents([])
@@ -242,7 +234,7 @@ export default function TeacherGradesPage() {
   }, [selectedEval])
 
   const loadStudentsAndGrades = async () => {
-    if (!establishmentId) return
+    if (!establishmentId || !yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
@@ -253,6 +245,7 @@ export default function TeacherGradesPage() {
         .select('student_id')
         .eq('class_id', selectedClass)
         .eq('establishment_id', establishmentId)
+        .eq('academic_year_id', yearId)
         .eq('status', 'active')
 
       if (enrErr) throw new Error(enrErr.message)
@@ -311,9 +304,6 @@ export default function TeacherGradesPage() {
     }
   }
 
-  // ═══════════════════════════════════════════════════
-  // Computed
-  // ═══════════════════════════════════════════════════
   const selectedClassObj = classes.find((c) => c.id === selectedClass)
   const selectedClassLevelId = selectedClassObj?.level_id
 
@@ -324,10 +314,8 @@ export default function TeacherGradesPage() {
 
   const selectedEvalObj = evaluations.find((e) => e.id === selectedEval)
 
-  // ⭐ Barème dynamique : max_score de l'évaluation, sinon 20
   const currentMax = selectedEvalObj?.max_score ?? DEFAULT_MAX
 
-  // ⭐ Détection des notes invalides
   const invalidStudents = useMemo(() => {
     const out: { id: string; name: string; value: string; reason: string }[] = []
     students.forEach((s) => {
@@ -347,13 +335,9 @@ export default function TeacherGradesPage() {
 
   const isRowInvalid = (id: string) => invalidStudents.some((x) => x.id === id)
 
-  // ═══════════════════════════════════════════════════
-  // Save
-  // ═══════════════════════════════════════════════════
   const handleSave = async () => {
     if (!selectedEval || !establishmentId || !staffId || students.length === 0) return
 
-    // ⭐ On refuse de sauvegarder s'il y a des notes invalides
     if (invalidStudents.length > 0) {
       const names = invalidStudents.slice(0, 3).map((x) => x.name).join('، ')
       const more = invalidStudents.length > 3 ? ` و ${invalidStudents.length - 3} آخرون` : ''
@@ -407,9 +391,6 @@ export default function TeacherGradesPage() {
     }
   }
 
-  // ═══════════════════════════════════════════════════
-  // Render
-  // ═══════════════════════════════════════════════════
   if (loading && classes.length === 0) {
     return (
       <div className="p-6 text-center" dir="rtl">
@@ -423,7 +404,6 @@ export default function TeacherGradesPage() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-      {/* Header */}
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -466,7 +446,6 @@ export default function TeacherGradesPage() {
         </div>
       )}
 
-      {/* Filters */}
       {hasTS && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -544,7 +523,6 @@ export default function TeacherGradesPage() {
         </div>
       )}
 
-      {/* Students + Scores */}
       {selectedEval && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
@@ -705,7 +683,6 @@ export default function TeacherGradesPage() {
         </div>
       )}
 
-      {/* Info footer */}
       {hasTS && !selectedEval && (
         <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 flex items-start gap-3">
           <BookOpen className="h-5 w-5 text-sky-600 flex-shrink-0 mt-0.5" />

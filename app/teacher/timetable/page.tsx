@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   Calendar, RefreshCw, Clock, MapPin, BookOpen, Users,
 } from 'lucide-react'
@@ -21,21 +22,23 @@ const AR_DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأرب
 const DAY_ORDER = [1, 2, 3, 4, 5, 6]
 
 export default function TeacherTimetablePage() {
+  const { yearId } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [slots, setSlots] = useState<Slot[]>([])
   const [schoolName, setSchoolName] = useState('')
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { loadData() }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true); setError('')
     const supabase = createClient()
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setError('غير مصرح'); setLoading(false); return }
 
-      // Profile + school
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('establishment_id, establishments(name)')
@@ -44,16 +47,16 @@ export default function TeacherTimetablePage() {
       const est = (profile as any)?.establishments
       if (est?.name) setSchoolName(est.name)
 
-      // Staff
       const { data: staffRow } = await supabase
         .from('staff').select('id').eq('user_id', user.id).maybeSingle()
       if (!staffRow?.id) { setLoading(false); return }
 
-      // Timetables — SANS JOIN
+      // ✅ Timetables filtrés par année active
       const { data: raw, error: ttErr } = await supabase
         .from('timetables')
         .select('id, day_of_week, start_time, end_time, room, subject_id, class_id')
         .eq('teacher_id', staffRow.id)
+        .eq('academic_year_id', yearId)
         .order('day_of_week')
         .order('start_time')
 

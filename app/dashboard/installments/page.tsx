@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import DateInput from '@/components/DateInput'
 import { openWhatsApp } from '@/lib/whatsapp'
 import { toast } from 'sonner'
@@ -21,6 +22,7 @@ type Installment = {
   due_date: string
   status: string
   student_id: string
+  contract_id: string | null
   students: { first_name: string; last_name: string } | null
   contracts: { id: string; start_date: string; end_date: string | null } | null
   payments: { id: string }[] | null
@@ -32,6 +34,8 @@ export default function InstallmentsPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
+  const { yearId } = useAcademicYear()
+
   const canViewInstallments = hasPermission('installments', 'view')
   const canCreatePayments = hasPermission('payments', 'create')
 
@@ -58,10 +62,11 @@ export default function InstallmentsPage() {
   }
 
   useEffect(() => {
-    if (!establishmentId) return
-    fetchData(establishmentId)
+    if (!establishmentId || !yearId) return
+    fetchData(establishmentId, yearId)
     loadSchoolName()
-  }, [establishmentId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, yearId])
 
   const loadSchoolName = async () => {
     if (!establishmentId) return
@@ -74,9 +79,34 @@ export default function InstallmentsPage() {
     if (data?.name) setSchoolName(data.name)
   }
 
-  const fetchData = async (sid: string) => {
+  const fetchData = async (sid: string, yid: string) => {
     const supabase = createClient()
+    setLoading(true)
 
+    // ✅ LOGIC CHANGE 1 : Contracts dyal l'année active → contractIds
+    const { data: contractsData, error: contractsErr } = await supabase
+      .from('contracts')
+      .select('id')
+      .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
+
+    if (contractsErr) {
+      console.error('[installments-contracts]', contractsErr?.message || contractsErr)
+      toast.error(contractsErr.message)
+      setLoading(false)
+      return
+    }
+
+    const contractIds = (contractsData || []).map((c: any) => c.id)
+
+    if (contractIds.length === 0) {
+      setInstallments([])
+      setCashRegisters([])
+      setLoading(false)
+      return
+    }
+
+    // ✅ LOGIC CHANGE 2 : Installments via contractIds (au lieu de establishment_id seul)
     const { data: installmentsData, error: installmentsError } = await supabase
       .from('installments')
       .select(`
@@ -86,6 +116,7 @@ export default function InstallmentsPage() {
         payments (id)
       `)
       .eq('establishment_id', sid)
+      .in('contract_id', contractIds)
       .order('due_date', { ascending: true })
 
     if (installmentsError) {
@@ -131,10 +162,12 @@ export default function InstallmentsPage() {
       setStudentPhones(new Map())
     }
 
+    // ✅ 3) Cash registers dyal l'année active
     const { data: cashData, error: cashError } = await supabase
       .from('cash_registers')
       .select('id, name')
       .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
 
     if (cashError) {
       console.error('[cash-registers]', cashError?.message || cashError)
@@ -152,10 +185,6 @@ export default function InstallmentsPage() {
       toast.error('لا يوجد رقم هاتف لهذا الولي')
       return
     }
-
-    const studentName = inst.students
-      ? `${inst.students.first_name} ${inst.students.last_name}`
-      : 'التلميذ'
 
     const remaining = inst.amount - inst.paid_amount
     const isOverdue = inst.status !== 'paid' && inst.due_date < today
@@ -217,7 +246,7 @@ export default function InstallmentsPage() {
   }
 
   const handleSavePayment = async () => {
-    if (!selectedInstallment || !establishmentId) return
+    if (!selectedInstallment || !establishmentId || !yearId) return
     if (paymentAmount <= 0) {
       setModalError('المبلغ يجب أن يكون أكبر من صفر')
       return
@@ -233,6 +262,7 @@ export default function InstallmentsPage() {
         .from('payments')
         .insert({
           establishment_id: establishmentId,
+          academic_year_id: yearId,        // 🎯 NEW
           student_id: selectedInstallment.student_id,
           installment_id: selectedInstallment.id,
           amount: paymentAmount,
@@ -255,7 +285,7 @@ export default function InstallmentsPage() {
       if (updateError) throw updateError
 
       toast.success('تم تسجيل الدفعة')
-      fetchData(establishmentId)
+      fetchData(establishmentId, yearId)
       closeModal()
     } catch (err: any) {
       console.error('[installments-save]', err?.message || err)

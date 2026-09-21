@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { generateInstallmentsForContract, type ServiceType } from '@/lib/billing'
 import DateInput from '@/components/DateInput'
 import {
@@ -101,6 +102,7 @@ export default function EnrollPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
+  const { yearId: contextYearId } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'new' | 'list'>('new')
@@ -176,32 +178,38 @@ export default function EnrollPage() {
 
   // ============ EFFECTS ============
   useEffect(() => {
-    if (!establishmentId) return
-    fetchInitialData(establishmentId)
-  }, [establishmentId])
+    if (!establishmentId || !contextYearId) return
+    fetchInitialData(establishmentId, contextYearId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, contextYearId])
 
   useEffect(() => {
     if (debouncedFamilySearch.trim()) searchFamilies()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedFamilySearch])
 
   useEffect(() => {
     if (debouncedStudentSearch.trim() && selectedFamily) searchStudentsInFamily()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedStudentSearch, selectedFamily])
 
   useEffect(() => {
     if (tab === 'list' && establishmentId) {
       loadEnrollments()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, establishmentId])
 
   useEffect(() => {
     if (tab === 'list' && establishmentId) {
       loadEnrollments()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterYear, filterLevel, filterClass, debouncedFilterSearch])
 
-  const fetchInitialData = async (sid: string) => {
+  const fetchInitialData = async (sid: string, yid: string) => {
     const supabase = createClient()
+
     const { data: yearsData } = await supabase
       .from('academic_years')
       .select('id, name, is_current, start_date, end_date')
@@ -214,14 +222,22 @@ export default function EnrollPage() {
       .eq('establishment_id', sid)
     setLevels(levelsData || [])
 
+    // ✅ Classes dyal l'année active (context)
     const { data: classesData } = await supabase
       .from('classes')
       .select('id, name, level_id')
       .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
     setClasses(classesData || [])
 
-    const current = (yearsData || []).find((y: any) => y.is_current)
-    if (current) setFilterYear(current.id)
+    // ✅ Default = context year (multi-year)
+    setFilterYear(yid)
+    setSelectedYear(yid)
+    const yearData = (yearsData || []).find((y: any) => y.id === yid)
+    if (yearData) {
+      setStartDate(yearData.start_date || '')
+      setEndDate(yearData.end_date || '')
+    }
 
     setLoading(false)
   }
@@ -306,33 +322,34 @@ export default function EnrollPage() {
   }
 
   const selectStudent = async (student: Student) => {
-    if (selectedYear || academicYears.find(y => y.is_current)) {
-      const yearId = selectedYear || academicYears.find(y => y.is_current)?.id
-      if (yearId) {
-        const supabase = createClient()
-        const { data: existing } = await supabase
-          .from('enrollments')
-          .select('id')
-          .eq('student_id', student.id)
-          .eq('academic_year_id', yearId)
-          .maybeSingle()
+    const yearCheck = selectedYear || contextYearId || academicYears.find(y => y.is_current)?.id
+    if (yearCheck) {
+      const supabase = createClient()
+      const { data: existing } = await supabase
+        .from('enrollments')
+        .select('id')
+        .eq('student_id', student.id)
+        .eq('academic_year_id', yearCheck)
+        .maybeSingle()
 
-        if (existing) {
-          const yearName = academicYears.find(y => y.id === yearId)?.name || ''
-          setError(`هذا التلميذ مسجل مسبقاً في السنة الدراسية "${yearName}". يمكنك تعديل تسجيله من قائمة التلاميذ المسجلين.`)
-          return
-        }
+      if (existing) {
+        const yearName = academicYears.find(y => y.id === yearCheck)?.name || ''
+        setError(`هذا التلميذ مسجل مسبقاً في السنة الدراسية "${yearName}". يمكنك تعديل تسجيله من قائمة التلاميذ المسجلين.`)
+        return
       }
     }
 
     setSelectedStudent(student)
     setShowNewStudent(false)
     setStep(2)
-    const cur = academicYears.find(y => y.is_current)
-    if (cur && !selectedYear) {
-      setSelectedYear(cur.id)
-      setStartDate(cur.start_date || '')
-      setEndDate(cur.end_date || '')
+
+    if (contextYearId && !selectedYear) {
+      setSelectedYear(contextYearId)
+      const yearData = academicYears.find(y => y.id === contextYearId)
+      if (yearData) {
+        setStartDate(yearData.start_date || '')
+        setEndDate(yearData.end_date || '')
+      }
     }
   }
 
@@ -363,11 +380,13 @@ export default function EnrollPage() {
       setSelectedStudent(data)
       setShowNewStudent(false)
       setStep(2)
-      const cur = academicYears.find(y => y.is_current)
-      if (cur && !selectedYear) {
-        setSelectedYear(cur.id)
-        setStartDate(cur.start_date || '')
-        setEndDate(cur.end_date || '')
+      if (contextYearId && !selectedYear) {
+        setSelectedYear(contextYearId)
+        const yearData = academicYears.find(y => y.id === contextYearId)
+        if (yearData) {
+          setStartDate(yearData.start_date || '')
+          setEndDate(yearData.end_date || '')
+        }
       }
     }
   }
@@ -438,7 +457,7 @@ export default function EnrollPage() {
     setSelectedServices((prev) => {
       const existing = prev.find((s) => s.service_id === serviceInfo.id)
       if (existing) return prev.filter((s) => s.service_id !== serviceInfo.id)
-            return [
+      return [
         ...prev,
         {
           service_id: serviceInfo.id,
@@ -707,7 +726,6 @@ export default function EnrollPage() {
 
     const supabase = createClient()
 
-    // 1. Contracts
     const { data: contracts } = await supabase
       .from('contracts')
       .select('id')
@@ -728,14 +746,12 @@ export default function EnrollPage() {
       return
     }
 
-    // 2. Installments
     const { data: inst } = await supabase
       .from('installments')
       .select('id')
       .in('contract_id', contractIds)
     const installmentIds = (inst || []).map(i => i.id)
 
-    // 3. Payments (باش نعرفو شكون مخلّص)
     let paidInstallmentIds: string[] = []
     let paymentsCount = 0
     let paidTotal = 0
@@ -772,7 +788,6 @@ export default function EnrollPage() {
     const supabase = createClient()
 
     try {
-      // 1. جيب العقود
       const { data: contracts } = await supabase
         .from('contracts')
         .select('id')
@@ -781,7 +796,6 @@ export default function EnrollPage() {
 
       const contractIds = (contracts || []).map(c => c.id)
 
-      // 2. جيب الأقساط
       let installmentIds: string[] = []
       if (contractIds.length > 0) {
         const { data: inst } = await supabase
@@ -791,7 +805,6 @@ export default function EnrollPage() {
         installmentIds = (inst || []).map(i => i.id)
       }
 
-      // 3. شوف شكون عندو payments
       let paidInstallmentIds: string[] = []
       if (installmentIds.length > 0) {
         const { data: pays } = await supabase
@@ -807,7 +820,6 @@ export default function EnrollPage() {
 
       const unpaidIds = installmentIds.filter(id => !paidInstallmentIds.includes(id))
 
-      // 4. حذف الأقساط غير المخلّصة فقط
       if (unpaidIds.length > 0) {
         const { error: iErr } = await supabase
           .from('installments')
@@ -816,7 +828,6 @@ export default function EnrollPage() {
         if (iErr) throw iErr
       }
 
-      // 5. إلا ما كاينش أي قسط مخلّص → حذف كامل للعقد
       if (paidInstallmentIds.length === 0) {
         if (contractIds.length > 0) {
           const { error: ciErr } = await supabase
@@ -832,16 +843,13 @@ export default function EnrollPage() {
           if (cErr) throw cErr
         }
       }
-      // إلا كانو أقساط مخلّصة → نخليو العقد + الأقساط المخلّصة + payments (سجل تاريخي)
 
-      // 6. حذف التسجيل
       const { error: eErr } = await supabase
         .from('enrollments')
         .delete()
         .eq('id', deleteTarget.id)
       if (eErr) throw eErr
 
-      // 7. رسالة نجاح
       if (paidInstallmentIds.length > 0) {
         setSuccess(
           `تم حذف التسجيل. تم الاحتفاظ بـ ${paidInstallmentIds.length} قسط مخلّص كسجل تاريخي.`
@@ -875,7 +883,6 @@ export default function EnrollPage() {
         <p className="text-gray-600 mt-1">تسجيل تلميذ جديد، أو مراجعة التسجيلات السابقة</p>
       </header>
 
-      {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-200 mb-6">
         <button
           onClick={() => setTab('new')}
@@ -914,7 +921,7 @@ export default function EnrollPage() {
         </div>
       )}
 
-      {/* =========================== TAB 1: NEW =========================== */}
+      {/* TAB 1: NEW */}
       {tab === 'new' && (
         <>
           <div className="mb-6 flex items-center gap-3 flex-wrap">
@@ -1294,7 +1301,7 @@ export default function EnrollPage() {
         </>
       )}
 
-      {/* =========================== TAB 2: LIST =========================== */}
+      {/* TAB 2: LIST */}
       {tab === 'list' && (
         <>
           <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6">
@@ -1411,27 +1418,13 @@ export default function EnrollPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">
-                        الاسم الكامل
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">
-                        رقم مسار
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">
-                        المستوى
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">
-                        القسم
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">
-                        السنة الدراسية
-                      </th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">
-                        الحالة
-                      </th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase w-32">
-                        إجراءات
-                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">الاسم الكامل</th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">رقم مسار</th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">المستوى</th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">القسم</th>
+                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">السنة الدراسية</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">الحالة</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase w-32">إجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1556,9 +1549,7 @@ export default function EnrollPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  المستوى
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">المستوى</label>
                 <select
                   value={editLevel}
                   onChange={(e) => {
@@ -1577,9 +1568,7 @@ export default function EnrollPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  القسم
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">القسم</label>
                 <select
                   value={editClass}
                   onChange={(e) => setEditClass(e.target.value)}
@@ -1596,9 +1585,7 @@ export default function EnrollPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  الحالة
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">الحالة</label>
                 <select
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
@@ -1685,7 +1672,6 @@ export default function EnrollPage() {
               </div>
             ) : (
               <>
-                {/* ملخص */}
                 <div
                   className={`rounded-lg p-4 mb-4 text-sm ${
                     deleteDetails.paidInstallments > 0
@@ -1705,7 +1691,6 @@ export default function EnrollPage() {
                   )}
                 </div>
 
-                {/* ما سيُحذف */}
                 <div className="border border-red-200 rounded-lg overflow-hidden mb-3">
                   <div className="bg-red-50 px-4 py-2 text-xs font-bold text-red-700 border-b border-red-200 flex items-center gap-2">
                     <Trash2 className="h-3.5 w-3.5" /> سيتم الحذف نهائياً
@@ -1732,7 +1717,6 @@ export default function EnrollPage() {
                   </div>
                 </div>
 
-                {/* ما سيُحتفظ به */}
                 {deleteDetails.paidInstallments > 0 && (
                   <div className="border border-emerald-200 rounded-lg overflow-hidden mb-4">
                     <div className="bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-700 border-b border-emerald-200 flex items-center gap-2">

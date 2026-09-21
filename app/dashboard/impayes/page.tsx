@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { buildImpayeMessage, openWhatsApp } from '@/lib/whatsapp'
 import { toast } from 'sonner'
 import {
@@ -37,6 +38,7 @@ type UnpaidStudent = {
 export default function ImpayesPage() {
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
 
@@ -56,10 +58,11 @@ export default function ImpayesPage() {
   const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !yearId) return
     loadData()
     loadSchoolName()
-  }, [establishmentId, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, yearId])
 
   const loadSchoolName = async () => {
     if (!establishmentId) return
@@ -73,22 +76,54 @@ export default function ImpayesPage() {
   }
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     const supabase = createClient()
+    const today = new Date().toISOString().split('T')[0]
 
+    // ✅ LOGIC CHANGE 1 : Récupérer les CONTRATS de l'année active
+    // ─────────────────────────────────────────────────────────────
+    // AVANT : on prenait TOUS les installments de l'établissement
+    //         → mélange des années (impayés 2025-2026 apparaissent en 2026-2027)
+    // APRÈS  : on prend uniquement les installments rattachés aux contrats
+    //         de l'année active (contracts.academic_year_id = yearId)
+    const { data: contractsData, error: contractsErr } = await supabase
+      .from('contracts')
+      .select('id')
+      .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
+
+    if (contractsErr) {
+      console.error('[impayes-contracts]', contractsErr?.message || contractsErr)
+      toast.error(contractsErr.message)
+      setLoading(false)
+      return
+    }
+
+    const contractIds = (contractsData || []).map((c: any) => c.id)
+
+    if (contractIds.length === 0) {
+      // Aucun contrat dyal l'année active → aucun impayé
+      setUnpaidStudents([])
+      setLoading(false)
+      return
+    }
+
+    // ✅ LOGIC CHANGE 2 : Filtrer installments par contractIds
+    // ─────────────────────────────────────────────────────────────
     const { data: instData, error: instError } = await supabase
       .from('installments')
       .select(`
-        id, description, amount, paid_amount, due_date, status, student_id,
+        id, description, amount, paid_amount, due_date, status, student_id, contract_id,
         students (
           id, first_name, last_name, family_id,
-          families (family_name, phone, email, parent_user_id),
-          enrollments (classes(name), levels(name))
+          families (family_name, phone, email, parent_user_id)
         )
       `)
       .eq('establishment_id', establishmentId)
+      .in('contract_id', contractIds)              // ← 🎯 LOGIC FILTER
       .in('status', ['pending', 'partially_paid'])
-      .lt('due_date', new Date().toISOString().split('T')[0])
+      .lt('due_date', today)
       .order('due_date', { ascending: true })
 
     if (instError) {
@@ -98,8 +133,60 @@ export default function ImpayesPage() {
       return
     }
 
+    // ✅ LOGIC CHANGE 3 : Récupérer les enrollments dyal l'année active
+    // ─────────────────────────────────────────────────────────────
+    // AVANT : JOIN 'enrollments(classes(name), levels(name))' dans students
+    //         → prenait la 1ère enrollment (n'importe quelle année)
+    // APRÈS  : fetch séparé filtré par academic_year_id = yearId
+    const studentIds = Array.from(
+      new Set((instData || []).map((i: any) => i.student_id).filter(Boolean)),
+    ) as string[]
+
+    const enrollmentByStudent = new Map<string, { className: string; levelName: string }>()
+
+    if (studentIds.length > 0) {
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('student_id, class_id, level_id')
+        .in('student_id', studentIds)
+        .eq('academic_year_id', yearId)             // ← 🎯 LOGIC FILTER
+        .eq('establishment_id', establishmentId)
+        .eq('status', 'active')
+
+      const classIds = Array.from(
+        new Set((enrollmentsData || []).map((e: any) => e.class_id).filter(Boolean)),
+      )
+      const levelIds = Array.from(
+        new Set((enrollmentsData || []).map((e: any) => e.level_id).filter(Boolean)),
+      )
+
+      const classMap = new Map<string, string>()
+      if (classIds.length > 0) {
+        const { data: classesData } = await supabase
+          .from('classes')
+          .select('id, name')
+          .in('id', classIds)
+        ;(classesData || []).forEach((c: any) => classMap.set(c.id, c.name))
+      }
+
+      const levelMap = new Map<string, string>()
+      if (levelIds.length > 0) {
+        const { data: levelsData } = await supabase
+          .from('levels')
+          .select('id, name')
+          .in('id', levelIds)
+        ;(levelsData || []).forEach((l: any) => levelMap.set(l.id, l.name))
+      }
+
+      ;(enrollmentsData || []).forEach((e: any) => {
+        enrollmentByStudent.set(e.student_id, {
+          className: e.class_id ? classMap.get(e.class_id) || '-' : '-',
+          levelName: e.level_id ? levelMap.get(e.level_id) || '-' : '-',
+        })
+      })
+    }
+
     const studentsMap = new Map<string, UnpaidStudent>()
-    const today = new Date()
 
     ;(instData || []).forEach((inst: any) => {
       const s = inst.students
@@ -109,12 +196,12 @@ export default function ImpayesPage() {
       if (remaining <= 0) return
 
       const dueDate = new Date(inst.due_date)
-      const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))
+      const daysOverdue = Math.floor(
+        (new Date().getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
+      )
 
       const family = s.families || {}
-      const enr = s.enrollments?.[0] || {}
-      const className = enr.classes?.name || '-'
-      const levelName = enr.levels?.name || '-'
+      const enr = enrollmentByStudent.get(s.id) || { className: '-', levelName: '-' }
 
       if (!studentsMap.has(s.id)) {
         studentsMap.set(s.id, {
@@ -124,8 +211,8 @@ export default function ImpayesPage() {
           parent_phone: family.phone || '',
           parent_email: family.email || '',
           parent_user_id: family.parent_user_id || null,
-          className,
-          levelName,
+          className: enr.className,
+          levelName: enr.levelName,
           total_unpaid: 0,
           installments: [],
           oldest_due_date: inst.due_date,
@@ -149,7 +236,9 @@ export default function ImpayesPage() {
       }
     })
 
-    setUnpaidStudents(Array.from(studentsMap.values()).sort((a, b) => b.total_unpaid - a.total_unpaid))
+    setUnpaidStudents(
+      Array.from(studentsMap.values()).sort((a, b) => b.total_unpaid - a.total_unpaid),
+    )
     setLoading(false)
   }
 
@@ -248,7 +337,6 @@ export default function ImpayesPage() {
     return { label: `${days} يوم (متأخر جداً)`, color: 'bg-red-200 text-red-900 font-bold' }
   }
 
-  // Skeleton
   if (loading || roleLoading) {
     return (
       <div className="p-6 space-y-6" dir="rtl">

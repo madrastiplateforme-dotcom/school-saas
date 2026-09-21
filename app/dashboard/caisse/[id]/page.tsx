@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   ArrowLeft, Wallet, TrendingUp, TrendingDown, ArrowDownLeft, ArrowUpRight,
   Plus, Send, User as UserIcon, Building2, Search, FileText,
@@ -26,6 +27,7 @@ export default function CaisseDetailPage() {
   const router = useRouter()
   const registerId = params.id as string
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
 
   const [register, setRegister] = useState<any>(null)
   const [movements, setMovements] = useState<Movement[]>([])
@@ -37,24 +39,26 @@ export default function CaisseDetailPage() {
   const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!registerId || !role) return
+    if (!registerId || !role || !yearId) return
     loadData()
-  }, [registerId, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registerId, role, yearId])
 
   const loadData = async () => {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // 1. Caisse
+    // 1. Caisse — vérifier qu'elle appartient à l'année active
     const { data: reg, error: regError } = await supabase
       .from('cash_registers')
       .select('*')
       .eq('id', registerId)
+      .eq('academic_year_id', yearId)
       .single()
 
     if (regError || !reg) {
-      setError('الصندوق غير موجود')
+      setError('الصندوق غير موجود لهذه السنة')
       setLoading(false)
       return
     }
@@ -70,17 +74,17 @@ export default function CaisseDetailPage() {
     const allMovements: Movement[] = []
 
     // ═════════════════════════════════════════════════════════════
-    // 2. Payments (exclut deleted_at SET, garde is_refunded=true)
+    // 2. Payments (filtrés par année + caisse)
     // ═════════════════════════════════════════════════════════════
     const { data: payments, error: payError } = await supabase
       .from('payments')
       .select('id, amount, payment_date, student_id, is_refunded')
       .eq('cash_register_id', registerId)
+      .eq('academic_year_id', yearId)
       .is('deleted_at', null)
 
     if (payError) console.error('Payments error:', payError?.message || payError)
 
-    // Récupérer les noms étudiants séparément (R1)
     const studentIds = Array.from(
       new Set((payments || []).map((p: any) => p.student_id).filter(Boolean))
     )
@@ -115,7 +119,7 @@ export default function CaisseDetailPage() {
     })
 
     // ═════════════════════════════════════════════════════════════
-    // 3. Expenses
+    // 3. Expenses (per-year via cash_register)
     // ═════════════════════════════════════════════════════════════
     const { data: expenses, error: expError } = await supabase
       .from('expenses')
@@ -146,7 +150,7 @@ export default function CaisseDetailPage() {
     })
 
     // ═════════════════════════════════════════════════════════════
-    // 4. Transfers out
+    // 4. Transfers out (per-year via cash_register)
     // ═════════════════════════════════════════════════════════════
     const { data: transfersOut, error: tOutError } = await supabase
       .from('cash_transfers')
@@ -181,7 +185,7 @@ export default function CaisseDetailPage() {
     })
 
     // ═════════════════════════════════════════════════════════════
-    // 5. Transfers in
+    // 5. Transfers in (per-year via cash_register)
     // ═════════════════════════════════════════════════════════════
     const { data: transfersIn, error: tInError } = await supabase
       .from('cash_transfers')

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useIsStaff } from '@/lib/useIsStaff'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   Calendar, GraduationCap, RefreshCw, ArrowLeft, CheckCircle2, Clock,
   Users, Search,
@@ -28,6 +29,7 @@ type TeacherRow = {
 export default function TimetableListPage() {
   const establishmentId = useEstablishmentId()
   const { isStaff, role, loading: roleLoading } = useIsStaff()
+  const { yearId } = useAcademicYear()
   const isDirector = isStaff
   const canManage = role === 'directeur' || role === 'secretaire'
   const [tab, setTab] = useState<'classes' | 'teachers'>('classes')
@@ -38,36 +40,32 @@ export default function TimetableListPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !yearId) return
     loadAll()
-  }, [establishmentId, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, yearId])
 
   const loadAll = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
 
-    // Current year
-    const { data: years } = await supabase
-      .from('academic_years')
-      .select('id')
-      .eq('establishment_id', establishmentId)
-      .eq('is_current', true)
-      .maybeSingle()
-    const yearId = years?.id
-
-    // Classes + levels
+    // ✅ Classes dyal l'année active
     const { data: classesData } = await supabase
       .from('classes')
       .select('id, name, level_id, levels(name)')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
       .order('name')
 
     const rows: ClassRow[] = []
     for (const c of classesData || []) {
-      let q = supabase.from('timetables').select('id', { count: 'exact', head: true }).eq('class_id', c.id)
-      if (yearId) q = q.eq('academic_year_id', yearId)
-      const { count } = await q
+      const { count } = await supabase
+        .from('timetables')
+        .select('id', { count: 'exact', head: true })
+        .eq('class_id', c.id)
+        .eq('academic_year_id', yearId)
       rows.push({
         id: c.id,
         name: c.name,
@@ -91,15 +89,12 @@ export default function TimetableListPage() {
       .select('teacher_id, weekly_hours')
       .eq('establishment_id', establishmentId)
 
-    let ttData: any[] = []
-    if (yearId) {
-      const { data } = await supabase
-        .from('timetables')
-        .select('teacher_id, start_time, end_time')
-        .eq('establishment_id', establishmentId)
-        .eq('academic_year_id', yearId)
-      ttData = data || []
-    }
+    // ✅ Timetables dyal l'année active
+    const { data: ttData } = await supabase
+      .from('timetables')
+      .select('teacher_id, start_time, end_time')
+      .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
 
     const toMin = (t: string) => {
       const [h, m] = t.split(':').map(Number)
@@ -157,7 +152,6 @@ export default function TimetableListPage() {
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
 
-      {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-200">
         <button
           onClick={() => { setTab('classes'); setSearch('') }}
@@ -183,7 +177,6 @@ export default function TimetableListPage() {
         </button>
       </div>
 
-      {/* Search */}
       <div className="relative">
         <Search className="absolute right-3 top-3 h-5 w-5 text-gray-400" />
         <input
@@ -195,12 +188,11 @@ export default function TimetableListPage() {
         />
       </div>
 
-      {/* Classes tab */}
       {tab === 'classes' && (
         filteredClasses.length === 0 ? (
           <div className="bg-white rounded-2xl p-16 text-center border border-gray-100">
             <Calendar className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-500 font-medium">لا توجد أقسام</p>
+            <p className="text-slate-500 font-medium">لا توجد أقسام في السنة الحالية</p>
             <Link href="/dashboard/classes" className="mt-4 inline-flex items-center gap-2 text-indigo-600 hover:underline font-medium">
               <ArrowLeft className="h-4 w-4" /> أضف أقسام أولاً
             </Link>
@@ -242,7 +234,6 @@ export default function TimetableListPage() {
         )
       )}
 
-      {/* Teachers tab */}
       {tab === 'teachers' && (
         filteredTeachers.length === 0 ? (
           <div className="bg-white rounded-2xl p-16 text-center border border-gray-100">

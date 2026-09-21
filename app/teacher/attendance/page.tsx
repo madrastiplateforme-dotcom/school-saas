@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { fetchTeacherData, TeacherClass } from '@/lib/useTeacherData'
 import {
   UserCheck, RefreshCw, Save, Check, Info, Calendar, AlertCircle,
@@ -17,6 +18,8 @@ type Student = {
 type Status = 'present' | 'absent' | 'late'
 
 export default function TeacherAttendancePage() {
+  const { yearId } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -31,8 +34,8 @@ export default function TeacherAttendancePage() {
 
   useEffect(() => { loadInitial() }, [])
   useEffect(() => {
-    if (selectedClass) loadStudentsAndAttendance()
-  }, [selectedClass, date])
+    if (selectedClass && yearId) loadStudentsAndAttendance()
+  }, [selectedClass, date, yearId])
 
   const loadInitial = async () => {
     setLoading(true); setError('')
@@ -54,19 +57,20 @@ export default function TeacherAttendancePage() {
   }
 
   const loadStudentsAndAttendance = async () => {
+    if (!yearId) return
     setLoading(true); setError('')
     const supabase = createClient()
     try {
-      // 1) Enrollments
+      // 1) Enrollments filtrés par année
       const { data: enrolls } = await supabase
         .from('enrollments')
         .select('student_id')
         .eq('class_id', selectedClass)
+        .eq('academic_year_id', yearId)
         .eq('status', 'active')
 
       const ids = (enrolls || []).map((e: any) => e.student_id).filter(Boolean)
 
-      // 2) Students
       let list: Student[] = []
       if (ids.length > 0) {
         const { data: studs } = await supabase
@@ -89,12 +93,13 @@ export default function TeacherAttendancePage() {
       }
       setStudents(list)
 
-      // 3) Attendance الموجودة
+      // 2) Attendance dyal l'année active
       const { data: existing } = await supabase
         .from('attendances')
         .select('student_id, status')
         .eq('class_id', selectedClass)
         .eq('attendance_date', date)
+        .eq('academic_year_id', yearId)
 
       const map: Record<string, Status> = {}
       ;(existing || []).forEach((a: any) => {
@@ -120,47 +125,48 @@ export default function TeacherAttendancePage() {
     setStatuses(next)
   }
 
- const handleSave = async () => {
-  if (!selectedClass || !date || !establishmentId) return
-  setSaving(true); setError(''); setSuccess('')
-  const supabase = createClient()
-  try {
-    const rows = students.map((s) => ({
-      establishment_id: establishmentId,
-      class_id: selectedClass,
-      student_id: s.id,
-      attendance_date: date,
-      status: statuses[s.id] || 'present',
-    }))
+  const handleSave = async () => {
+    if (!selectedClass || !date || !establishmentId || !yearId) return
+    setSaving(true); setError(''); setSuccess('')
+    const supabase = createClient()
+    try {
+      const rows = students.map((s) => ({
+        establishment_id: establishmentId,
+        academic_year_id: yearId,
+        class_id: selectedClass,
+        student_id: s.id,
+        attendance_date: date,
+        status: statuses[s.id] || 'present',
+      }))
 
-    const { error: err } = await supabase
-      .from('attendances')
-      .upsert(rows, { onConflict: 'class_id,student_id,attendance_date' })
+      const { error: err } = await supabase
+        .from('attendances')
+        .upsert(rows, { onConflict: 'class_id,student_id,attendance_date' })
 
-    if (err) throw err
+      if (err) throw err
 
-    // ⭐ إيميلات الغياب (fire & forget)
-    const absentIds = students
-      .filter((s) => statuses[s.id] === 'absent')
-      .map((s) => s.id)
+      const absentIds = students
+        .filter((s) => statuses[s.id] === 'absent')
+        .map((s) => s.id)
 
-    if (absentIds.length > 0) {
-      fetch('/api/teacher/absence-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentIds: absentIds, date }),
-      }).catch((e) => console.error('[absence-alert-call]', e))
-    }
+      if (absentIds.length > 0) {
+        fetch('/api/teacher/absence-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentIds: absentIds, date }),
+        }).catch((e) => console.error('[absence-alert-call]', e))
+      }
 
-    setSuccess(
-      `✅ تم حفظ الحضور${absentIds.length > 0 ? ` — جارٍ إرسال ${absentIds.length} إشعار غياب` : ''}`,
-    )
-    setTimeout(() => setSuccess(''), 4000)
-  } catch (e: any) {
-    console.error('[attendance-save]', e?.message || e)
-    setError(e?.message || 'فشل الحفظ')
-  } finally { setSaving(false) }
-}
+      setSuccess(
+        `✅ تم حفظ الحضور${absentIds.length > 0 ? ` — جارٍ إرسال ${absentIds.length} إشعار غياب` : ''}`,
+      )
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (e: any) {
+      console.error('[attendance-save]', e?.message || e)
+      setError(e?.message || 'فشل الحفظ')
+    } finally { setSaving(false) }
+  }
+
   if (loading && classes.length === 0) {
     return (
       <div className="p-6 text-center" dir="rtl">

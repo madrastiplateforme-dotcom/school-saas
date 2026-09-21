@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   ClipboardList, RefreshCw, Users, Calendar, AlertCircle, CheckCircle2,
   Clock, FileText,
@@ -42,23 +43,26 @@ const statusMap: Record<string, { bg: string; text: string; label: string }> = {
 }
 
 export default function ParentAttendancePage() {
+  const { yearId, year } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [children, setChildren] = useState<Child[]>([])
   const [activeChild, setActiveChild] = useState('')
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: profile } = await supabase
@@ -101,10 +105,12 @@ export default function ParentAttendancePage() {
 
       const childIds = students.map((s) => s.id)
 
+      // ✅ LOGIC CHANGE : attendances filtrées par année active
       const { data: attendances } = await supabase
         .from('attendances')
         .select('id, student_id, attendance_date, status, note, check_in_time, check_out_time')
         .in('student_id', childIds)
+        .eq('academic_year_id', yearId)
         .order('attendance_date', { ascending: false })
         .limit(200)
 
@@ -131,8 +137,8 @@ export default function ParentAttendancePage() {
       setChildren(result)
       if (result.length > 0) setActiveChild(result[0].id)
     } catch (e: any) {
-      console.error('[parent-attendance]', e)
-      setError(e.message || 'خطأ')
+      console.error('[parent-attendance]', e?.message || e)
+      setError(e?.message || 'خطأ')
     } finally {
       setLoading(false)
     }
@@ -158,6 +164,7 @@ export default function ParentAttendancePage() {
             الغيابات
           </h1>
           <p className="text-sm text-gray-500 mt-1">
+            {year?.name ? `${year.name} — ` : ''}
             سجل غيابات أبنائك
           </p>
         </div>
@@ -182,7 +189,6 @@ export default function ParentAttendancePage() {
         </div>
       )}
 
-      {/* Children tabs */}
       {children.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
           {children.map((c) => (
@@ -206,7 +212,6 @@ export default function ParentAttendancePage() {
         </div>
       )}
 
-      {/* Stats for current child */}
       {current && (
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
@@ -233,13 +238,12 @@ export default function ParentAttendancePage() {
         </div>
       )}
 
-      {/* Records list */}
       {current && current.records.length === 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <Calendar className="h-12 w-12 text-slate-300 mx-auto mb-3" />
           <p className="text-slate-500 font-medium">لا توجد سجلات غياب</p>
           <p className="text-xs text-slate-400 mt-1">
-            ممتاز! ما كايناش غيابات مسجلة
+            ممتاز! ما كايناش غيابات مسجلة فـ هاد السنة
           </p>
         </div>
       )}

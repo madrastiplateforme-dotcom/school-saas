@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   FileText, RefreshCw, ArrowLeft, Users, GraduationCap, Search,
   TrendingUp, Award,
@@ -22,6 +23,7 @@ type ClassRow = {
 export default function BulletinsListPage() {
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
   const canManage = role === 'directeur' || role === 'secretaire'
 
   const [classes, setClasses] = useState<ClassRow[]>([])
@@ -31,27 +33,18 @@ export default function BulletinsListPage() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !yearId) return
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [establishmentId, role])
+  }, [establishmentId, role, yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
 
-    // Current year
-    const { data: years } = await supabase
-      .from('academic_years')
-      .select('id')
-      .eq('establishment_id', establishmentId)
-      .eq('is_current', true)
-      .maybeSingle()
-
-    const yearId = years?.id
-
-    // Terms
+    // Terms settings
     const { data: settings } = await supabase
       .from('school_settings')
       .select('terms_count')
@@ -59,20 +52,15 @@ export default function BulletinsListPage() {
       .maybeSingle()
     setTermsCount(Number(settings?.terms_count) || 2)
 
-    // Classes
+    // ✅ Classes dyal l'année active
     const { data: classesData } = await supabase
       .from('classes')
       .select('id, name, level_id, levels(name)')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
       .order('name')
 
-    if (!yearId) {
-      setError('لا توجد سنة دراسية حالية')
-      setLoading(false)
-      return
-    }
-
-    // For each class: count students + published bulletins
+    // For each class: count students + published bulletins (déjà par year)
     const rows: ClassRow[] = []
     for (const c of classesData || []) {
       const { count: sc } = await supabase
@@ -153,7 +141,9 @@ export default function BulletinsListPage() {
       {filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-16 text-center border border-gray-100">
           <FileText className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-          <p className="text-slate-500 font-medium">لا توجد أقسام</p>
+          <p className="text-slate-500 font-medium">
+            {classes.length === 0 ? 'لا توجد أقسام في السنة الحالية' : 'لا توجد نتائج'}
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

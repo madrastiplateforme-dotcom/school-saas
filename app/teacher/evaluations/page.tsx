@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { fetchTeacherData, TeacherClass } from '@/lib/useTeacherData'
 import {
   ClipboardList, RefreshCw, Plus, Trash2, Calendar, X, Save,
@@ -37,6 +38,8 @@ const fmtDate = (d: string | null) => {
 }
 
 export default function TeacherEvaluationsPage() {
+  const { yearId } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -44,7 +47,6 @@ export default function TeacherEvaluationsPage() {
 
   const [staffId, setStaffId] = useState('')
   const [estabId, setEstabId] = useState('')
-  const [yearId, setYearId] = useState('')
 
   const [classes, setClasses] = useState<TeacherClass[]>([])
   const [evalTypes, setEvalTypes] = useState<EvalType[]>([])
@@ -65,7 +67,7 @@ export default function TeacherEvaluationsPage() {
   })
 
   useEffect(() => { loadInit() }, [])
-  useEffect(() => { if (staffId && selectedClass && selectedSubject) loadEvaluations() }, [staffId, selectedClass, selectedSubject])
+  useEffect(() => { if (staffId && selectedClass && selectedSubject && yearId) loadEvaluations() }, [staffId, selectedClass, selectedSubject, yearId])
 
   const loadInit = async () => {
     setLoading(true); setError('')
@@ -83,13 +85,6 @@ export default function TeacherEvaluationsPage() {
       setStaffId(sid)
       setEstabId(establishmentId)
 
-      // Academic year
-      const { data: year } = await supabase
-        .from('academic_years').select('id')
-        .eq('establishment_id', establishmentId).eq('is_current', true).maybeSingle()
-      if (year?.id) setYearId(year.id)
-
-      // Evaluation types
       const { data: types } = await supabase
         .from('evaluation_types')
         .select('id, code, name_ar, name_fr')
@@ -110,12 +105,16 @@ export default function TeacherEvaluationsPage() {
   }
 
   const loadEvaluations = async () => {
+    if (!yearId) return
     const supabase = createClient()
+
+    // ✅ Filter par année active
     const { data: raw, error: err } = await supabase
       .from('evaluations')
       .select('id, name, date, term, weight, is_active, evaluation_type_id, subject_id, class_id')
       .eq('class_id', selectedClass)
       .eq('subject_id', selectedSubject)
+      .eq('academic_year_id', yearId)
       .order('date', { ascending: false })
 
     if (err) { console.error(err); setEvaluations([]); return }

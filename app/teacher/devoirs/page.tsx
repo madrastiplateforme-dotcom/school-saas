@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { fetchTeacherData, TeacherClass } from '@/lib/useTeacherData'
 import {
   FileText, RefreshCw, Plus, Edit3, Trash2, X, Save, Calendar,
@@ -31,13 +32,14 @@ const daysUntil = (s: string) => {
 }
 
 export default function TeacherDevoirsPage() {
+  const { yearId } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const [staffId, setStaffId] = useState('')
   const [estabId, setEstabId] = useState('')
-  const [yearId, setYearId] = useState('')
 
   const [classes, setClasses] = useState<TeacherClass[]>([])
   const [selectedClass, setSelectedClass] = useState('')
@@ -53,7 +55,7 @@ export default function TeacherDevoirsPage() {
   })
 
   useEffect(() => { loadInit() }, [])
-  useEffect(() => { if (staffId) loadDevoirs() }, [selectedClass, selectedSubject, mineOnly, staffId])
+  useEffect(() => { if (staffId && yearId) loadDevoirs() }, [selectedClass, selectedSubject, mineOnly, staffId, yearId])
 
   const loadInit = async () => {
     setLoading(true); setError('')
@@ -69,11 +71,6 @@ export default function TeacherDevoirsPage() {
       setStaffId(sid)
       setEstabId(establishmentId || '')
 
-      const { data: year } = await supabase
-        .from('academic_years').select('id')
-        .eq('establishment_id', establishmentId).eq('is_current', true).maybeSingle()
-      if (year?.id) setYearId(year.id)
-
       setClasses(list)
       if (list.length > 0) {
         setSelectedClass(list[0].id)
@@ -86,13 +83,15 @@ export default function TeacherDevoirsPage() {
   }
 
   const loadDevoirs = async () => {
-    if (!selectedClass) return
+    if (!selectedClass || !yearId) return
     const supabase = createClient()
 
+    // ✅ Filter par année
     let q = supabase
       .from('devoirs')
       .select('id, title, description, due_date, attachment_url, subject_id, teacher_id')
       .eq('class_id', selectedClass)
+      .eq('academic_year_id', yearId)
       .order('due_date', { ascending: true })
       .limit(100)
 
@@ -164,6 +163,7 @@ export default function TeacherDevoirsPage() {
     if (!form.title.trim() || !form.due_date || !selectedSubject) {
       setError('خاص العنوان + تاريخ التسليم + المادة'); return
     }
+    if (!yearId) { setError('لا توجد سنة دراسية محددة'); return }
     setSaving(true); setError('')
     const supabase = createClient()
     try {
@@ -181,6 +181,7 @@ export default function TeacherDevoirsPage() {
       } else {
         const payload: any = {
           establishment_id: estabId,
+          academic_year_id: yearId,
           class_id: selectedClass,
           subject_id: selectedSubject,
           teacher_id: staffId,
@@ -189,7 +190,6 @@ export default function TeacherDevoirsPage() {
           due_date: form.due_date,
           attachment_url: form.attachment_url.trim() || null,
         }
-        if (yearId) payload.academic_year_id = yearId
         const { error: err } = await supabase.from('devoirs').insert(payload)
         if (err) throw err
       }

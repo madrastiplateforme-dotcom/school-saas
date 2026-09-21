@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   ArrowRight, BookOpen, GraduationCap, Wallet, Calendar, TrendingUp,
   CheckCircle2, AlertCircle, Clock, Award, FileText, User,
@@ -27,13 +28,12 @@ const formatDate = (d?: string | null) => {
 export default function ChildDetailPage() {
   const params = useParams()
   const childId = params?.id as string
+  const { yearId, year } = useAcademicYear()
 
   const [child, setChild] = useState<any>(null)
-  const [yearName, setYearName] = useState('')
   const [gradeMax, setGradeMax] = useState(20)
   const [tab, setTab] = useState<Tab>('overview')
 
-  // Data
   const [bulletins, setBulletins] = useState<any[]>([])
   const [installments, setInstallments] = useState<any[]>([])
   const [payments, setPayments] = useState<any[]>([])
@@ -53,15 +53,16 @@ export default function ChildDetailPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (childId) loadAll()
-  }, [childId])
+    if (childId && yearId) loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [childId, yearId])
 
   const loadAll = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
 
-    // 1. Child (مع التحقق أنه من عائلة الأب)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
@@ -93,49 +94,38 @@ export default function ChildDetailPage() {
     if (!student) { setError('التلميذ غير موجود'); setLoading(false); return }
     setChild(student)
 
-    // 2. Current year
-    const { data: year } = await supabase
-      .from('academic_years')
-      .select('id, name')
-      .eq('establishment_id', estabId)
-      .eq('is_current', true)
-      .maybeSingle()
-
-    if (!year?.id) { setLoading(false); return }
-    setYearName(year.name)
-
-    // 3. Enrollment + class
+    // Enrollment + class (yearId du context)
     const { data: enr } = await supabase
       .from('enrollments')
       .select('*, classes(name, levels(name, grade_max))')
       .eq('student_id', childId)
-      .eq('academic_year_id', year.id)
+      .eq('academic_year_id', yearId)
       .maybeSingle()
 
     setGradeMax(Number((enr?.classes as any)?.levels?.grade_max) || 20)
-    // 4. Bulletins (published)
+
+    // Bulletins (yearId)
     const { data: bData } = await supabase
       .from('bulletins')
       .select('*')
       .eq('student_id', childId)
-      .eq('academic_year_id', year.id)
+      .eq('academic_year_id', yearId)
       .eq('is_published', true)
       .order('term', { ascending: true })
     setBulletins(bData || [])
 
-    // آخر معدل
     let avg: number | null = null
     if (bData && bData.length > 0) {
       const latest = [...bData].sort((a, b) => b.term - a.term)[0]
       avg = latest.average
     }
 
-    // 5. Contract + Installments + Payments
+    // Contracts (yearId)
     const { data: contracts } = await supabase
       .from('contracts')
       .select('id')
       .eq('student_id', childId)
-      .eq('academic_year_id', year.id)
+      .eq('academic_year_id', yearId)
 
     const contractIds = (contracts || []).map(c => c.id)
 
@@ -157,6 +147,7 @@ export default function ChildDetailPage() {
         .from('payments')
         .select('*')
         .in('installment_id', instIds)
+        .is('deleted_at', null)
         .order('payment_date', { ascending: false })
       pays = data || []
     }
@@ -169,22 +160,21 @@ export default function ChildDetailPage() {
       .filter(i => !paidInstIds.has(i.id))
       .reduce((s, i) => s + Number(i.amount || 0), 0)
 
-    // 6. Attendances
+    // ✅ Attendances dyal l'année active (LOGIC FIX)
     const { data: att } = await supabase
-  .from('attendances')
-  .select('*')
-  .eq('student_id', childId)
-  .order('attendance_date', { ascending: false })
-  .limit(50)
-setAttendances(att || [])
+      .from('attendances')
+      .select('*')
+      .eq('student_id', childId)
+      .eq('academic_year_id', yearId)
+      .order('attendance_date', { ascending: false })
+      .limit(50)
+    setAttendances(att || [])
 
-const absences = (att || []).filter(a => a.status === 'absent').length
-const lates = (att || []).filter(a => a.status === 'late').length
-const justified = (att || []).filter(a => a.status === 'excused').length
-const unjustified = absences - justified
-    // 7. Grades raw (لتفاصيل أكثر)
-    // نجيبو evaluations + grades للتلميذ
-    
+    const absences = (att || []).filter(a => a.status === 'absent').length
+    const lates = (att || []).filter(a => a.status === 'late').length
+    const justified = (att || []).filter(a => a.status === 'excused').length
+    const unjustified = absences - justified
+
     setStats({
       average: avg,
       totalAmount,
@@ -215,12 +205,8 @@ const unjustified = absences - justified
   const passThreshold = gradeMax / 2
   const overallPass = stats.average != null && stats.average >= passThreshold
 
-  // Group grades by subject
-
-
   return (
     <div className="p-6 space-y-6" dir="rtl">
-      {/* Header */}
       <header className="flex items-center gap-3">
         <Link
           href="/parent/dashboard"
@@ -245,17 +231,16 @@ const unjustified = absences - justified
                 {formatDate(child.birth_date)}
               </span>
             )}
-            {yearName && (
+            {year?.name && (
               <span className="flex items-center gap-1">
                 <Award className="h-3.5 w-3.5" />
-                {yearName}
+                {year.name}
               </span>
             )}
           </p>
         </div>
       </header>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className={`bg-white rounded-2xl border shadow-sm p-4 ${
           overallPass ? 'border-emerald-200' : 'border-orange-200'
@@ -307,7 +292,6 @@ const unjustified = absences - justified
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-200 overflow-x-auto">
         {([
           { id: 'overview', label: 'نظرة عامة', icon: User },
@@ -330,10 +314,8 @@ const unjustified = absences - justified
         ))}
       </div>
 
-      {/* Tab content */}
       {tab === 'overview' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Bulletins summary */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
               <FileText className="h-4 w-4 text-indigo-600" />
@@ -359,7 +341,6 @@ const unjustified = absences - justified
             )}
           </div>
 
-          {/* Financial summary */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
               <Wallet className="h-4 w-4 text-indigo-600" />
@@ -422,7 +403,6 @@ const unjustified = absences - justified
 
       {tab === 'payments' && (
         <div className="space-y-4">
-          {/* Installments */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-3 bg-slate-50 border-b border-slate-200">
               <h3 className="font-bold text-slate-800 text-sm">الأقساط ({installments.length})</h3>
@@ -460,7 +440,6 @@ const unjustified = absences - justified
             )}
           </div>
 
-          {/* Payments history */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-3 bg-slate-50 border-b border-slate-200">
               <h3 className="font-bold text-slate-800 text-sm">سجل المدفوعات ({payments.length})</h3>
@@ -503,41 +482,40 @@ const unjustified = absences - justified
           ) : (
             <div className="divide-y divide-slate-100">
               {attendances.map(a => {
-  // ⚠️ Tailwind ما كيديرش classes dynamic — كنستعملو objects جاهزة
-  const styleMap: Record<string, { bg: string; text: string; icon: string; label: string }> = {
-    absent:  { bg: 'bg-rose-50',    text: 'text-rose-700',    icon: 'bg-rose-100 text-rose-700',    label: 'غائب' },
-    late:    { bg: 'bg-amber-50',   text: 'text-amber-700',   icon: 'bg-amber-100 text-amber-700',  label: 'متأخر' },
-    excused: { bg: 'bg-blue-50',    text: 'text-blue-700',    icon: 'bg-blue-100 text-blue-700',    label: 'مبرر' },
-    present: { bg: 'bg-emerald-50', text: 'text-emerald-700', icon: 'bg-emerald-100 text-emerald-700', label: 'حاضر' },
-  }
-  const st = styleMap[a.status] || styleMap.present
+                const styleMap: Record<string, { bg: string; text: string; icon: string; label: string }> = {
+                  absent:  { bg: 'bg-rose-50',    text: 'text-rose-700',    icon: 'bg-rose-100 text-rose-700',    label: 'غائب' },
+                  late:    { bg: 'bg-amber-50',   text: 'text-amber-700',   icon: 'bg-amber-100 text-amber-700',  label: 'متأخر' },
+                  excused: { bg: 'bg-blue-50',    text: 'text-blue-700',    icon: 'bg-blue-100 text-blue-700',    label: 'مبرر' },
+                  present: { bg: 'bg-emerald-50', text: 'text-emerald-700', icon: 'bg-emerald-100 text-emerald-700', label: 'حاضر' },
+                }
+                const st = styleMap[a.status] || styleMap.present
 
-  return (
-    <div key={a.id} className="p-4 flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${st.icon}`}>
-          <Calendar className="h-4 w-4" />
-        </div>
-        <div>
-          <p className="text-sm font-medium text-slate-800">
-            {formatDate(a.attendance_date)}
-          </p>
-          {a.note && (
-            <p className="text-xs text-slate-500">{a.note}</p>
-          )}
-          {(a.check_in_time || a.check_out_time) && (
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              {a.check_in_time?.slice(0, 5) || '—'} → {a.check_out_time?.slice(0, 5) || '—'}
-            </p>
-          )}
-        </div>
-      </div>
-      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${st.bg} ${st.text}`}>
-        {st.label}
-      </span>
-    </div>
-  )
-})}
+                return (
+                  <div key={a.id} className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${st.icon}`}>
+                        <Calendar className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">
+                          {formatDate(a.attendance_date)}
+                        </p>
+                        {a.note && (
+                          <p className="text-xs text-slate-500">{a.note}</p>
+                        )}
+                        {(a.check_in_time || a.check_out_time) && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {a.check_in_time?.slice(0, 5) || '—'} → {a.check_out_time?.slice(0, 5) || '—'}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${st.bg} ${st.text}`}>
+                      {st.label}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

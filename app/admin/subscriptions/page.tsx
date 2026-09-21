@@ -17,9 +17,9 @@ type SchoolSub = {
   started_at: string
   current_period_start: string | null
   current_period_end: string | null
-  // enriched
   school_name: string
   students_count: number
+  active_student_count: number
   monthly_amount: number
   invoices_count: number
   unpaid_amount: number
@@ -85,17 +85,66 @@ export default function SubscriptionsPage() {
       return
     }
 
-    // 2. For each, count students + invoices
+    const estabIds = (subsData || [])
+      .map((s: any) => s.establishment_id)
+      .filter(Boolean)
+
+    // ✅ 2. Années courantes par établissement
+    const currentYearByEstab = new Map<string, string>()
+    if (estabIds.length > 0) {
+      const { data: currentYears } = await supabase
+        .from('academic_years')
+        .select('id, establishment_id')
+        .eq('is_current', true)
+        .in('establishment_id', estabIds)
+
+      ;(currentYears || []).forEach((y: any) => {
+        if (y.establishment_id && y.id) {
+          currentYearByEstab.set(y.establishment_id, y.id)
+        }
+      })
+    }
+
+    const yearIds = Array.from(currentYearByEstab.values())
+
+    // ✅ 3. Élèves actifs f l'année courante per établissement
+    const activeCountByEstab = new Map<string, number>()
+    if (yearIds.length > 0) {
+      const { data: enrollsData } = await supabase
+        .from('enrollments')
+        .select('student_id, academic_year_id')
+        .in('academic_year_id', yearIds)
+        .eq('status', 'active')
+
+      const yearToEstab = new Map<string, string>()
+      currentYearByEstab.forEach((yearId, estabId) => {
+        yearToEstab.set(yearId, estabId)
+      })
+
+      const studentSetByEstab = new Map<string, Set<string>>()
+      ;(enrollsData || []).forEach((e: any) => {
+        const estabId = yearToEstab.get(e.academic_year_id)
+        if (!estabId || !e.student_id) return
+        if (!studentSetByEstab.has(estabId)) {
+          studentSetByEstab.set(estabId, new Set())
+        }
+        studentSetByEstab.get(estabId)!.add(e.student_id)
+      })
+
+      studentSetByEstab.forEach((set, estabId) => {
+        activeCountByEstab.set(estabId, set.size)
+      })
+    }
+
+    // 4. For each, count students (global) + invoices
     const rows: SchoolSub[] = []
     for (const s of subsData || []) {
-      // count students
       const { count: studentsCount } = await supabase
         .from('students')
         .select('id', { count: 'exact', head: true })
         .eq('establishment_id', s.establishment_id)
         .eq('status', 'active')
 
-      // invoices
       const { data: invs } = await supabase
         .from('subscription_invoices')
         .select('amount, status')
@@ -116,6 +165,7 @@ export default function SubscriptionsPage() {
         current_period_end: s.current_period_end,
         school_name: (s.establishments as any)?.name || '—',
         students_count: studentsCount || 0,
+        active_student_count: activeCountByEstab.get(s.establishment_id) || 0,
         monthly_amount: calcAmount(studentsCount || 0),
         invoices_count: invoicesCount,
         unpaid_amount: unpaidAmount,
@@ -166,8 +216,8 @@ export default function SubscriptionsPage() {
     return true
   })
 
-  // Stats
   const totalStudents = subs.reduce((s, r) => s + r.students_count, 0)
+  const totalActiveStudents = subs.reduce((s, r) => s + r.active_student_count, 0)
   const totalMonthlyRevenue = subs
     .filter(s => s.status === 'active')
     .reduce((s, r) => s + r.monthly_amount, 0)
@@ -217,7 +267,7 @@ export default function SubscriptionsPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
@@ -228,12 +278,20 @@ export default function SubscriptionsPage() {
           <div className="text-2xl font-bold text-slate-800">{subs.length}</div>
         </div>
 
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-2xl shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-2 opacity-90">
+            <Users className="h-4 w-4" />
+            <span className="text-xs font-medium">النشطون (السنة الجارية)</span>
+          </div>
+          <div className="text-2xl font-bold">{totalActiveStudents}</div>
+        </div>
+
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
               <Users className="h-4 w-4" />
             </div>
-            <span className="text-xs font-medium text-slate-500">إجمالي التلاميذ</span>
+            <span className="text-xs font-medium text-slate-500">إجمالي التلاميذ (كلي)</span>
           </div>
           <div className="text-2xl font-bold text-slate-800">{totalStudents}</div>
         </div>
@@ -325,7 +383,10 @@ export default function SubscriptionsPage() {
                     المدرسة
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">
-                    التلاميذ
+                    النشطون
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">
+                    الكلي
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 uppercase">
                     الخطة
@@ -364,9 +425,13 @@ export default function SubscriptionsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className="inline-flex items-center gap-1 text-sm font-bold text-slate-700">
-                          {s.students_count}
+                        <span className="inline-flex items-center gap-1 text-sm font-bold text-emerald-700">
+                          <Users className="h-3.5 w-3.5" />
+                          {s.active_student_count}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-center text-sm text-slate-500 font-medium">
+                        {s.students_count}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <select
@@ -448,7 +513,7 @@ export default function SubscriptionsPage() {
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3 text-sm text-blue-800">
         <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
         <div>
-          <strong>معادلة الحساب:</strong> المبلغ الشهري = (عدد التلاميذ − 20) × 1.5 د.م. المدارس اللي عندها 20 تلميذاً أو أقل مجانية.
+          <strong>معادلة الحساب:</strong> المبلغ الشهري = (عدد التلاميذ الكلي − 20) × 1.5 د.م. المدارس اللي عندها 20 تلميذاً أو أقل مجانية. عمود <strong>النشطون</strong> = élèves مسجلين فـ السنة الجارية.
         </div>
       </div>
     </div>

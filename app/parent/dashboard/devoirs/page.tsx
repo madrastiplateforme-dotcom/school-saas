@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   FileText, RefreshCw, Users, Calendar, GraduationCap, BookOpen,
   AlertCircle, Clock, CheckCircle2, Paperclip,
@@ -45,6 +46,8 @@ const daysUntil = (dateStr: string) => {
 }
 
 export default function ParentDevoirsPage() {
+  const { yearId, year } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [children, setChildren] = useState<Child[]>([])
@@ -52,17 +55,18 @@ export default function ParentDevoirsPage() {
   const [showPast, setShowPast] = useState(false)
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: profile } = await supabase
@@ -91,13 +95,6 @@ export default function ParentDevoirsPage() {
         return
       }
 
-      const { data: year } = await supabase
-        .from('academic_years')
-        .select('id')
-        .eq('establishment_id', estabId)
-        .eq('is_current', true)
-        .maybeSingle()
-
       const { data: students } = await supabase
         .from('students')
         .select('id, first_name, last_name')
@@ -112,28 +109,27 @@ export default function ParentDevoirsPage() {
 
       const childIds = students.map((s) => s.id)
 
-      let enrollmentsData: any[] = []
-      if (year?.id) {
-        const { data } = await supabase
-          .from('enrollments')
-          .select('student_id, class_id, classes(name, levels(name))')
-          .in('student_id', childIds)
-          .eq('academic_year_id', year.id)
-        enrollmentsData = data || []
-      }
+      // ✅ Enrollments dyal l'année active
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('student_id, class_id, classes(name, levels(name))')
+        .in('student_id', childIds)
+        .eq('academic_year_id', yearId)
 
-      const classIds = enrollmentsData
+      const classIds = (enrollmentsData || [])
         .map((e) => e.class_id)
         .filter(Boolean) as string[]
 
+      // ✅ Devoirs filtrés par année active + classes
       let devoirsData: any[] = []
       if (classIds.length > 0) {
         const { data } = await supabase
           .from('devoirs')
           .select(
-            'id, class_id, title, description, due_date, attachment_url, subjects(name), staff(full_name)',
+            'id, class_id, title, description, due_date, attachment_url, academic_year_id, subjects(name), staff(full_name)',
           )
           .in('class_id', classIds)
+          .eq('academic_year_id', yearId)
           .order('due_date', { ascending: true })
           .limit(200)
         devoirsData = data || []
@@ -143,8 +139,8 @@ export default function ParentDevoirsPage() {
       today.setHours(0, 0, 0, 0)
 
       const result: Child[] = students.map((st) => {
-        const enr = enrollmentsData.find((e) => e.student_id === st.id)
-        const cls = enr?.classes
+        const enr = (enrollmentsData || []).find((e) => e.student_id === st.id)
+        const cls = enr?.classes as any
         const childDevoirs: Devoir[] = devoirsData
           .filter((d) => d.class_id === enr?.class_id)
           .map((d: any) => {
@@ -174,8 +170,8 @@ export default function ParentDevoirsPage() {
       setChildren(result)
       if (result.length > 0) setActiveChild(result[0].id)
     } catch (e: any) {
-      console.error('[parent-devoirs]', e)
-      setError(e.message || 'خطأ')
+      console.error('[parent-devoirs]', e?.message || e)
+      setError(e?.message || 'خطأ')
     } finally {
       setLoading(false)
     }
@@ -208,6 +204,7 @@ export default function ParentDevoirsPage() {
             الفروض المنزلية
           </h1>
           <p className="text-sm text-gray-500 mt-1">
+            {year?.name && `${year.name} — `}
             تتبع الفروض المنزلية لأبنائك
           </p>
         </div>

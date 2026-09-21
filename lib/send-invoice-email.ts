@@ -5,6 +5,46 @@ import { createAdminClient } from '@/lib/supabase-admin'
 import { sendEmail } from '@/lib/email'
 import { invoiceEmail, monthLabelAR } from '@/lib/email-templates'
 
+// ─────────────────────────────────────────────────────────
+// 🔑 Rôle names acceptés (multi-langue, multi-casse) — même logique que send-payment-email
+// ─────────────────────────────────────────────────────────
+const DIRECTOR_ROLES = ['directeur', 'Directeur', 'DIRECTEUR', 'مدير', 'المدير', 'director']
+
+function isDirectorRole(name: string | null | undefined): boolean {
+  if (!name) return false
+  const n = name.trim()
+  return DIRECTOR_ROLES.includes(n) || n.toLowerCase().includes('direct')
+}
+
+// ─────────────────────────────────────────────────────────
+// 🔑 Charge les rôles depuis table roles (id → name)
+// ─────────────────────────────────────────────────────────
+async function loadRoleMap(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<Map<string, string>> {
+  const { data } = await admin.from('roles').select('id, name')
+  const map = new Map<string, string>()
+  for (const r of data || []) {
+    map.set(r.id, r.name)
+  }
+  return map
+}
+
+// ─────────────────────────────────────────────────────────
+// 🔑 Récupère email via auth.admin (comme send-payment-email)
+// ─────────────────────────────────────────────────────────
+async function getUserEmail(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<string | null> {
+  try {
+    const { data } = await admin.auth.admin.getUserById(userId)
+    return data?.user?.email || null
+  } catch {
+    return null
+  }
+}
+
 export async function sendInvoiceEmailById(invoiceId: string) {
   const admin = createAdminClient()
 
@@ -31,25 +71,30 @@ export async function sendInvoiceEmailById(invoiceId: string) {
     return { ok: false, error: 'المؤسسة غير موجودة' }
   }
 
-  // 3) المدير — أول user_profiles بعلاقة roles(name) = directeur فهاد المؤسسة
-  const { data: director } = await admin
-    .from('user_profiles')
-    .select('full_name, user_id, roles(name), auth_users:user_id(email)')
-    .eq('establishment_id', invoice.establishment_id)
-    .eq('roles.name', 'Directeur')
-    .limit(1)
-    .maybeSingle()
+  // 3) ✅ Directeur — via role_id + roleMap (bug fix)
+  const roleMap = await loadRoleMap(admin)
 
-  // Fallback: جيب أي user_profiles من هاد المؤسسة مع الدور
+  const { data: profiles } = await admin
+    .from('user_profiles')
+    .select('user_id, full_name, role_id')
+    .eq('establishment_id', invoice.establishment_id)
+
   let directorEmail: string | null = null
   let directorName: string | null = null
 
-  if (director) {
-    directorName = director.full_name || null
-    directorEmail = (director as any).auth_users?.email || null
+  for (const p of profiles || []) {
+    const roleName = p.role_id ? roleMap.get(p.role_id) : null
+    if (isDirectorRole(roleName)) {
+      const email = await getUserEmail(admin, p.user_id)
+      if (email) {
+        directorEmail = email
+        directorName = p.full_name || null
+        break
+      }
+    }
   }
 
-  // إلا ما لقيناش الإيميل، جربو من establishments.email
+  // Fallback: establishments.email
   if (!directorEmail) {
     directorEmail = establishment.email || null
   }

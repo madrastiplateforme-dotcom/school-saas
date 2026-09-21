@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import DirectorWidgets from '@/components/dashboard/DirectorWidgets'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -24,9 +25,6 @@ const ARABIC_MONTHS = [
 
 const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']
 
-// ═══════════════════════════════════════════════════
-// Quick Actions (style secrétaire)
-// ═══════════════════════════════════════════════════
 const QUICK_ACTIONS = [
   { href: '/dashboard/payments/new', label: 'دفعة جديدة', desc: 'تسجيل دفعة', icon: Plus, gradient: 'from-emerald-500 to-emerald-700' },
   { href: '/dashboard/expenses', label: 'مصروف جديد', desc: 'تسجيل مصروف', icon: TrendingDown, gradient: 'from-rose-500 to-rose-700' },
@@ -46,6 +44,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -53,7 +52,6 @@ export default function DashboardPage() {
   const [schoolName, setSchoolName] = useState('')
   const [userName, setUserName] = useState('')
 
-  // Data
   const [payments, setPayments] = useState<any[]>([])
   const [expenses, setExpenses] = useState<any[]>([])
   const [installments, setInstallments] = useState<any[]>([])
@@ -73,18 +71,19 @@ export default function DashboardPage() {
   const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !yearId) return
     loadData()
-  }, [establishmentId, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    // 1. Profile — SANS JOIN (R1)
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('full_name, establishment_id')
@@ -93,7 +92,6 @@ export default function DashboardPage() {
 
     setUserName(profile?.full_name || '')
 
-    // Nom établissement — query séparée
     if (profile?.establishment_id) {
       const { data: est } = await supabase
         .from('establishments')
@@ -103,15 +101,17 @@ export default function DashboardPage() {
       setSchoolName(est?.name || '')
     }
 
-    // 2. Caisses
+    // ✅ 1. Caisses de l'année active
     const { data: caissesData } = await supabase
       .from('cash_registers')
       .select('id, name, type, initial_balance, owner_user_id')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
 
     setCaisses(caissesData || [])
+    const cashIds = (caissesData || []).map((c: any) => c.id)
 
-    // 3. Payments — ✅ FIX : filtrer deleted_at IS NULL
+    // ✅ 2. Payments (6 mois + année active)
     const sixMonthsAgo = new Date()
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
 
@@ -119,13 +119,14 @@ export default function DashboardPage() {
       .from('payments')
       .select('id, amount, payment_date, cash_register_id, student_id, installment_id, method, notes, reference')
       .eq('establishment_id', establishmentId)
-      .is('deleted_at', null)                     // ✅ FIX
+      .eq('academic_year_id', yearId)
+      .is('deleted_at', null)
       .gte('payment_date', sixMonthsAgo.toISOString().split('T')[0])
       .order('payment_date', { ascending: false })
 
     setPayments(payData || [])
 
-    // 4. Recent payments — ✅ FIX : filtrer deleted_at IS NULL
+    // ✅ 3. Recent payments
     const { data: recentData } = await supabase
       .from('payments')
       .select(`
@@ -134,80 +135,134 @@ export default function DashboardPage() {
         installments (description)
       `)
       .eq('establishment_id', establishmentId)
-      .is('deleted_at', null)                     // ✅ FIX
+      .eq('academic_year_id', yearId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(10)
 
     setRecentPayments(recentData || [])
 
-    // 5. Expenses
-    const { data: expData } = await supabase
-      .from('expenses')
-      .select('id, amount, expense_date, nature, cash_register_id')
-      .eq('establishment_id', establishmentId)
-      .gte('expense_date', sixMonthsAgo.toISOString().split('T')[0])
+    // ✅ 4. Expenses — scopés via caisses dyal l'année
+    let expData: any[] = []
+    if (cashIds.length > 0) {
+      const { data } = await supabase
+        .from('expenses')
+        .select('id, amount, expense_date, nature, cash_register_id')
+        .eq('establishment_id', establishmentId)
+        .in('cash_register_id', cashIds)
+        .gte('expense_date', sixMonthsAgo.toISOString().split('T')[0])
+      expData = data || []
+    }
+    setExpenses(expData)
 
-    setExpenses(expData || [])
-
-    // 6. Installments
-    const { data: instData } = await supabase
-      .from('installments')
-      .select('id, amount, paid_amount, due_date, status, student_id, service_id')
-      .eq('establishment_id', establishmentId)
-      .in('status', ['pending', 'partially_paid'])
-
-    setInstallments(instData || [])
-
-    // 7. Students
-    const { data: studentsData } = await supabase
-      .from('students')
-      .select('id, first_name, last_name, status, family_id, created_at')
-      .eq('establishment_id', establishmentId)
-      .eq('status', 'active')
-
-    setStudents(studentsData || [])
-
-    // 8. Services
-    const { data: servicesData } = await supabase
-      .from('services')
-      .select('id, name, type')
-      .eq('establishment_id', establishmentId)
-
-    setServices(servicesData || [])
-
-    // 9. Contracts
+    // ✅ 5. Contracts de l'année active
     const { data: contractsData } = await supabase
       .from('contracts')
       .select('id, student_id')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
 
     setContracts(contractsData || [])
+    const contractIds = (contractsData || []).map((c: any) => c.id)
 
-    // 10. Contract items
-    const { data: ciData } = await supabase
-      .from('contract_items')
-      .select('id, contract_id, service_id, final_price')
+    // ✅ 6. Contract items via contrats de l'année
+    let ciData: any[] = []
+    if (contractIds.length > 0) {
+      const { data } = await supabase
+        .from('contract_items')
+        .select('id, contract_id, service_id, final_price')
+        .in('contract_id', contractIds)
+      ciData = data || []
+    }
+    setContractItems(ciData)
 
-    setContractItems(ciData || [])
+    // ✅ 7. Installments via contrats de l'année
+    let instData: any[] = []
+    if (contractIds.length > 0) {
+      const { data } = await supabase
+        .from('installments')
+        .select('id, amount, paid_amount, due_date, status, student_id, service_id, contract_id')
+        .eq('establishment_id', establishmentId)
+        .in('contract_id', contractIds)
+        .in('status', ['pending', 'partially_paid'])
+      instData = data || []
+    }
+    setInstallments(instData)
 
-    // 11. Families
-    const { data: familiesData } = await supabase
-      .from('families')
-      .select('id, family_name, created_at')
+    // ✅ 8. Students actifs via enrollments de l'année
+    const { data: enrollmentsData } = await supabase
+      .from('enrollments')
+      .select('student_id')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
+      .eq('status', 'active')
 
-    setFamilies(familiesData || [])
+    const studentIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.student_id).filter(Boolean))
+    )
 
-    // 12. Transfers
-    const { data: transfersData } = await supabase
-      .from('cash_transfers')
-      .select('id, amount, status, transfer_date, from_cash_register_id, to_cash_register_id')
+    let studentsData: any[] = []
+    if (studentIds.length > 0) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, first_name, last_name, status, family_id, created_at')
+        .eq('establishment_id', establishmentId)
+        .eq('status', 'active')
+        .in('id', studentIds)
+      studentsData = data || []
+    }
+    setStudents(studentsData)
+
+    // ✅ 9. Services (données nues)
+    const { data: servicesData } = await supabase
+      .from('services')
+      .select('id, name, type')
       .eq('establishment_id', establishmentId)
-      .eq('status', 'accepted')
+    setServices(servicesData || [])
 
-    setTransfers(transfersData || [])
+    // ✅ 10. Families actives via enrollments
+    const familyIds = Array.from(
+      new Set(studentsData.map((s: any) => s.family_id).filter(Boolean))
+    )
+    let familiesData: any[] = []
+    if (familyIds.length > 0) {
+      const { data } = await supabase
+        .from('families')
+        .select('id, family_name, created_at')
+        .eq('establishment_id', establishmentId)
+        .in('id', familyIds)
+      familiesData = data || []
+    }
+    setFamilies(familiesData)
 
-    // 13. Notifications
+    // ✅ 11. Transfers — scopés via caisses dyal l'année
+    let transfersData: any[] = []
+    if (cashIds.length > 0) {
+      const { data: tOut } = await supabase
+        .from('cash_transfers')
+        .select('id, amount, status, transfer_date, from_cash_register_id, to_cash_register_id')
+        .eq('establishment_id', establishmentId)
+        .eq('status', 'accepted')
+        .in('from_cash_register_id', cashIds)
+
+      const { data: tIn } = await supabase
+        .from('cash_transfers')
+        .select('id, amount, status, transfer_date, from_cash_register_id, to_cash_register_id')
+        .eq('establishment_id', establishmentId)
+        .eq('status', 'accepted')
+        .in('to_cash_register_id', cashIds)
+
+      const seen = new Set<string>()
+      ;[...(tOut || []), ...(tIn || [])].forEach((t: any) => {
+        if (!seen.has(t.id)) {
+          seen.add(t.id)
+          transfersData.push(t)
+        }
+      })
+    }
+    setTransfers(transfersData)
+
+    // ✅ 12. Notifications
     const { data: notifData } = await supabase
       .from('notifications')
       .select('id, title, message, read, created_at')
@@ -264,9 +319,6 @@ export default function DashboardPage() {
     s => s.created_at?.startsWith(thisMonth)
   ).length
 
-  // ═══════════════════════════════════════════════════════════
-  // ✅ FIX PRINCIPAL : balance avec paiements actifs seulement
-  // ═══════════════════════════════════════════════════════════
   const caisseBalances = useMemo(() => {
     return caisses.map(c => {
       const initial = Number(c.initial_balance || 0)
@@ -291,7 +343,6 @@ export default function DashboardPage() {
 
   const totalBalance = caisseBalances.reduce((s, c) => s + c.balance, 0)
 
-  // ============ CHARTS ============
   const monthlyChartData = useMemo(() => {
     const data: any[] = []
     for (let i = 5; i >= 0; i--) {
@@ -377,7 +428,6 @@ export default function DashboardPage() {
   return (
     <div className="p-6 space-y-6" dir="rtl">
 
-      {/* HEADER */}
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">لوحة القيادة</p>
@@ -395,7 +445,6 @@ export default function DashboardPage() {
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
 
-      {/* ═══ QUICK ACTIONS (style secrétaire) ═══ */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
         <div className="flex items-center gap-2 mb-5">
           <Sparkles className="h-5 w-5 text-emerald-600" />
@@ -431,9 +480,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* STATS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Encaissements */}
         <button
           onClick={() => router.push('/dashboard/payments')}
           className="text-right bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md hover:border-emerald-300 transition group"
@@ -456,7 +503,6 @@ export default function DashboardPage() {
           </p>
         </button>
 
-        {/* Dépenses */}
         <button
           onClick={() => router.push('/dashboard/expenses')}
           className="text-right bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md hover:border-red-300 transition group"
@@ -477,7 +523,6 @@ export default function DashboardPage() {
           <p className="text-xs text-slate-500 mt-1">مصاريف هذا الشهر</p>
         </button>
 
-        {/* Rba7 */}
         <button
           onClick={() => router.push('/dashboard/reports')}
           className={`text-right rounded-2xl p-5 border shadow-sm hover:shadow-md transition group ${
@@ -498,7 +543,6 @@ export default function DashboardPage() {
           <p className="text-xs opacity-90 mt-1">النتيجة (مداخيل - مصاريف)</p>
         </button>
 
-        {/* Impayés */}
         <button
           onClick={() => router.push('/dashboard/impayes')}
           className={`text-right rounded-2xl p-5 border shadow-sm hover:shadow-md transition group ${
@@ -524,7 +568,6 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* QUICK STATS */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <button
           onClick={() => router.push('/dashboard/students')}
@@ -607,7 +650,6 @@ export default function DashboardPage() {
 
       <DirectorWidgets />
 
-      {/* CAISSES SECTION */}
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -654,7 +696,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* CHARTS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
@@ -707,7 +748,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* LINE CHART */}
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="h-4 w-4 text-emerald-600" />
@@ -735,7 +775,6 @@ export default function DashboardPage() {
         </ResponsiveContainer>
       </div>
 
-      {/* RECENT PAYMENTS + TOP IMPAYES */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
@@ -825,7 +864,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* NOTIFICATIONS */}
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-slate-800 flex items-center gap-2">

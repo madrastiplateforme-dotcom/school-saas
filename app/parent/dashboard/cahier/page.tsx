@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   BookOpen, RefreshCw, Users, Calendar, GraduationCap, FileText,
   Home as HomeIcon,
@@ -45,23 +46,26 @@ const dayName = (d: string) => {
 }
 
 export default function ParentCahierPage() {
+  const { yearId, year } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [children, setChildren] = useState<Child[]>([])
   const [activeChild, setActiveChild] = useState('')
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: profile } = await supabase
@@ -90,13 +94,6 @@ export default function ParentCahierPage() {
         return
       }
 
-      const { data: year } = await supabase
-        .from('academic_years')
-        .select('id')
-        .eq('establishment_id', estabId)
-        .eq('is_current', true)
-        .maybeSingle()
-
       const { data: students } = await supabase
         .from('students')
         .select('id, first_name, last_name')
@@ -111,38 +108,35 @@ export default function ParentCahierPage() {
 
       const childIds = students.map((s) => s.id)
 
-      // Enrollments → class
-      let enrollmentsData: any[] = []
-      if (year?.id) {
-        const { data } = await supabase
-          .from('enrollments')
-          .select('student_id, class_id, classes(name, levels(name))')
-          .in('student_id', childIds)
-          .eq('academic_year_id', year.id)
-        enrollmentsData = data || []
-      }
+      // ✅ Enrollments dyal l'année active
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('student_id, class_id, classes(name, levels(name))')
+        .in('student_id', childIds)
+        .eq('academic_year_id', yearId)
 
-      const classIds = enrollmentsData
+      const classIds = (enrollmentsData || [])
         .map((e) => e.class_id)
         .filter(Boolean) as string[]
 
-      // Cahier entries for these classes
+      // ✅ Cahier entries filtrés par année active + classes
       let entriesData: any[] = []
       if (classIds.length > 0) {
         const { data } = await supabase
           .from('cahier_entries')
           .select(
-            'id, class_id, entry_date, title, content, homework, subjects(name), staff(full_name)',
+            'id, class_id, entry_date, title, content, homework, academic_year_id, subjects(name), staff(full_name)',
           )
           .in('class_id', classIds)
+          .eq('academic_year_id', yearId)
           .order('entry_date', { ascending: false })
           .limit(200)
         entriesData = data || []
       }
 
       const result: Child[] = students.map((st) => {
-        const enr = enrollmentsData.find((e) => e.student_id === st.id)
-        const cls = enr?.classes
+        const enr = (enrollmentsData || []).find((e) => e.student_id === st.id)
+        const cls = enr?.classes as any
         const childEntries: Entry[] = entriesData
           .filter((e) => e.class_id === enr?.class_id)
           .map((e: any) => ({
@@ -167,8 +161,8 @@ export default function ParentCahierPage() {
       setChildren(result)
       if (result.length > 0) setActiveChild(result[0].id)
     } catch (e: any) {
-      console.error('[parent-cahier]', e)
-      setError(e.message || 'خطأ')
+      console.error('[parent-cahier]', e?.message || e)
+      setError(e?.message || 'خطأ')
     } finally {
       setLoading(false)
     }
@@ -194,6 +188,7 @@ export default function ParentCahierPage() {
             دفتر النصوص
           </h1>
           <p className="text-sm text-gray-500 mt-1">
+            {year?.name && `${year.name} — `}
             متابعة الدروس اليومية لأبنائك
           </p>
         </div>

@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import Amount from '@/components/Amount'
 import { ArrowRight } from 'lucide-react'
 
@@ -29,16 +30,18 @@ export default function StudentFinancePage() {
 
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
+  const { yearId } = useAcademicYear()
   const [summary, setSummary] = useState<FinancialSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!establishmentId || !studentId) return
-    fetchFinancialData(establishmentId, studentId)
-  }, [establishmentId, studentId])
+    if (!establishmentId || !studentId || !yearId) return
+    fetchFinancialData(establishmentId, studentId, yearId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, studentId, yearId])
 
-  const fetchFinancialData = async (sid: string, studentId: string) => {
+  const fetchFinancialData = async (sid: string, studentId: string, yid: string) => {
     const supabase = createClient()
 
     // 1. جلب اسم التلميذ
@@ -57,7 +60,37 @@ export default function StudentFinancePage() {
 
     const studentName = `${studentData.first_name} ${studentData.last_name}`
 
-    // 2. جلب الأقساط والمدفوعات المتعلقة بالتلميذ
+    // ✅ 2. Contracts dyal l'année active → contractIds
+    const { data: contractsData, error: contractsError } = await supabase
+      .from('contracts')
+      .select('id')
+      .eq('student_id', studentId)
+      .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
+
+    if (contractsError) {
+      setError(contractsError.message)
+      setLoading(false)
+      return
+    }
+
+    const contractIds = (contractsData || []).map((c: any) => c.id)
+
+    if (contractIds.length === 0) {
+      // Aucun contrat dyal l'année → résumé vide
+      setSummary({
+        studentName,
+        totalDue: 0,
+        totalPaid: 0,
+        totalRemaining: 0,
+        status: 'up_to_date',
+        services: [],
+      })
+      setLoading(false)
+      return
+    }
+
+    // ✅ 3. Installments dyal had contrats
     const { data: installments, error: instError } = await supabase
       .from('installments')
       .select(`
@@ -75,7 +108,7 @@ export default function StudentFinancePage() {
           )
         )
       `)
-      .eq('student_id', studentId)
+      .in('contract_id', contractIds)
       .eq('establishment_id', sid)
 
     if (instError) {
@@ -84,7 +117,6 @@ export default function StudentFinancePage() {
       return
     }
 
-    // حساب الإجماليات وتجميع الخدمات
     let totalDue = 0
     let totalPaid = 0
     const serviceMap = new Map<string, { due: number; paid: number; remaining: number }>()
@@ -197,28 +229,34 @@ export default function StudentFinancePage() {
         </div>
 
         <h2 className="text-lg font-semibold mb-4">تفاصيل حسب الخدمة</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الخدمة</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المستحق</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المدفوع</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المتبقي</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {summary.services.map((service, index) => (
-                <tr key={index}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{service.serviceName}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><Amount value={service.due} /></td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><Amount value={service.paid} /></td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><Amount value={service.remaining} /></td>
+        {summary.services.length === 0 ? (
+          <p className="text-center text-gray-400 py-8">
+            لا توجد بيانات مالية لهذه السنة
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الخدمة</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المستحق</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المدفوع</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المتبقي</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {summary.services.map((service, index) => (
+                  <tr key={index}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{service.serviceName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><Amount value={service.due} /></td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600"><Amount value={service.paid} /></td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><Amount value={service.remaining} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

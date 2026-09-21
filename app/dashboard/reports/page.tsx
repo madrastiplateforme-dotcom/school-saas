@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import DateInput from '@/components/DateInput'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -20,6 +21,7 @@ type Tab = 'caisses' | 'services' | 'students' | 'classes'
 export default function ReportsPage() {
   const establishmentId = useEstablishmentId()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
 
   const [activeTab, setActiveTab] = useState<Tab>('caisses')
   const [loading, setLoading] = useState(true)
@@ -32,7 +34,6 @@ export default function ReportsPage() {
   })
   const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0])
 
-  // Data
   const [caisses, setCaisses] = useState<any[]>([])
   const [payments, setPayments] = useState<any[]>([])
   const [expenses, setExpenses] = useState<any[]>([])
@@ -48,22 +49,25 @@ export default function ReportsPage() {
   const isSecretary = role === 'secretaire'
 
   useEffect(() => {
-    if (!establishmentId || !role) return
+    if (!establishmentId || !role || !yearId) return
     loadData()
-  }, [establishmentId, role, dateFrom, dateTo])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, dateFrom, dateTo, yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // 1. Caisses
+    // ✅ 1. Caisses — filtrées par année active
     let caisseQuery = supabase
       .from('cash_registers')
       .select('id, name, type, initial_balance, owner_user_id')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
 
     if (isSecretary) {
       caisseQuery = caisseQuery.eq('owner_user_id', user.id)
@@ -75,15 +79,17 @@ export default function ReportsPage() {
     setCaisses(caisseData || [])
 
     if (caisseIds.length > 0) {
-      // 2. Payments
+      // ✅ 2. Payments — année active + caisse
       const { data: payData } = await supabase
         .from('payments')
         .select('id, amount, payment_date, cash_register_id, student_id, installment_id')
         .in('cash_register_id', caisseIds)
+        .eq('academic_year_id', yearId)
+        .is('deleted_at', null)
         .gte('payment_date', dateFrom)
         .lte('payment_date', dateTo)
 
-      // 3. Expenses
+      // ✅ 3. Expenses — via caisse (per-year)
       const { data: expData } = await supabase
         .from('expenses')
         .select('id, amount, expense_date, cash_register_id, nature')
@@ -93,20 +99,42 @@ export default function ReportsPage() {
 
       setPayments(payData || [])
       setExpenses(expData || [])
+    } else {
+      setPayments([])
+      setExpenses([])
     }
 
-    // 4. Transfers
-    const { data: transData } = await supabase
-      .from('cash_transfers')
-      .select('id, amount, transfer_date, from_cash_register_id, to_cash_register_id, status')
-      .eq('establishment_id', establishmentId)
-      .eq('status', 'accepted')
-      .gte('transfer_date', dateFrom)
-      .lte('transfer_date', dateTo)
+    // ✅ 4. Transfers — via caisses (2 queries pour éviter .or())
+    if (caisseIds.length > 0) {
+      const { data: tOut } = await supabase
+        .from('cash_transfers')
+        .select('id, amount, transfer_date, from_cash_register_id, to_cash_register_id, status')
+        .eq('establishment_id', establishmentId)
+        .eq('status', 'accepted')
+        .in('from_cash_register_id', caisseIds)
+        .gte('transfer_date', dateFrom)
+        .lte('transfer_date', dateTo)
 
-    setTransfers(transData || [])
+      const { data: tIn } = await supabase
+        .from('cash_transfers')
+        .select('id, amount, transfer_date, from_cash_register_id, to_cash_register_id, status')
+        .eq('establishment_id', establishmentId)
+        .eq('status', 'accepted')
+        .in('to_cash_register_id', caisseIds)
+        .gte('transfer_date', dateFrom)
+        .lte('transfer_date', dateTo)
 
-    // 5. Services
+      const seen = new Set<string>()
+      const merged: any[] = []
+      ;[...(tOut || []), ...(tIn || [])].forEach(t => {
+        if (!seen.has(t.id)) { seen.add(t.id); merged.push(t) }
+      })
+      setTransfers(merged)
+    } else {
+      setTransfers([])
+    }
+
+    // 5. Services (données nues, pas de filtre année)
     const { data: servicesData } = await supabase
       .from('services')
       .select('id, name, type')
@@ -114,44 +142,90 @@ export default function ReportsPage() {
 
     setServices(servicesData || [])
 
-    // 6. Students
-    const { data: studentsData } = await supabase
-      .from('students')
-      .select('id, first_name, last_name, family_id')
-      .eq('establishment_id', establishmentId)
-
-    setStudents(studentsData || [])
-
-    // 7. Installments (bach n7esbo le reste)
-    const { data: instData } = await supabase
-      .from('installments')
-      .select('id, amount, paid_amount, student_id, contract_id')
-      .eq('establishment_id', establishmentId)
-
-    setInstallments(instData || [])
-
-    // 8. Enrollments (bach n3refo classe dyal élève)
+    // ✅ 6. Enrollments — année active
     const { data: enrData } = await supabase
       .from('enrollments')
-      .select('id, student_id, class_id, level_id, classes(name), levels(name)')
+      .select('id, student_id, class_id, level_id, academic_year_id, status')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
+      .eq('status', 'active')
 
     setEnrollments(enrData || [])
 
-    // 9. Contracts
+    // ✅ 7. Students — via enrollments de l'année
+    const studentIds = Array.from(
+      new Set((enrData || []).map((e: any) => e.student_id).filter(Boolean))
+    )
+
+    let studentsData: any[] = []
+    if (studentIds.length > 0) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, first_name, last_name, family_id')
+        .eq('establishment_id', establishmentId)
+        .in('id', studentIds)
+      studentsData = data || []
+    }
+    setStudents(studentsData)
+
+    // ✅ 8. Contracts — année active
     const { data: contData } = await supabase
       .from('contracts')
       .select('id, student_id')
       .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
 
     setContracts(contData || [])
+    const contractIds = (contData || []).map((c: any) => c.id)
 
-    // 10. Contract items (bach n3refo service dyal koul contract)
-    const { data: ciData } = await supabase
-      .from('contract_items')
-      .select('id, contract_id, service_id, final_price')
+    // ✅ 9. Contract items — via contracts de l'année
+    let ciData: any[] = []
+    if (contractIds.length > 0) {
+      const { data } = await supabase
+        .from('contract_items')
+        .select('id, contract_id, service_id, final_price')
+        .in('contract_id', contractIds)
+      ciData = data || []
+    }
+    setContractItems(ciData)
 
-    setContractItems(ciData || [])
+    // ✅ 10. Installments — via contracts de l'année
+    let instData: any[] = []
+    if (contractIds.length > 0) {
+      const { data } = await supabase
+        .from('installments')
+        .select('id, amount, paid_amount, student_id, contract_id')
+        .eq('establishment_id', establishmentId)
+        .in('contract_id', contractIds)
+      instData = data || []
+    }
+    setInstallments(instData)
+
+    // Enrichir enrollments b classes + levels names (pour studentReports + classReports)
+    const classIds = Array.from(
+      new Set((enrData || []).map((e: any) => e.class_id).filter(Boolean))
+    )
+    const levelIds = Array.from(
+      new Set((enrData || []).map((e: any) => e.level_id).filter(Boolean))
+    )
+
+    const classMap = new Map<string, string>()
+    if (classIds.length > 0) {
+      const { data: cls } = await supabase.from('classes').select('id, name').in('id', classIds)
+      ;(cls || []).forEach((c: any) => classMap.set(c.id, c.name))
+    }
+    const levelMap = new Map<string, string>()
+    if (levelIds.length > 0) {
+      const { data: lvl } = await supabase.from('levels').select('id, name').in('id', levelIds)
+      ;(lvl || []).forEach((l: any) => levelMap.set(l.id, l.name))
+    }
+
+    const enrichedEnrollments = (enrData || []).map((e: any) => ({
+      ...e,
+      classes: e.class_id ? { name: classMap.get(e.class_id) || '-' } : null,
+      levels: e.level_id ? { name: levelMap.get(e.level_id) || '-' } : null,
+    }))
+    setEnrollments(enrichedEnrollments)
 
     setLoading(false)
   }
@@ -196,7 +270,6 @@ export default function ReportsPage() {
 
   // ============ RAPPORT PAR SERVICE ============
   const serviceReports = useMemo(() => {
-    // Map : contractId → serviceIds
     const contractServicesMap = new Map<string, string[]>()
     contractItems.forEach(ci => {
       if (!contractServicesMap.has(ci.contract_id)) {
@@ -205,7 +278,6 @@ export default function ReportsPage() {
       contractServicesMap.get(ci.contract_id)!.push(ci.service_id)
     })
 
-    // Map : studentId → contractIds
     const studentContractsMap = new Map<string, string[]>()
     contracts.forEach(c => {
       if (!studentContractsMap.has(c.student_id)) {
@@ -215,18 +287,15 @@ export default function ReportsPage() {
     })
 
     return services.map((s) => {
-      // Encaissements dyal had service : payments li 3ndhom contract li fih had service
       const encaissements = payments
         .filter(p => {
           const studentContracts = studentContractsMap.get(p.student_id) || []
-          return studentContracts.some(cid => 
+          return studentContracts.some(cid =>
             (contractServicesMap.get(cid) || []).includes(s.id)
           )
         })
         .reduce((sum, p) => sum + Number(p.amount), 0)
 
-      // Dépenses (nature "service" wla via tag) - hadi ma3ndnach tracking daba
-      // Ghadi nzidou : dépenses li 3ndhom service_id
       const depenses = expenses
         .filter(e => (e as any).service_id === s.id)
         .reduce((sum, e) => sum + Number(e.amount), 0)
@@ -254,7 +323,6 @@ export default function ReportsPage() {
       const remaining = total - paid
       const percentage = total > 0 ? (paid / total) * 100 : 0
 
-      // Classe
       const enr = enrollments.find(e => e.student_id === s.id)
       const className = (enr as any)?.classes?.name || '-'
       const levelName = (enr as any)?.levels?.name || '-'
@@ -408,7 +476,6 @@ export default function ReportsPage() {
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
 
-      {/* Filtres */}
       <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="h-4 w-4 text-indigo-600" />
@@ -426,7 +493,6 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-2 flex-wrap border-b border-gray-200">
         {tabs.map((t) => {
           const Icon = t.icon
@@ -448,34 +514,21 @@ export default function ReportsPage() {
         })}
       </div>
 
-      {/* ============ TAB 1 : CAISSES ============ */}
       {activeTab === 'caisses' && (
-        <CaissesReport
-          reports={caisseReports}
-          payments={payments}
-          expenses={expenses}
-        />
+        <CaissesReport reports={caisseReports} payments={payments} expenses={expenses} />
       )}
-
-      {/* ============ TAB 2 : SERVICES ============ */}
       {activeTab === 'services' && (
         <ServicesReport reports={serviceReports} />
       )}
-
-      {/* ============ TAB 3 : ÉLÈVES ============ */}
       {activeTab === 'students' && (
         <StudentsReport reports={studentReports} />
       )}
-
-      {/* ============ TAB 4 : CLASSES ============ */}
       {activeTab === 'classes' && (
         <ClassesReport reports={classReports} />
       )}
     </div>
   )
 }
-
-// ================== COMPONENTS ==================
 
 function CaissesReport({ reports, payments, expenses }: any) {
   const totals = reports.reduce((acc: any, r: any) => ({
