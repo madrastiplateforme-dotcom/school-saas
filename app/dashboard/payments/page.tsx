@@ -8,11 +8,13 @@ import { useUserPermissions } from '@/lib/useUserPermissions'
 import { useUserRole } from '@/lib/useUserRole'
 import Amount from '@/components/Amount'
 import DateInput from '@/components/DateInput'
+import { buildPaymentMessage, openWhatsApp } from '@/lib/whatsapp'
 import * as XLSX from 'xlsx'
 import {
   Search, Plus, FileText, RefreshCw, Filter, TrendingUp,
   Wallet, Calendar, Building2, Download, X, Eye,
   Trash2, AlertTriangle, Lock, CheckCircle2, Archive,
+  MessageCircle,
 } from 'lucide-react'
 
 type Payment = {
@@ -75,6 +77,10 @@ export default function PaymentsPage() {
 
   const [showDeleted, setShowDeleted] = useState(false)
 
+  // ═══ WhatsApp: map student_id → phone ═══
+  const [familyPhones, setFamilyPhones] = useState<Map<string, string>>(new Map())
+  const [schoolName, setSchoolName] = useState('')
+
   // Filtres
   const [searchTerm, setSearchTerm] = useState('')
   const [methodFilter, setMethodFilter] = useState('all')
@@ -101,6 +107,16 @@ export default function PaymentsPage() {
     if (!user) return
 
     setCurrentUserId(user.id)
+
+    // School name (for WhatsApp message)
+    supabase
+      .from('establishments')
+      .select('name')
+      .eq('id', sid)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.name) setSchoolName(data.name)
+      })
 
     // 1. Caisses
     let caisseQuery = supabase
@@ -144,6 +160,43 @@ export default function PaymentsPage() {
 
     if (error) setError(error.message)
     else setPayments((data as any) || [])
+
+    // 3. Fetch family phones for all students in this batch (R1: separate queries)
+    const studentIds = Array.from(new Set((data || []).map((p: any) => p.student_id).filter(Boolean)))
+
+    if (studentIds.length > 0) {
+      const { data: studentsData } = await supabase
+        .from('students')
+        .select('id, family_id')
+        .in('id', studentIds)
+
+      const familyIds = Array.from(
+        new Set((studentsData || []).map((s: any) => s.family_id).filter(Boolean)),
+      )
+
+      const familyIdToPhone = new Map<string, string>()
+      if (familyIds.length > 0) {
+        const { data: familiesData } = await supabase
+          .from('families')
+          .select('id, phone')
+          .in('id', familyIds)
+
+        ;(familiesData || []).forEach((f: any) => {
+          if (f.phone) familyIdToPhone.set(f.id, f.phone)
+        })
+      }
+
+      const studentIdToPhone = new Map<string, string>()
+      ;(studentsData || []).forEach((s: any) => {
+        const phone = s.family_id ? familyIdToPhone.get(s.family_id) : null
+        if (phone) studentIdToPhone.set(s.id, phone)
+      })
+
+      setFamilyPhones(studentIdToPhone)
+    } else {
+      setFamilyPhones(new Map())
+    }
+
     setLoading(false)
   }
 
@@ -205,6 +258,31 @@ export default function PaymentsPage() {
     XLSX.writeFile(wb, `payments-${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
+  // ═══ WhatsApp: send payment confirmation to parent ═══
+  const handleWhatsApp = (payment: Payment) => {
+    const phone = familyPhones.get(payment.student_id)
+    if (!phone) {
+      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      return
+    }
+
+    const studentName = payment.students
+      ? `${payment.students.first_name} ${payment.students.last_name}`
+      : 'التلميذ'
+
+    const message = buildPaymentMessage({
+      studentName,
+      amount: `${Number(payment.amount).toFixed(2)} DH`,
+      date: payment.payment_date,
+      schoolName,
+    })
+
+    const ok = openWhatsApp(phone, message)
+    if (!ok) {
+      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
+    }
+  }
+
   // ✅ Chkoun kay9der y-annulli
   const canCancelPayment = (p: Payment): boolean => {
     if (p.deleted_at) return false
@@ -262,9 +340,6 @@ export default function PaymentsPage() {
     }
   }
 
-  // ═════════════════════════════════════════════════════════════
-  // 🗑️ SUPPRESSION SIMPLE (soft delete + revert installment)
-  // ═════════════════════════════════════════════════════════════
   const handleConfirmCancel = async () => {
     if (!cancelPayment || !establishmentId) return
 
@@ -289,7 +364,6 @@ export default function PaymentsPage() {
       const installmentId = cancelPayment.installment_id
       const amount = Number(cancelPayment.amount)
 
-      // 1. Revert installment
       if (installmentId) {
         const { data: inst } = await supabase
           .from('installments')
@@ -312,7 +386,6 @@ export default function PaymentsPage() {
         }
       }
 
-      // 2. SOFT DELETE payment
       const { error: delError } = await supabase
         .from('payments')
         .update({
@@ -324,9 +397,6 @@ export default function PaymentsPage() {
 
       if (delError) throw delError
 
-      // ═══════════════════════════════════════════════════════
-      // 3. NOTIFICATIONS in-app
-      // ═══════════════════════════════════════════════════════
       const studentName = cancelPayment.students
         ? `${cancelPayment.students.first_name} ${cancelPayment.students.last_name}`
         : 'تلميذ'
@@ -347,7 +417,6 @@ export default function PaymentsPage() {
         },
       }
 
-      // 3a) Directeurs — TOUJOURS
       const { data: directors } = await supabase
         .from('user_profiles')
         .select('user_id')
@@ -358,7 +427,6 @@ export default function PaymentsPage() {
         notifInserts.push({ ...notifBase, user_id: d.user_id })
       }
 
-      // 3b) Secrétaires — TOUTES
       const { data: secretaries } = await supabase
         .from('user_profiles')
         .select('user_id')
@@ -370,7 +438,6 @@ export default function PaymentsPage() {
         notifInserts.push({ ...notifBase, user_id: s.user_id })
       }
 
-      // 3c) Parent — si c'est son enfant
       if (studentId) {
         const { data: studentRow } = await supabase
           .from('students')
@@ -406,9 +473,6 @@ export default function PaymentsPage() {
         }
       }
 
-      // ═══════════════════════════════════════════════════════
-      // 4. EMAILS (via API)
-      // ═══════════════════════════════════════════════════════
       await triggerPaymentCancelledEmails(paymentId, cancelReason.trim())
 
       fetchPayments(establishmentId)
@@ -432,7 +496,6 @@ export default function PaymentsPage() {
   return (
     <div className="p-6 space-y-6" dir="rtl">
 
-      {/* HEADER */}
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -489,7 +552,6 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* STATS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className={`bg-gradient-to-br ${showDeleted ? 'from-red-500 to-red-700' : 'from-emerald-500 to-emerald-700'} rounded-2xl p-5 text-white shadow-lg`}>
           <div className="flex items-center gap-2 mb-2 opacity-90">
@@ -521,7 +583,6 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* SEARCH + FILTERS */}
       <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4">
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -608,7 +669,6 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      {/* LISTE */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-bold text-slate-800">
@@ -638,78 +698,100 @@ export default function PaymentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredPayments.map((payment) => (
-                  <tr
-                    key={payment.id}
-                    className={`transition ${
-                      payment.deleted_at
-                        ? 'bg-red-50/40 hover:bg-red-50/60'
-                        : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {payment.payment_date}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className={payment.deleted_at ? 'text-red-700 line-through' : 'text-gray-900'}>
-                        {payment.students ? `${payment.students.first_name} ${payment.students.last_name}` : '-'}
-                      </div>
-                      {payment.deleted_at && payment.delete_reason && (
-                        <div className="text-xs text-red-600 mt-0.5">🗑️ {payment.delete_reason}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-4 text-sm text-gray-600">
-                      {payment.installments?.description || '-'}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm font-bold">
-                      {payment.deleted_at ? (
-                        <span className="text-red-500 line-through">{Number(payment.amount).toFixed(2)} DH</span>
-                      ) : (
-                        <span className="text-emerald-600">+ {Number(payment.amount).toFixed(2)} DH</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${METHOD_COLORS[payment.method] || 'bg-slate-100 text-slate-700'}`}>
-                        {METHOD_LABELS[payment.method] || payment.method}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {payment.cash_registers?.name || '-'}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => window.open(`/api/pdf/payment-receipt?paymentId=${payment.id}`, '_blank')}
-                          className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                          title="تحميل الإيصال"
-                        >
-                          <FileText className="h-4 w-4" />
-                        </button>
+                {filteredPayments.map((payment) => {
+                  const phone = familyPhones.get(payment.student_id)
+                  return (
+                    <tr
+                      key={payment.id}
+                      className={`transition ${
+                        payment.deleted_at
+                          ? 'bg-red-50/40 hover:bg-red-50/60'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {payment.payment_date}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className={payment.deleted_at ? 'text-red-700 line-through' : 'text-gray-900'}>
+                          {payment.students ? `${payment.students.first_name} ${payment.students.last_name}` : '-'}
+                        </div>
+                        {payment.deleted_at && payment.delete_reason && (
+                          <div className="text-xs text-red-600 mt-0.5">🗑️ {payment.delete_reason}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">
+                        {payment.installments?.description || '-'}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-bold">
+                        {payment.deleted_at ? (
+                          <span className="text-red-500 line-through">{Number(payment.amount).toFixed(2)} DH</span>
+                        ) : (
+                          <span className="text-emerald-600">+ {Number(payment.amount).toFixed(2)} DH</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${METHOD_COLORS[payment.method] || 'bg-slate-100 text-slate-700'}`}>
+                          {METHOD_LABELS[payment.method] || payment.method}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {payment.cash_registers?.name || '-'}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1">
+                          {!payment.deleted_at && (
+                            <button
+                              onClick={() => handleWhatsApp(payment)}
+                              disabled={!phone}
+                              className={`p-1.5 rounded-lg transition ${
+                                phone
+                                  ? 'text-[#25D366] hover:bg-emerald-50'
+                                  : 'text-slate-300 cursor-not-allowed'
+                              }`}
+                              title={
+                                phone
+                                  ? `إرسال WhatsApp للولي (${phone})`
+                                  : 'لا يوجد رقم هاتف'
+                              }
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                            </button>
+                          )}
 
-                        {!payment.deleted_at && (
                           <button
-                            onClick={() => handleOpenCancel(payment)}
-                            className={`p-1.5 rounded-lg transition ${
-                              canCancelPayment(payment)
-                                ? 'text-red-600 hover:bg-red-50'
-                                : 'text-slate-300 cursor-not-allowed'
-                            }`}
-                            title={canCancelPayment(payment) ? 'حذف الدفعة' : 'لا يمكن الحذف'}
-                            disabled={!canCancelPayment(payment)}
+                            onClick={() => window.open(`/api/pdf/payment-receipt?paymentId=${payment.id}`, '_blank')}
+                            className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                            title="تحميل الإيصال"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <FileText className="h-4 w-4" />
                           </button>
-                        )}
 
-                        {payment.deleted_at && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 bg-red-100 px-2 py-1 rounded-lg">
-                            <Archive className="h-3 w-3" /> محذوفة
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {!payment.deleted_at && (
+                            <button
+                              onClick={() => handleOpenCancel(payment)}
+                              className={`p-1.5 rounded-lg transition ${
+                                canCancelPayment(payment)
+                                  ? 'text-red-600 hover:bg-red-50'
+                                  : 'text-slate-300 cursor-not-allowed'
+                              }`}
+                              title={canCancelPayment(payment) ? 'حذف الدفعة' : 'لا يمكن الحذف'}
+                              disabled={!canCancelPayment(payment)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+
+                          {payment.deleted_at && (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 bg-red-100 px-2 py-1 rounded-lg">
+                              <Archive className="h-3 w-3" /> محذوفة
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
 
@@ -725,7 +807,6 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      {/* ============ CANCEL MODAL (simple) ============ */}
       {cancelPayment && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">

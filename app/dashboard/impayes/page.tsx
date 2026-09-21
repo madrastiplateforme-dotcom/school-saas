@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
+import { buildImpayeMessage, openWhatsApp } from '@/lib/whatsapp'
 import {
   AlertCircle, Search, RefreshCw, Bell, MessageCircle, Mail,
   Send, TrendingDown, Users, Wallet, Clock, CheckCircle2,
@@ -41,6 +42,7 @@ export default function ImpayesPage() {
   const [success, setSuccess] = useState('')
 
   const [unpaidStudents, setUnpaidStudents] = useState<UnpaidStudent[]>([])
+  const [schoolName, setSchoolName] = useState('')
 
   // Filtres
   const [searchTerm, setSearchTerm] = useState('')
@@ -59,14 +61,25 @@ export default function ImpayesPage() {
   useEffect(() => {
     if (!establishmentId || !role) return
     loadData()
+    loadSchoolName()
   }, [establishmentId, role])
+
+  const loadSchoolName = async () => {
+    if (!establishmentId) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('establishments')
+      .select('name')
+      .eq('id', establishmentId)
+      .maybeSingle()
+    if (data?.name) setSchoolName(data.name)
+  }
 
   const loadData = async () => {
     setLoading(true)
     setError('')
     const supabase = createClient()
 
-    // 1. Jib installments (pending + partially_paid)
     const { data: instData, error: instError } = await supabase
       .from('installments')
       .select(`
@@ -88,7 +101,6 @@ export default function ImpayesPage() {
       return
     }
 
-    // 2. Group by student
     const studentsMap = new Map<string, UnpaidStudent>()
     const today = new Date()
 
@@ -144,7 +156,6 @@ export default function ImpayesPage() {
     setLoading(false)
   }
 
-  // Filtres
   const classes = useMemo(() => {
     const set = new Set(unpaidStudents.map(s => s.className).filter(c => c !== '-'))
     return Array.from(set).sort()
@@ -165,7 +176,6 @@ export default function ImpayesPage() {
     })
   }, [unpaidStudents, searchTerm, classFilter, levelFilter, minAmount])
 
-  // Totals
   const totals = useMemo(() => {
     return filtered.reduce((acc, s) => ({
       count: acc.count + 1,
@@ -174,7 +184,27 @@ export default function ImpayesPage() {
     }), { count: 0, amount: 0, installments: 0 })
   }, [filtered])
 
-  // Handle relance
+  // ═══ WhatsApp: send payment reminder ═══
+  const handleWhatsApp = (s: UnpaidStudent) => {
+    if (!s.parent_phone) {
+      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      return
+    }
+
+    const message = buildImpayeMessage({
+      parentName: s.family_name || undefined,
+      studentName: s.full_name,
+      amount: `${s.total_unpaid.toFixed(2)} DH`,
+      dueDate: s.oldest_due_date,
+      schoolName,
+    })
+
+    const ok = openWhatsApp(s.parent_phone, message)
+    if (!ok) {
+      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
+    }
+  }
+
   const handleRelance = async () => {
     if (!relanceStudent) return
     setSending(true)
@@ -217,7 +247,6 @@ export default function ImpayesPage() {
     }
   }
 
-  // Badge dyal âge
   const getAgeBadge = (days: number) => {
     if (days <= 7) return { label: `${days} يوم`, color: 'bg-yellow-100 text-yellow-700' }
     if (days <= 30) return { label: `${days} يوم`, color: 'bg-orange-100 text-orange-700' }
@@ -249,7 +278,6 @@ export default function ImpayesPage() {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
       {success && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg">{success}</div>}
 
-      {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
           <div className="flex items-center gap-2 mb-2 text-red-600">
@@ -276,7 +304,6 @@ export default function ImpayesPage() {
         </div>
       </div>
 
-      {/* Filtres */}
       <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="h-4 w-4 text-indigo-600" />
@@ -319,7 +346,6 @@ export default function ImpayesPage() {
         </div>
       </div>
 
-      {/* Liste */}
       {filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-16 text-center border">
           <CheckCircle2 className="h-16 w-16 text-emerald-500 mx-auto mb-4" />
@@ -365,7 +391,6 @@ export default function ImpayesPage() {
                   </div>
                 </div>
 
-                {/* Détail dyal échéances */}
                 <div className="mt-3 bg-slate-50 rounded-lg p-3 space-y-1">
                   {s.installments.map((inst) => {
                     const rem = inst.amount - inst.paid_amount
@@ -383,7 +408,24 @@ export default function ImpayesPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="mt-3 flex justify-end">
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    onClick={() => handleWhatsApp(s)}
+                    disabled={!s.parent_phone}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                      s.parent_phone
+                        ? 'bg-[#25D366] text-white hover:bg-[#1da851] shadow-sm'
+                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                    }`}
+                    title={
+                      s.parent_phone
+                        ? `إرسال WhatsApp إلى ${s.family_name || 'الولي'} (${s.parent_phone})`
+                        : 'لا يوجد رقم هاتف'
+                    }
+                  >
+                    <MessageCircle className="h-4 w-4" /> WhatsApp
+                  </button>
+
                   <button
                     onClick={() => { setRelanceStudent(s); setRelanceType('all') }}
                     className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm font-medium"
@@ -397,7 +439,6 @@ export default function ImpayesPage() {
         </div>
       )}
 
-      {/* Relance Modal */}
       {relanceStudent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6">

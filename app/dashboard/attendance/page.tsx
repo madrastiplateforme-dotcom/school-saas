@@ -8,9 +8,11 @@ import { useUserPermissions } from '@/lib/useUserPermissions'
 import { useUserRole } from '@/lib/useUserRole'
 import DateInput from '@/components/DateInput'
 import * as XLSX from 'xlsx'
+import { buildAbsenceMessage, openWhatsApp } from '@/lib/whatsapp'
 import {
   CheckCircle2, XCircle, Clock, AlertCircle, Save, Users,
   Calendar, Search, RefreshCw, Download, BookOpen, Phone, Bell,
+  MessageCircle,
 } from 'lucide-react'
 
 type StudentRow = {
@@ -71,15 +73,30 @@ export default function AttendancePage() {
 
   const [sendNotifications, setSendNotifications] = useState(true)
 
+  // School name for WhatsApp messages
+  const [schoolName, setSchoolName] = useState('')
+
   useEffect(() => {
     if (!establishmentId || !role) return
     loadClasses()
+    loadSchoolName()
   }, [establishmentId, role])
 
   useEffect(() => {
     if (!selectedClass || !date) return
     loadAttendance()
   }, [selectedClass, date])
+
+  const loadSchoolName = async () => {
+    if (!establishmentId) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('establishments')
+      .select('name')
+      .eq('id', establishmentId)
+      .maybeSingle()
+    if (data?.name) setSchoolName(data.name)
+  }
 
   const loadClasses = async () => {
     const supabase = createClient()
@@ -219,133 +236,212 @@ export default function AttendancePage() {
     })
   }
 
- const handleSave = async () => {
-  if (!establishmentId || !selectedClass || students.length === 0) return
-  setSaving(true)
-  setError('')
-  setSuccess('')
-
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) { setSaving(false); return }
-
-  try {
-    const selectedClassData = classes.find(c => c.id === selectedClass)
-
-    // 1. Prépare data pour upsert
-    const attToSave = Array.from(attendances.values()).map(a => ({
-      establishment_id: establishmentId,
-      student_id: a.student_id,
-      class_id: selectedClass,
-      level_id: selectedClassData?.level_id || null,
-      attendance_date: date,
-      status: a.status,
-      check_in_time: a.check_in_time || null,
-      check_out_time: a.check_out_time || null,
-      note: a.note || null,
-      marked_by: user.id,
-      updated_at: new Date().toISOString(),
-    }))
-
-    // 2. Upsert
-    const { error: upsertErr } = await supabase
-      .from('attendances')
-      .upsert(attToSave, { onConflict: 'student_id,attendance_date' })
-
-    if (upsertErr) throw upsertErr
-
-    let successMsg = `✅ تم حفظ الحضور (${students.length} تلميذ)`
-
-    // 3. Notifications + Emails
-    if (sendNotifications) {
-      const absentStudents = students.filter(s => {
-        const att = attendances.get(s.id)
-        return att && att.status === 'absent'
-      })
-
-      const lateStudents = students.filter(s => {
-        const att = attendances.get(s.id)
-        return att && att.status === 'late'
-      })
-
-      // 3.a In-app notifications
-      const notifsToInsert: any[] = []
-
-      for (const s of absentStudents) {
-        if (!s.parent_user_id) continue
-        notifsToInsert.push({
-          user_id: s.parent_user_id,
-          establishment_id: establishmentId,
-          type: 'attendance_absent',
-          title: '⚠️ غياب التلميذ',
-          message: `التلميذ(ة) ${s.first_name} ${s.last_name} غائب(ة) اليوم ${date}`,
-          link: '/parent/dashboard',
-          metadata: {
-            student_id: s.id,
-            date,
-            student_name: `${s.first_name} ${s.last_name}`,
-          },
-        })
-      }
-
-      for (const s of lateStudents) {
-        if (!s.parent_user_id) continue
-        notifsToInsert.push({
-          user_id: s.parent_user_id,
-          establishment_id: establishmentId,
-          type: 'attendance_late',
-          title: '⏰ تأخر التلميذ',
-          message: `التلميذ(ة) ${s.first_name} ${s.last_name} وصل(ت) متأخر(ة) اليوم`,
-          link: '/parent/dashboard',
-          metadata: { student_id: s.id, date },
-        })
-      }
-
-      if (notifsToInsert.length > 0) {
-        const { error: notifErr } = await supabase
-          .from('notifications')
-          .insert(notifsToInsert)
-        if (notifErr) console.error('Notif error:', notifErr)
-      }
-
-      // 3.b 📧 Email للأولياء (غياب فقط)
-      if (absentStudents.length > 0) {
-        try {
-          const emailRes = await fetch('/api/establishment/absence-alert', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              studentIds: absentStudents.map(s => s.id),
-              date,
-            }),
-          })
-          const emailData = await emailRes.json()
-
-          if (emailData.sent > 0) {
-            successMsg += ` + ${emailData.sent} إيميل`
-          }
-          if (emailData.failed > 0) {
-            successMsg += ` (${emailData.failed} فشل)`
-          }
-          if (emailData.skipped > 0) {
-            successMsg += ` (${emailData.skipped} بلا إيميل)`
-          }
-        } catch (e) {
-          console.error('Email send failed:', e)
-        }
-      }
-
-      successMsg += ' + إشعار الأولياء'
+  // ═══ WhatsApp: send absence notification to parent ═══
+  const handleWhatsApp = (student: StudentRow) => {
+    if (!student.family_phone) {
+      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      return
     }
 
-    setSuccess(successMsg)
-    setTimeout(() => setSuccess(''), 5000)
-  } catch (err: any) {
-    setError(err.message || 'حدث خطأ')
-  } finally {
-    setSaving(false)
+    const att = attendances.get(student.id)
+    const statusLabel = att
+      ? STATUS_OPTIONS.find(o => o.value === att.status)?.label || '—'
+      : '—'
+
+    // Message based on status
+    let message = ''
+    if (att?.status === 'absent') {
+      message = buildAbsenceMessage({
+        parentName: student.family_name || undefined,
+        studentName: `${student.first_name} ${student.last_name}`,
+        date,
+        schoolName,
+      })
+    } else {
+      message = [
+        `السلام عليكم${student.family_name ? ' ' + student.family_name : ''}،`,
+        ``,
+        `نحيطكم علماً أن حالة ابنكم/ابنتكم *${student.first_name} ${student.last_name}* اليوم *${date}* هي: *${statusLabel}*.`,
+        ``,
+        schoolName ? `— ${schoolName}` : '',
+      ].filter(Boolean).join('\n')
+    }
+
+    const ok = openWhatsApp(student.family_phone, message)
+    if (!ok) {
+      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
+    }
   }
-}
+
+  // ═══ WhatsApp: bulk — send to all absent students ═══
+  const handleWhatsAppAllAbsents = () => {
+    const absents = students.filter(s => attendances.get(s.id)?.status === 'absent')
+    if (absents.length === 0) {
+      alert('⚠️ لا يوجد غياب مسجل')
+      return
+    }
+    const withPhone = absents.filter(s => s.family_phone)
+    const withoutPhone = absents.length - withPhone.length
+
+    if (withPhone.length === 0) {
+      alert('⚠️ لا يوجد أرقام هواتف للأولياء. أضف الأرقام أولاً.')
+      return
+    }
+
+    if (withPhone.length > 5) {
+      const ok = confirm(
+        `سيتم فتح ${withPhone.length} نافذة WhatsApp (واحد لكل ولي).\n` +
+        `${withoutPhone > 0 ? `⚠️ ${withoutPhone} بدون رقم هاتف.\n` : ''}` +
+        `هل تريد المتابعة؟`,
+      )
+      if (!ok) return
+    }
+
+    // Open each in a new tab (browser may block popups — one per click needed)
+    withPhone.forEach((s, i) => {
+      setTimeout(() => {
+        const message = buildAbsenceMessage({
+          parentName: s.family_name || undefined,
+          studentName: `${s.first_name} ${s.last_name}`,
+          date,
+          schoolName,
+        })
+        openWhatsApp(s.family_phone, message)
+      }, i * 500) // stagger to avoid popup block
+    })
+
+    if (withoutPhone > 0) {
+      alert(`⚠️ ${withoutPhone} تلميذ بدون رقم هاتف — لم يتم إرسال رسائل لهم.`)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!establishmentId || !selectedClass || students.length === 0) return
+    setSaving(true)
+    setError('')
+    setSuccess('')
+
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSaving(false); return }
+
+    try {
+      const selectedClassData = classes.find(c => c.id === selectedClass)
+
+      // 1. Prépare data pour upsert
+      const attToSave = Array.from(attendances.values()).map(a => ({
+        establishment_id: establishmentId,
+        student_id: a.student_id,
+        class_id: selectedClass,
+        level_id: selectedClassData?.level_id || null,
+        attendance_date: date,
+        status: a.status,
+        check_in_time: a.check_in_time || null,
+        check_out_time: a.check_out_time || null,
+        note: a.note || null,
+        marked_by: user.id,
+        updated_at: new Date().toISOString(),
+      }))
+
+      // 2. Upsert
+      const { error: upsertErr } = await supabase
+        .from('attendances')
+        .upsert(attToSave, { onConflict: 'student_id,attendance_date' })
+
+      if (upsertErr) throw upsertErr
+
+      let successMsg = `✅ تم حفظ الحضور (${students.length} تلميذ)`
+
+      // 3. Notifications + Emails
+      if (sendNotifications) {
+        const absentStudents = students.filter(s => {
+          const att = attendances.get(s.id)
+          return att && att.status === 'absent'
+        })
+
+        const lateStudents = students.filter(s => {
+          const att = attendances.get(s.id)
+          return att && att.status === 'late'
+        })
+
+        // 3.a In-app notifications
+        const notifsToInsert: any[] = []
+
+        for (const s of absentStudents) {
+          if (!s.parent_user_id) continue
+          notifsToInsert.push({
+            user_id: s.parent_user_id,
+            establishment_id: establishmentId,
+            type: 'attendance_absent',
+            title: '⚠️ غياب التلميذ',
+            message: `التلميذ(ة) ${s.first_name} ${s.last_name} غائب(ة) اليوم ${date}`,
+            link: '/parent/dashboard',
+            metadata: {
+              student_id: s.id,
+              date,
+              student_name: `${s.first_name} ${s.last_name}`,
+            },
+          })
+        }
+
+        for (const s of lateStudents) {
+          if (!s.parent_user_id) continue
+          notifsToInsert.push({
+            user_id: s.parent_user_id,
+            establishment_id: establishmentId,
+            type: 'attendance_late',
+            title: '⏰ تأخر التلميذ',
+            message: `التلميذ(ة) ${s.first_name} ${s.last_name} وصل(ت) متأخر(ة) اليوم`,
+            link: '/parent/dashboard',
+            metadata: { student_id: s.id, date },
+          })
+        }
+
+        if (notifsToInsert.length > 0) {
+          const { error: notifErr } = await supabase
+            .from('notifications')
+            .insert(notifsToInsert)
+          if (notifErr) console.error('Notif error:', notifErr)
+        }
+
+        // 3.b 📧 Email للأولياء (غياب فقط)
+        if (absentStudents.length > 0) {
+          try {
+            const emailRes = await fetch('/api/establishment/absence-alert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                studentIds: absentStudents.map(s => s.id),
+                date,
+              }),
+            })
+            const emailData = await emailRes.json()
+
+            if (emailData.sent > 0) {
+              successMsg += ` + ${emailData.sent} إيميل`
+            }
+            if (emailData.failed > 0) {
+              successMsg += ` (${emailData.failed} فشل)`
+            }
+            if (emailData.skipped > 0) {
+              successMsg += ` (${emailData.skipped} بلا إيميل)`
+            }
+          } catch (e) {
+            console.error('Email send failed:', e)
+          }
+        }
+
+        successMsg += ' + إشعار الأولياء'
+      }
+
+      setSuccess(successMsg)
+      setTimeout(() => setSuccess(''), 5000)
+    } catch (err: any) {
+      setError(err.message || 'حدث خطأ')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const stats = useMemo(() => {
     const values = Array.from(attendances.values())
@@ -395,6 +491,7 @@ export default function AttendancePage() {
   if (!canView) return <div className="p-6">ليس لديك صلاحية</div>
 
   const selectedClassData = classes.find(c => c.id === selectedClass)
+  const absentCount = stats.absent
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
@@ -406,10 +503,20 @@ export default function AttendancePage() {
             الحضور والغياب
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            تسجيل حضور التلاميذ + إشعار الأولياء
+            تسجيل حضور التلاميذ + إشعار الأولياء (إيميل + WhatsApp)
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {absentCount > 0 && (
+            <button
+              onClick={handleWhatsAppAllAbsents}
+              className="inline-flex items-center gap-2 bg-[#25D366] text-white px-4 py-2.5 rounded-lg hover:bg-[#1da851] font-medium text-sm shadow-sm"
+              title="إرسال رسائل WhatsApp لكل الغائبين"
+            >
+              <MessageCircle className="h-4 w-4" />
+              WhatsApp للغائبين ({absentCount})
+            </button>
+          )}
           <button
             onClick={loadAttendance}
             className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm"
@@ -465,7 +572,7 @@ export default function AttendancePage() {
                 className="h-4 w-4 text-indigo-600 rounded"
               />
               <Bell className="h-4 w-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-700">إشعار الأولياء</span>
+              <span className="text-sm font-medium text-blue-700">إشعار الأولياء (إيميل + in-app)</span>
             </label>
           </div>
         </div>
@@ -554,11 +661,12 @@ export default function AttendancePage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">التلميذ</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">مساr</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">مسار</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">الحالة</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">الدخول</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">الخروج</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">ملاحظة</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">واتساب</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -646,6 +754,25 @@ export default function AttendancePage() {
                           placeholder="ملاحظة..."
                           className="w-full min-w-[120px] px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
                         />
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => handleWhatsApp(s)}
+                          disabled={!s.family_phone}
+                          className={`inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-bold transition ${
+                            s.family_phone
+                              ? 'bg-[#25D366] text-white hover:bg-[#1da851] shadow-sm'
+                              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          }`}
+                          title={
+                            s.family_phone
+                              ? `إرسال WhatsApp إلى ${s.family_name || 'الولي'} (${s.family_phone})`
+                              : 'لا يوجد رقم هاتف'
+                          }
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          <span className="hidden sm:inline">WhatsApp</span>
+                        </button>
                       </td>
                     </tr>
                   )
