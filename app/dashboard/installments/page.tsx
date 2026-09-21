@@ -7,6 +7,7 @@ import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import DateInput from '@/components/DateInput'
 import { openWhatsApp } from '@/lib/whatsapp'
+import { toast } from 'sonner'
 import {
   Search, Wallet, X, CheckCircle, Clock, AlertCircle, FileText,
   MessageCircle,
@@ -20,24 +21,12 @@ type Installment = {
   due_date: string
   status: string
   student_id: string
-  students: {
-    first_name: string
-    last_name: string
-  } | null
-  contracts: {
-    id: string
-    start_date: string
-    end_date: string | null
-  } | null
-  payments: {
-    id: string
-  }[] | null
+  students: { first_name: string; last_name: string } | null
+  contracts: { id: string; start_date: string; end_date: string | null } | null
+  payments: { id: string }[] | null
 }
 
-type CashRegister = {
-  id: string
-  name: string
-}
+type CashRegister = { id: string; name: string }
 
 export default function InstallmentsPage() {
   const router = useRouter()
@@ -49,11 +38,9 @@ export default function InstallmentsPage() {
   const [installments, setInstallments] = useState<Installment[]>([])
   const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
-  // ═══ WhatsApp: map student_id → phone ═══
   const [studentPhones, setStudentPhones] = useState<Map<string, string>>(new Map())
   const [schoolName, setSchoolName] = useState('')
 
@@ -64,6 +51,7 @@ export default function InstallmentsPage() {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
   const [cashRegisterId, setCashRegisterId] = useState('')
   const [saving, setSaving] = useState(false)
+  const [modalError, setModalError] = useState('')
 
   const handleDownloadReceipt = (installmentId: string) => {
     window.open(`/api/pdf/payment-receipt?installmentId=${installmentId}`, '_blank')
@@ -100,10 +88,14 @@ export default function InstallmentsPage() {
       .eq('establishment_id', sid)
       .order('due_date', { ascending: true })
 
-    if (installmentsError) setError(installmentsError.message)
-    else setInstallments(installmentsData || [])
+    if (installmentsError) {
+      console.error('[installments]', installmentsError?.message || installmentsError)
+      toast.error(installmentsError.message)
+      setLoading(false)
+      return
+    }
+    setInstallments(installmentsData || [])
 
-    // ═══ WhatsApp: fetch family phones (R1: separate queries) ═══
     const studentIds = Array.from(
       new Set((installmentsData || []).map((i: any) => i.student_id).filter(Boolean)),
     )
@@ -124,7 +116,6 @@ export default function InstallmentsPage() {
           .from('families')
           .select('id, phone')
           .in('id', familyIds)
-
         ;(familiesData || []).forEach((f: any) => {
           if (f.phone) familyIdToPhone.set(f.id, f.phone)
         })
@@ -135,7 +126,6 @@ export default function InstallmentsPage() {
         const phone = s.family_id ? familyIdToPhone.get(s.family_id) : null
         if (phone) studentIdToPhone.set(s.id, phone)
       })
-
       setStudentPhones(studentIdToPhone)
     } else {
       setStudentPhones(new Map())
@@ -146,8 +136,9 @@ export default function InstallmentsPage() {
       .select('id, name')
       .eq('establishment_id', sid)
 
-    if (cashError) setError(cashError.message)
-    else {
+    if (cashError) {
+      console.error('[cash-registers]', cashError?.message || cashError)
+    } else {
       setCashRegisters(cashData || [])
       if (cashData && cashData.length > 0) setCashRegisterId(cashData[0].id)
     }
@@ -155,11 +146,10 @@ export default function InstallmentsPage() {
     setLoading(false)
   }
 
-  // ═══ WhatsApp: send installment reminder ═══
   const handleWhatsApp = (inst: Installment) => {
     const phone = studentPhones.get(inst.student_id)
     if (!phone) {
-      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      toast.error('لا يوجد رقم هاتف لهذا الولي')
       return
     }
 
@@ -170,7 +160,6 @@ export default function InstallmentsPage() {
     const remaining = inst.amount - inst.paid_amount
     const isOverdue = inst.status !== 'paid' && inst.due_date < today
 
-    // Header based on status
     let header = ''
     if (isOverdue) {
       header = `نذكركم بأن القسط التالي قد تأخر عن موعد استحقاقه:`
@@ -207,11 +196,8 @@ export default function InstallmentsPage() {
     )
 
     const message = lines.filter((l) => l !== undefined).join('\n').trim()
-
     const ok = openWhatsApp(phone, message)
-    if (!ok) {
-      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
-    }
+    if (!ok) toast.error('رقم الهاتف غير صحيح')
   }
 
   const openPaymentModal = (installment: Installment) => {
@@ -220,23 +206,25 @@ export default function InstallmentsPage() {
     setPaymentMethod('cash')
     setPaymentDate(new Date().toISOString().split('T')[0])
     setCashRegisterId(cashRegisters.length > 0 ? cashRegisters[0].id : '')
+    setModalError('')
     setShowModal(true)
   }
 
   const closeModal = () => {
     setShowModal(false)
     setSelectedInstallment(null)
+    setModalError('')
   }
 
   const handleSavePayment = async () => {
     if (!selectedInstallment || !establishmentId) return
     if (paymentAmount <= 0) {
-      setError('المبلغ يجب أن يكون أكبر من صفر')
+      setModalError('المبلغ يجب أن يكون أكبر من صفر')
       return
     }
 
     setSaving(true)
-    setError('')
+    setModalError('')
 
     const supabase = createClient()
 
@@ -266,10 +254,12 @@ export default function InstallmentsPage() {
 
       if (updateError) throw updateError
 
+      toast.success('تم تسجيل الدفعة')
       fetchData(establishmentId)
       closeModal()
     } catch (err: any) {
-      setError(err.message || 'حدث خطأ أثناء الحفظ')
+      console.error('[installments-save]', err?.message || err)
+      setModalError(err.message || 'حدث خطأ أثناء الحفظ')
     } finally {
       setSaving(false)
     }
@@ -304,7 +294,16 @@ export default function InstallmentsPage() {
   }
 
   if (loading || permissionsLoading) {
-    return <div className="p-6">Chargement...</div>
+    return (
+      <div className="p-6 space-y-4" dir="rtl">
+        <div className="h-10 w-48 bg-slate-100 rounded-lg animate-pulse" />
+        <div className="flex gap-4">
+          <div className="h-11 flex-1 bg-slate-100 rounded-lg animate-pulse" />
+          <div className="h-11 w-40 bg-slate-100 rounded-lg animate-pulse" />
+        </div>
+        <div className="h-96 bg-slate-100 rounded-2xl animate-pulse" />
+      </div>
+    )
   }
 
   if (!canViewInstallments) {
@@ -320,8 +319,6 @@ export default function InstallmentsPage() {
         </h1>
         <p className="text-gray-600">تتبع مدفوعات الأقساط + تذكير الأولياء</p>
       </header>
-
-      {error && <div className="mb-4 text-red-600">{error}</div>}
 
       <div className="flex flex-wrap gap-4 mb-6">
         <div className="relative flex-1 min-w-[200px]">
@@ -383,7 +380,6 @@ export default function InstallmentsPage() {
                       <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(inst)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <div className="flex items-center gap-2">
-                          {/* WhatsApp button — only for unpaid / partially paid */}
                           {inst.status !== 'paid' && (
                             <button
                               onClick={() => handleWhatsApp(inst)}
@@ -393,11 +389,7 @@ export default function InstallmentsPage() {
                                   ? 'bg-[#25D366] text-white hover:bg-[#1da851] shadow-sm'
                                   : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                               }`}
-                              title={
-                                phone
-                                  ? `إرسال WhatsApp للولي (${phone})`
-                                  : 'لا يوجد رقم هاتف'
-                              }
+                              title={phone ? `WhatsApp (${phone})` : 'لا يوجد رقم هاتف'}
                             >
                               <MessageCircle className="h-3.5 w-3.5" />
                               WhatsApp
@@ -470,9 +462,7 @@ export default function InstallmentsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  طريقة الدفع
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">طريقة الدفع</label>
                 <select
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value)}
@@ -487,16 +477,12 @@ export default function InstallmentsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  تاريخ الدفع
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">تاريخ الدفع</label>
                 <DateInput value={paymentDate} onChange={setPaymentDate} />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  الصندوق
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">الصندوق</label>
                 <select
                   value={cashRegisterId}
                   onChange={(e) => setCashRegisterId(e.target.value)}
@@ -508,7 +494,7 @@ export default function InstallmentsPage() {
                 </select>
               </div>
 
-              {error && <div className="text-red-600 text-sm">{error}</div>}
+              {modalError && <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">{modalError}</div>}
 
               <button
                 onClick={handleSavePayment}

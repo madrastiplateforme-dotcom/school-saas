@@ -3,9 +3,12 @@ import { LanguageProvider } from '@/lib/LanguageContext'
 import { SettingsProvider } from '@/lib/SettingsContext'
 import CookieBanner from '@/components/CookieBanner'
 import PWAInit from '@/components/PWAInit'
+import Toaster from '@/components/ui/Toaster'
+
 export const metadata = {
   title: 'مدرستي — منصة تسيير المدارس الخاصة',
-  description: 'منصة عصرية لتسيير المدارس الخاصة بالمغرب: التلاميذ، الأقساط، الصندوق، النقط، الحضور، والتواصل مع الأولياء.',
+  description:
+    'منصة عصرية لتسيير المدارس الخاصة بالمغرب: التلاميذ، الأقساط، الصندوق، النقط، الحضور، والتواصل مع الأولياء.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -15,15 +18,12 @@ export const metadata = {
   formatDetection: {
     telephone: false,
   },
-  themeColor: '#0b2f35',
   icons: {
     icon: [
       { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
       { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
-    apple: [
-      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-    ],
+    apple: [{ url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
   },
 }
 
@@ -35,7 +35,11 @@ export const viewport = {
   themeColor: '#0b2f35',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
     <html lang="ar" dir="rtl" data-scroll-behavior="smooth">
       <head>
@@ -51,10 +55,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
             <CookieBanner />
             <PWAInit />
+            <Toaster />
           </LanguageProvider>
         </SettingsProvider>
       </body>
-      
     </html>
   )
 }

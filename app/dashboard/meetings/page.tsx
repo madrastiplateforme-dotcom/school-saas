@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { openWhatsApp } from '@/lib/whatsapp'
+import { toast } from 'sonner'
 import {
   Calendar, Plus, X, Save, RefreshCw, Users, Clock, MapPin,
   Edit, Trash2, UserCheck, BookOpen, ChevronDown, ChevronUp,
@@ -38,20 +39,12 @@ type Meeting = {
 }
 
 const formatDate = (d: string) => {
-  try {
-    return new Date(d).toLocaleDateString('fr-FR')
-  } catch {
-    return d
-  }
+  try { return new Date(d).toLocaleDateString('fr-FR') } catch { return d }
 }
 
 const AR_DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
 const dayName = (d: string) => {
-  try {
-    return AR_DAYS[new Date(d).getDay()]
-  } catch {
-    return ''
-  }
+  try { return AR_DAYS[new Date(d).getDay()] } catch { return '' }
 }
 
 export default function MeetingsPage() {
@@ -59,19 +52,15 @@ export default function MeetingsPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [teachers, setTeachers] = useState<any[]>([])
   const [classes, setClasses] = useState<any[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  // ═══ WhatsApp: map parent_user_id → phone ═══
   const [parentPhones, setParentPhones] = useState<Map<string, string>>(new Map())
   const [schoolName, setSchoolName] = useState('')
 
-  // Modal create/edit
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formTitle, setFormTitle] = useState('')
@@ -80,8 +69,8 @@ export default function MeetingsPage() {
   const [formLocation, setFormLocation] = useState('')
   const [formTeacher, setFormTeacher] = useState('')
   const [formClass, setFormClass] = useState('')
+  const [modalError, setModalError] = useState('')
 
-  // Modal add slots
   const [showSlotsModal, setShowSlotsModal] = useState(false)
   const [slotsMeetingId, setSlotsMeetingId] = useState<string | null>(null)
   const [startTime, setStartTime] = useState('10:00')
@@ -109,7 +98,6 @@ export default function MeetingsPage() {
 
   const loadData = async () => {
     setLoading(true)
-    setError('')
     const supabase = createClient()
 
     try {
@@ -179,14 +167,12 @@ export default function MeetingsPage() {
         })
       }
 
-      // ═══ WhatsApp: fetch parent phones via families.parent_user_id ═══
       const phoneMap = new Map<string, string>()
       if (parentIds.length > 0) {
         const { data: familiesData } = await supabase
           .from('families')
           .select('parent_user_id, phone')
           .in('parent_user_id', parentIds)
-
         ;(familiesData || []).forEach((f: any) => {
           if (f.parent_user_id && f.phone) {
             phoneMap.set(f.parent_user_id, f.phone)
@@ -226,23 +212,22 @@ export default function MeetingsPage() {
 
       setMeetings(list)
     } catch (e: any) {
-      console.error('[meetings]', e)
-      setError(e.message || 'خطأ')
+      console.error('[meetings]', e?.message || e)
+      toast.error(e?.message || 'خطأ')
     } finally {
       setLoading(false)
     }
   }
 
-  // ═══ WhatsApp: send meeting confirmation to booked parent ═══
   const handleWhatsApp = (slot: Slot, meeting: Meeting) => {
     if (!slot.parent_user_id) {
-      alert('⚠️ هذا الحجز ما عندوش ولي أمر')
+      toast.error('هذا الحجز ما عندوش ولي أمر')
       return
     }
 
     const phone = parentPhones.get(slot.parent_user_id)
     if (!phone) {
-      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      toast.error('لا يوجد رقم هاتف لهذا الولي')
       return
     }
 
@@ -258,29 +243,16 @@ export default function MeetingsPage() {
       `⏰ *التوقيت:* ${timeStr}`,
     ]
 
-    if (meeting.location) {
-      lines.push(`📍 *المكان:* ${meeting.location}`)
-    }
-    if (meeting.teacher_name) {
-      lines.push(`👤 *مع:* ${meeting.teacher_name}`)
-    }
-    if (slot.student_name) {
-      lines.push(`🎓 *التلميذ:* ${slot.student_name}`)
-    }
+    if (meeting.location) lines.push(`📍 *المكان:* ${meeting.location}`)
+    if (meeting.teacher_name) lines.push(`👤 *مع:* ${meeting.teacher_name}`)
+    if (slot.student_name) lines.push(`🎓 *التلميذ:* ${slot.student_name}`)
 
-    lines.push(
-      ``,
-      `نرجو الحضور في الوقت المحدد. شكراً لكم.`,
-      ``,
-      schoolName ? `— ${schoolName}` : '',
-    )
+    lines.push(``, `نرجو الحضور في الوقت المحدد. شكراً لكم.`, ``, schoolName ? `— ${schoolName}` : '')
 
     const message = lines.filter((l) => l !== undefined).join('\n').trim()
 
     const ok = openWhatsApp(phone, message)
-    if (!ok) {
-      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
-    }
+    if (!ok) toast.error('رقم الهاتف غير صحيح')
   }
 
   const openCreate = () => {
@@ -291,6 +263,7 @@ export default function MeetingsPage() {
     setFormLocation('')
     setFormTeacher('')
     setFormClass('')
+    setModalError('')
     setShowModal(true)
   }
 
@@ -302,22 +275,21 @@ export default function MeetingsPage() {
     setFormLocation(m.location || '')
     setFormTeacher(m.teacher_id || '')
     setFormClass(m.class_id || '')
+    setModalError('')
     setShowModal(true)
   }
 
   const handleSave = async () => {
     if (!formTitle.trim() || !formDate) {
-      setError('العنوان والتاريخ مطلوبان')
+      setModalError('العنوان والتاريخ مطلوبان')
       return
     }
     setSaving(true)
-    setError('')
+    setModalError('')
     const supabase = createClient()
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
 
       const payload = {
         establishment_id: establishmentId,
@@ -337,20 +309,20 @@ export default function MeetingsPage() {
           .update(payload)
           .eq('id', editingId)
         if (upErr) throw upErr
-        setSuccess('✅ تم التحديث')
+        toast.success('تم تحديث اللقاء')
       } else {
         const { error: insErr } = await supabase
           .from('meetings')
           .insert(payload)
         if (insErr) throw insErr
-        setSuccess('✅ تم إنشاء اللقاء')
+        toast.success('تم إنشاء اللقاء')
       }
 
-      setTimeout(() => setSuccess(''), 3000)
       setShowModal(false)
       await loadData()
     } catch (e: any) {
-      setError(e.message || 'فشل الحفظ')
+      console.error('[meetings-save]', e?.message || e)
+      setModalError(e?.message || 'فشل الحفظ')
     } finally {
       setSaving(false)
     }
@@ -360,10 +332,11 @@ export default function MeetingsPage() {
     if (!confirm('حذف هاد اللقاء؟ (كيحذف حتى الحجوزات)')) return
     const supabase = createClient()
     const { error: delErr } = await supabase.from('meetings').delete().eq('id', id)
-    if (delErr) setError(delErr.message)
-    else {
-      setSuccess('✅ تم الحذف')
-      setTimeout(() => setSuccess(''), 2500)
+    if (delErr) {
+      console.error('[meetings-delete]', delErr?.message || delErr)
+      toast.error(delErr.message)
+    } else {
+      toast.success('تم الحذف')
       await loadData()
     }
   }
@@ -375,10 +348,11 @@ export default function MeetingsPage() {
       .from('meetings')
       .update({ status: newStatus })
       .eq('id', m.id)
-    if (upErr) setError(upErr.message)
-    else {
-      setSuccess('✅ تم التحديث')
-      setTimeout(() => setSuccess(''), 2000)
+    if (upErr) {
+      console.error('[meetings-toggle]', upErr?.message || upErr)
+      toast.error(upErr.message)
+    } else {
+      toast.success('تم التحديث')
       await loadData()
     }
   }
@@ -395,7 +369,6 @@ export default function MeetingsPage() {
   const handleAddSlots = async () => {
     if (!slotsMeetingId) return
     setSaving(true)
-    setError('')
     const supabase = createClient()
 
     try {
@@ -428,12 +401,12 @@ export default function MeetingsPage() {
 
       if (insErr) throw insErr
 
-      setSuccess(`✅ تم إضافة ${count} فترة`)
-      setTimeout(() => setSuccess(''), 3000)
+      toast.success(`تم إضافة ${count} فترة`)
       setShowSlotsModal(false)
       await loadData()
     } catch (e: any) {
-      setError(e.message || 'فشل الإضافة')
+      console.error('[meetings-slots]', e?.message || e)
+      toast.error(e?.message || 'فشل الإضافة')
     } finally {
       setSaving(false)
     }
@@ -446,8 +419,10 @@ export default function MeetingsPage() {
       .from('meeting_slots')
       .delete()
       .eq('id', slotId)
-    if (delErr) setError(delErr.message)
-    else await loadData()
+    if (delErr) {
+      console.error('[slot-delete]', delErr?.message || delErr)
+      toast.error(delErr.message)
+    } else await loadData()
   }
 
   const handleCancelBooking = async (slot: Slot) => {
@@ -457,10 +432,11 @@ export default function MeetingsPage() {
       .from('meeting_slots')
       .update({ parent_user_id: null, student_id: null, booked_at: null, notes: null })
       .eq('id', slot.id)
-    if (upErr) setError(upErr.message)
-    else {
-      setSuccess('✅ تم إلغاء الحجز')
-      setTimeout(() => setSuccess(''), 2500)
+    if (upErr) {
+      console.error('[slot-cancel]', upErr?.message || upErr)
+      toast.error(upErr.message)
+    } else {
+      toast.success('تم إلغاء الحجز')
       await loadData()
     }
   }
@@ -478,9 +454,18 @@ export default function MeetingsPage() {
 
   if (loading && meetings.length === 0) {
     return (
-      <div className="p-6 text-center" dir="rtl">
-        <RefreshCw className="h-6 w-6 animate-spin text-indigo-600 mx-auto" />
-        <p className="text-sm text-slate-500 mt-2">جارٍ التحميل...</p>
+      <div className="p-6 space-y-6" dir="rtl">
+        <div className="h-10 w-64 bg-slate-100 rounded-lg animate-pulse" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-24 bg-slate-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-32 bg-slate-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
       </div>
     )
   }
@@ -512,17 +497,6 @@ export default function MeetingsPage() {
           </button>
         </div>
       </header>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg">
-          {success}
-        </div>
-      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -678,11 +652,7 @@ export default function MeetingsPage() {
                       onClick={() => setExpandedId(isExpanded ? null : m.id)}
                       className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition"
                     >
-                      {isExpanded ? (
-                        <ChevronUp className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
+                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>
@@ -692,9 +662,7 @@ export default function MeetingsPage() {
                     {m.slots.length === 0 ? (
                       <div className="text-center py-6">
                         <Clock className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                        <p className="text-sm text-slate-500 mb-3">
-                          ما كايناش فترات
-                        </p>
+                        <p className="text-sm text-slate-500 mb-3">ما كايناش فترات</p>
                         <button
                           onClick={() => openSlotsModal(m.id)}
                           className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm font-bold"
@@ -706,24 +674,17 @@ export default function MeetingsPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         {m.slots.map((s) => {
                           const booked = !!s.parent_user_id
-                          const phone = s.parent_user_id
-                            ? parentPhones.get(s.parent_user_id)
-                            : undefined
+                          const phone = s.parent_user_id ? parentPhones.get(s.parent_user_id) : undefined
 
                           return (
                             <div
                               key={s.id}
                               className={`p-3 rounded-lg border-2 transition ${
-                                booked
-                                  ? 'bg-indigo-50 border-indigo-300'
-                                  : 'bg-white border-slate-200'
+                                booked ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200'
                               }`}
                             >
                               <div className="flex items-center justify-between gap-2 mb-2">
-                                <span
-                                  className="text-sm font-bold text-slate-800"
-                                  dir="ltr"
-                                >
+                                <span className="text-sm font-bold text-slate-800" dir="ltr">
                                   {s.start_time.slice(0, 5)} - {s.end_time.slice(0, 5)}
                                 </span>
                                 <button
@@ -747,7 +708,6 @@ export default function MeetingsPage() {
                                     </p>
                                   )}
 
-                                  {/* ═══ Actions for booked slot ═══ */}
                                   <div className="flex items-center gap-2 pt-1">
                                     <button
                                       onClick={() => handleWhatsApp(s, m)}
@@ -757,11 +717,7 @@ export default function MeetingsPage() {
                                           ? 'bg-[#25D366] text-white hover:bg-[#1da851] shadow-sm'
                                           : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                       }`}
-                                      title={
-                                        phone
-                                          ? `إرسال WhatsApp للولي (${phone})`
-                                          : 'لا يوجد رقم هاتف'
-                                      }
+                                      title={phone ? `إرسال WhatsApp (${phone})` : 'لا يوجد رقم هاتف'}
                                     >
                                       <MessageCircle className="h-3 w-3" />
                                       WhatsApp
@@ -776,9 +732,7 @@ export default function MeetingsPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-xs text-slate-400">
-                                  متاح
-                                </span>
+                                <span className="text-xs text-slate-400">متاح</span>
                               )}
                             </div>
                           )
@@ -811,9 +765,7 @@ export default function MeetingsPage() {
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">
-                  العنوان *
-                </label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">العنوان *</label>
                 <input
                   type="text"
                   value={formTitle}
@@ -824,9 +776,7 @@ export default function MeetingsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">
-                  الوصف (اختياري)
-                </label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">الوصف (اختياري)</label>
                 <textarea
                   value={formDesc}
                   onChange={(e) => setFormDesc(e.target.value)}
@@ -837,9 +787,7 @@ export default function MeetingsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
-                    التاريخ *
-                  </label>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">التاريخ *</label>
                   <input
                     type="date"
                     value={formDate}
@@ -849,9 +797,7 @@ export default function MeetingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
-                    المكان
-                  </label>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">المكان</label>
                   <input
                     type="text"
                     value={formLocation}
@@ -864,9 +810,7 @@ export default function MeetingsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
-                    الأستاذ(ة)
-                  </label>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">الأستاذ(ة)</label>
                   <select
                     value={formTeacher}
                     onChange={(e) => setFormTeacher(e.target.value)}
@@ -874,16 +818,12 @@ export default function MeetingsPage() {
                   >
                     <option value="">— الكل —</option>
                     {teachers.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.full_name}
-                      </option>
+                      <option key={t.id} value={t.id}>{t.full_name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
-                    القسم
-                  </label>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">القسم</label>
                   <select
                     value={formClass}
                     onChange={(e) => setFormClass(e.target.value)}
@@ -900,9 +840,9 @@ export default function MeetingsPage() {
                 </div>
               </div>
 
-              {error && (
+              {modalError && (
                 <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
-                  {error}
+                  {modalError}
                 </div>
               )}
             </div>
@@ -946,9 +886,7 @@ export default function MeetingsPage() {
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
-                    وقت البداية
-                  </label>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">وقت البداية</label>
                   <input
                     type="time"
                     value={startTime}
@@ -958,9 +896,7 @@ export default function MeetingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">
-                    مدة الفترة (دقيقة)
-                  </label>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">مدة الفترة (دقيقة)</label>
                   <input
                     type="number"
                     value={duration}
@@ -974,9 +910,7 @@ export default function MeetingsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">
-                  عدد الفترات
-                </label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">عدد الفترات</label>
                 <input
                   type="number"
                   value={count}

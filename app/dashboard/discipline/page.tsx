@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { buildCustomMessage, openWhatsApp } from '@/lib/whatsapp'
+import { toast } from 'sonner'
 import {
   Shield, Plus, X, Save, Search, RefreshCw, Users, AlertTriangle,
   AlertCircle, Info, Edit, Trash2, Calendar, BookOpen, User as UserIcon,
@@ -55,13 +56,10 @@ export default function DisciplinePage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   const [disciplines, setDisciplines] = useState<Discipline[]>([])
   const [students, setStudents] = useState<any[]>([])
 
-  // ═══ WhatsApp: map student_id → phone ═══
   const [studentPhones, setStudentPhones] = useState<Map<string, string>>(new Map())
   const [schoolName, setSchoolName] = useState('')
 
@@ -99,11 +97,9 @@ export default function DisciplinePage() {
 
   const loadData = async () => {
     setLoading(true)
-    setError('')
     const supabase = createClient()
 
     try {
-      // Students
       const { data: studentsData } = await supabase
         .from('students')
         .select('id, first_name, last_name, massar_code, family_id')
@@ -113,7 +109,6 @@ export default function DisciplinePage() {
 
       setStudents(studentsData || [])
 
-      // ═══ WhatsApp: fetch family phones ═══
       const familyIds = Array.from(
         new Set((studentsData || []).map((s: any) => s.family_id).filter(Boolean)),
       )
@@ -124,7 +119,6 @@ export default function DisciplinePage() {
           .from('families')
           .select('id, phone')
           .in('id', familyIds)
-
         ;(familiesData || []).forEach((f: any) => {
           if (f.phone) familyIdToPhone.set(f.id, f.phone)
         })
@@ -137,7 +131,6 @@ export default function DisciplinePage() {
       })
       setStudentPhones(studentIdToPhone)
 
-      // Disciplines avec student + class
       const { data: dData, error: dErr } = await supabase
         .from('disciplines')
         .select(`
@@ -152,7 +145,6 @@ export default function DisciplinePage() {
 
       const studentIds = (dData || []).map((d: any) => d.student_id)
 
-      // Classes via enrollments
       let enrollmentsData: any[] = []
       if (studentIds.length > 0) {
         const { data: enr } = await supabase
@@ -186,18 +178,18 @@ export default function DisciplinePage() {
 
       setDisciplines(list)
     } catch (e: any) {
-      console.error('[discipline]', e)
-      setError(e.message || 'خطأ')
+      console.error('[discipline]', e?.message || e)
+      toast.error(e?.message || 'فشل التحميل')
     } finally {
       setLoading(false)
     }
   }
 
-  // ═══ WhatsApp: send discipline notification ═══
+  // WhatsApp handler (unchanged)
   const handleWhatsApp = (d: Discipline) => {
     const phone = studentPhones.get(d.student_id)
     if (!phone) {
-      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      toast.error('لا يوجد رقم هاتف لهذا الولي')
       return
     }
 
@@ -218,18 +210,13 @@ export default function DisciplinePage() {
       lines.push(``, `📝 *التفاصيل:* ${d.description}`)
     }
 
-    lines.push(
-      ``,
-      `نرجو التواصل مع الإدارة لمتابعة الموضوع.`,
-      ``,
-      schoolName ? `— ${schoolName}` : '',
-    )
+    lines.push(``, `نرجو التواصل مع الإدارة لمتابعة الموضوع.`, ``, schoolName ? `— ${schoolName}` : '')
 
     const message = lines.filter((l) => l !== undefined).join('\n').trim()
 
     const ok = openWhatsApp(phone, message)
     if (!ok) {
-      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
+      toast.error('رقم الهاتف غير صحيح')
     }
   }
 
@@ -257,11 +244,10 @@ export default function DisciplinePage() {
 
   const handleSave = async () => {
     if (!formStudentId || !formTitle.trim()) {
-      setError('التلميذ والعنوان مطلوبان')
+      toast.error('التلميذ والعنوان مطلوبان')
       return
     }
     setSaving(true)
-    setError('')
     const supabase = createClient()
 
     try {
@@ -286,7 +272,7 @@ export default function DisciplinePage() {
           .update(payload)
           .eq('id', editingId)
         if (upErr) throw upErr
-        setSuccess('✅ تم التحديث')
+        toast.success('تم تحديث المخالفة')
       } else {
         const { data: newDisc, error: insErr } = await supabase
           .from('disciplines')
@@ -295,8 +281,8 @@ export default function DisciplinePage() {
           .single()
         if (insErr) throw insErr
 
-        // 📧 إرسال إيميل للوالد
         if (newDisc?.id) {
+          toast.loading('جارٍ إرسال الإيميل...', { id: 'discipline-email' })
           try {
             const res = await fetch('/api/establishment/discipline-alert', {
               method: 'POST',
@@ -304,28 +290,34 @@ export default function DisciplinePage() {
               body: JSON.stringify({ disciplineId: newDisc.id }),
             })
             const json = await res.json()
+
             if (json.sent) {
-              setSuccess('✅ تم تسجيل المخالفة + إرسال إيميل للوالد')
+              toast.success('تم تسجيل المخالفة + إرسال إيميل للوالد', {
+                id: 'discipline-email',
+              })
             } else if (json.skipped) {
-              setSuccess(`✅ تم تسجيل المخالفة (لم يُرسل إيميل — ${json.reason || ''})`)
+              toast.success('تم تسجيل المخالفة (لم يُرسل إيميل)', {
+                id: 'discipline-email',
+              })
             } else {
-              setSuccess('✅ تم تسجيل المخالفة')
+              toast.success('تم تسجيل المخالفة', { id: 'discipline-email' })
             }
           } catch (e) {
             console.error('Email send failed:', e)
-            setSuccess('✅ تم تسجيل المخالفة (فشل إرسال الإيميل)')
+            toast.success('تم تسجيل المخالفة (فشل إرسال الإيميل)', {
+              id: 'discipline-email',
+            })
           }
-          setTimeout(() => setSuccess(''), 5000)
         } else {
-          setSuccess('✅ تم تسجيل المخالفة')
+          toast.success('تم تسجيل المخالفة')
         }
       }
 
-      setTimeout(() => setSuccess(''), 3000)
       setShowModal(false)
       await loadData()
     } catch (e: any) {
-      setError(e.message || 'فشل الحفظ')
+      console.error('[discipline-save]', e?.message || e)
+      toast.error(e?.message || 'فشل الحفظ')
     } finally {
       setSaving(false)
     }
@@ -338,10 +330,11 @@ export default function DisciplinePage() {
       .from('disciplines')
       .delete()
       .eq('id', id)
-    if (delErr) setError(delErr.message)
-    else {
-      setSuccess('✅ تم الحذف')
-      setTimeout(() => setSuccess(''), 2500)
+    if (delErr) {
+      console.error('[discipline-delete]', delErr?.message || delErr)
+      toast.error(delErr.message)
+    } else {
+      toast.success('تم الحذف')
       await loadData()
     }
   }
@@ -368,9 +361,18 @@ export default function DisciplinePage() {
 
   if (loading && disciplines.length === 0) {
     return (
-      <div className="p-6 text-center" dir="rtl">
-        <RefreshCw className="h-6 w-6 animate-spin text-indigo-600 mx-auto" />
-        <p className="text-sm text-slate-500 mt-2">جارٍ التحميل...</p>
+      <div className="p-6 space-y-4" dir="rtl">
+        <div className="h-10 w-64 bg-slate-100 rounded-lg animate-pulse" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-24 bg-slate-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-32 bg-slate-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
       </div>
     )
   }
@@ -402,17 +404,6 @@ export default function DisciplinePage() {
           </button>
         </div>
       </header>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg">
-          {success}
-        </div>
-      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -578,7 +569,6 @@ export default function DisciplinePage() {
                       </div>
 
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        {/* WhatsApp button */}
                         <button
                           onClick={() => handleWhatsApp(d)}
                           disabled={!phone}
@@ -734,12 +724,6 @@ export default function DisciplinePage() {
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 resize-none"
                 />
               </div>
-
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
             </div>
 
             <div className="flex gap-2 justify-end p-6 border-t border-slate-100">

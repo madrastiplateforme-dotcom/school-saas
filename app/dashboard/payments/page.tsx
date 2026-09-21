@@ -9,6 +9,7 @@ import { useUserRole } from '@/lib/useUserRole'
 import Amount from '@/components/Amount'
 import DateInput from '@/components/DateInput'
 import { buildPaymentMessage, openWhatsApp } from '@/lib/whatsapp'
+import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
 import {
   Search, Plus, FileText, RefreshCw, Filter, TrendingUp,
@@ -71,17 +72,14 @@ export default function PaymentsPage() {
   const [payments, setPayments] = useState<Payment[]>([])
   const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
 
   const [currentUserId, setCurrentUserId] = useState('')
-
   const [showDeleted, setShowDeleted] = useState(false)
 
-  // ═══ WhatsApp: map student_id → phone ═══
   const [familyPhones, setFamilyPhones] = useState<Map<string, string>>(new Map())
   const [schoolName, setSchoolName] = useState('')
 
-  // Filtres
+  // Filters
   const [searchTerm, setSearchTerm] = useState('')
   const [methodFilter, setMethodFilter] = useState('all')
   const [caisseFilter, setCaisseFilter] = useState('all')
@@ -89,11 +87,12 @@ export default function PaymentsPage() {
   const [dateTo, setDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
 
-  // Cancel modal states
+  // Cancel modal
   const [cancelPayment, setCancelPayment] = useState<Payment | null>(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelConfirmText, setCancelConfirmText] = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const [modalError, setModalError] = useState('') // ← inline error في الـ modal فقط
 
   useEffect(() => {
     if (!establishmentId || !role) return
@@ -108,7 +107,6 @@ export default function PaymentsPage() {
 
     setCurrentUserId(user.id)
 
-    // School name (for WhatsApp message)
     supabase
       .from('establishments')
       .select('name')
@@ -118,7 +116,6 @@ export default function PaymentsPage() {
         if (data?.name) setSchoolName(data.name)
       })
 
-    // 1. Caisses
     let caisseQuery = supabase
       .from('cash_registers')
       .select('id, name')
@@ -133,7 +130,6 @@ export default function PaymentsPage() {
 
     const caisseIds = (cashData || []).map(c => c.id)
 
-    // 2. Payments
     let query = supabase
       .from('payments')
       .select(`
@@ -158,10 +154,14 @@ export default function PaymentsPage() {
 
     const { data, error } = await query.order('created_at', { ascending: false })
 
-    if (error) setError(error.message)
-    else setPayments((data as any) || [])
+    if (error) {
+      console.error('[payments]', error?.message || error)
+      toast.error(error.message)
+      setLoading(false)
+      return
+    }
+    setPayments((data as any) || [])
 
-    // 3. Fetch family phones for all students in this batch (R1: separate queries)
     const studentIds = Array.from(new Set((data || []).map((p: any) => p.student_id).filter(Boolean)))
 
     if (studentIds.length > 0) {
@@ -236,7 +236,7 @@ export default function PaymentsPage() {
 
   const handleExportExcel = () => {
     if (filteredPayments.length === 0) {
-      alert('لا توجد مدفوعات للتصدير')
+      toast.warning('لا توجد مدفوعات للتصدير')
       return
     }
 
@@ -256,13 +256,13 @@ export default function PaymentsPage() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'المدفوعات')
     XLSX.writeFile(wb, `payments-${new Date().toISOString().split('T')[0]}.xlsx`)
+    toast.success('تم تصدير Excel')
   }
 
-  // ═══ WhatsApp: send payment confirmation to parent ═══
   const handleWhatsApp = (payment: Payment) => {
     const phone = familyPhones.get(payment.student_id)
     if (!phone) {
-      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      toast.error('لا يوجد رقم هاتف لهذا الولي')
       return
     }
 
@@ -279,11 +279,10 @@ export default function PaymentsPage() {
 
     const ok = openWhatsApp(phone, message)
     if (!ok) {
-      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
+      toast.error('رقم الهاتف غير صحيح')
     }
   }
 
-  // ✅ Chkoun kay9der y-annulli
   const canCancelPayment = (p: Payment): boolean => {
     if (p.deleted_at) return false
     if (isDirector) return true
@@ -301,22 +300,24 @@ export default function PaymentsPage() {
 
   const handleOpenCancel = (payment: Payment) => {
     if (payment.deleted_at) {
-      alert('ℹ️ هذه الدفعة محذوفة بالفعل')
+      toast.info('هذه الدفعة محذوفة بالفعل')
       return
     }
     if (!canCancelPayment(payment)) {
-      alert('❌ لا يمكنك حذف هذه الدفعة\n\n- السكرتيرة يمكنها حذف دفعاتها فقط في نفس اليوم')
+      toast.error('لا يمكنك حذف هذه الدفعة — السكرتيرة يمكنها حذف دفعاتها فقط في نفس اليوم')
       return
     }
     setCancelPayment(payment)
     setCancelReason('')
     setCancelConfirmText('')
+    setModalError('')
   }
 
   const closeCancelModal = () => {
     setCancelPayment(null)
     setCancelReason('')
     setCancelConfirmText('')
+    setModalError('')
   }
 
   const triggerPaymentCancelledEmails = async (
@@ -344,17 +345,17 @@ export default function PaymentsPage() {
     if (!cancelPayment || !establishmentId) return
 
     if (!cancelReason.trim() || cancelReason.trim().length < 5) {
-      setError('⚠️ سبب الحذف مطلوب (5 أحرف على الأقل)')
+      setModalError('سبب الحذف مطلوب (5 أحرف على الأقل)')
       return
     }
 
     if (cancelConfirmText.trim().toUpperCase() !== 'حذف') {
-      setError('⚠️ اكتب كلمة "حذف" للتأكيد')
+      setModalError('اكتب كلمة "حذف" للتأكيد')
       return
     }
 
     setCancelling(true)
-    setError('')
+    setModalError('')
 
     const supabase = createClient()
 
@@ -475,18 +476,43 @@ export default function PaymentsPage() {
 
       await triggerPaymentCancelledEmails(paymentId, cancelReason.trim())
 
-      fetchPayments(establishmentId)
+      toast.success('تم حذف الدفعة + إشعار الأطراف')
       closeCancelModal()
+      fetchPayments(establishmentId)
     } catch (err: any) {
       console.error('[handleConfirmCancel]', err?.message || err)
-      setError(err.message || 'حدث خطأ')
+      setModalError(err.message || 'حدث خطأ')
     } finally {
       setCancelling(false)
     }
   }
 
-  if (loading || permissionsLoading || roleLoading) {
-    return <div className="p-6 text-center">Chargement...</div>
+  // ═══ Loading skeleton ═══
+  if (loading && payments.length === 0 && (permissionsLoading || roleLoading || true)) {
+    return (
+      <div className="p-6 space-y-6" dir="rtl">
+        <div className="flex justify-between flex-wrap gap-3">
+          <div className="h-10 w-48 bg-slate-100 rounded-lg animate-pulse" />
+          <div className="h-10 w-64 bg-slate-100 rounded-lg animate-pulse" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-28 bg-slate-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+        <div className="h-40 bg-slate-100 rounded-2xl animate-pulse" />
+        <div className="h-96 bg-slate-100 rounded-2xl animate-pulse" />
+      </div>
+    )
+  }
+
+  if (permissionsLoading || roleLoading) {
+    return (
+      <div className="p-6 space-y-4" dir="rtl">
+        <div className="h-10 w-48 bg-slate-100 rounded-lg animate-pulse" />
+        <div className="h-96 bg-slate-100 rounded-2xl animate-pulse" />
+      </div>
+    )
   }
 
   if (!canViewPayments) {
@@ -495,7 +521,6 @@ export default function PaymentsPage() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -542,8 +567,6 @@ export default function PaymentsPage() {
           )}
         </div>
       </header>
-
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
 
       {showDeleted && isDirector && (
         <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm">
@@ -749,11 +772,7 @@ export default function PaymentsPage() {
                                   ? 'text-[#25D366] hover:bg-emerald-50'
                                   : 'text-slate-300 cursor-not-allowed'
                               }`}
-                              title={
-                                phone
-                                  ? `إرسال WhatsApp للولي (${phone})`
-                                  : 'لا يوجد رقم هاتف'
-                              }
+                              title={phone ? `إرسال WhatsApp للولي (${phone})` : 'لا يوجد رقم هاتف'}
                             >
                               <MessageCircle className="h-4 w-4" />
                             </button>
@@ -882,9 +901,9 @@ export default function PaymentsPage() {
               />
             </div>
 
-            {error && (
+            {modalError && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm mb-4">
-                {error}
+                {modalError}
               </div>
             )}
 

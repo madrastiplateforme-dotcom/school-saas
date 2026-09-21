@@ -7,8 +7,9 @@ import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import { useUserRole } from '@/lib/useUserRole'
 import DateInput from '@/components/DateInput'
-import * as XLSX from 'xlsx'
 import { buildAbsenceMessage, openWhatsApp } from '@/lib/whatsapp'
+import { toast } from 'sonner'
+import * as XLSX from 'xlsx'
 import {
   CheckCircle2, XCircle, Clock, AlertCircle, Save, Users,
   Calendar, Search, RefreshCw, Download, BookOpen, Phone, Bell,
@@ -56,13 +57,8 @@ export default function AttendancePage() {
   const canView = hasPermission('attendance', 'view') || hasPermission('students', 'view')
   const canCreate = hasPermission('attendance', 'create') || hasPermission('students', 'create')
 
-  const isDirector = role === 'directeur'
-  const isSecretary = role === 'secretaire'
-
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [classes, setClasses] = useState<ClassItem[]>([])
@@ -70,10 +66,7 @@ export default function AttendancePage() {
   const [students, setStudents] = useState<StudentRow[]>([])
   const [attendances, setAttendances] = useState<Map<string, AttendanceRow>>(new Map())
   const [searchTerm, setSearchTerm] = useState('')
-
   const [sendNotifications, setSendNotifications] = useState(true)
-
-  // School name for WhatsApp messages
   const [schoolName, setSchoolName] = useState('')
 
   useEffect(() => {
@@ -108,7 +101,12 @@ export default function AttendancePage() {
       .eq('establishment_id', establishmentId)
       .order('name', { ascending: true })
 
-    if (err) { setError(err.message); setLoading(false); return }
+    if (err) {
+      console.error('[attendance-classes]', err?.message || err)
+      toast.error(err.message)
+      setLoading(false)
+      return
+    }
 
     const formatted = (classesData || []).map((c: any) => ({
       id: c.id,
@@ -125,10 +123,8 @@ export default function AttendancePage() {
 
   const loadAttendance = async () => {
     setLoading(true)
-    setError('')
     const supabase = createClient()
 
-    // 1. Jib students dyal had classe (via enrollments)
     const { data: enrollmentsData, error: stErr } = await supabase
       .from('enrollments')
       .select(`
@@ -142,13 +138,17 @@ export default function AttendancePage() {
       .eq('establishment_id', establishmentId)
       .eq('status', 'active')
 
-    if (stErr) { setError(stErr.message); setLoading(false); return }
+    if (stErr) {
+      console.error('[attendance-students]', stErr?.message || stErr)
+      toast.error(stErr.message)
+      setLoading(false)
+      return
+    }
 
-    // ✅ DEDUPLICATE by student_id
     const uniqueStudentsMap = new Map<string, StudentRow>()
     ;(enrollmentsData || []).forEach((e: any) => {
       if (!e.students || e.students.status !== 'active') return
-      if (uniqueStudentsMap.has(e.students.id)) return // skip duplicates
+      if (uniqueStudentsMap.has(e.students.id)) return
 
       uniqueStudentsMap.set(e.students.id, {
         id: e.students.id,
@@ -173,7 +173,6 @@ export default function AttendancePage() {
       return
     }
 
-    // 2. Jib attendances li mawjoudin dyal had nhar
     const { data: attData, error: attErr } = await supabase
       .from('attendances')
       .select('student_id, status, check_in_time, check_out_time, note')
@@ -182,11 +181,10 @@ export default function AttendancePage() {
       .in('student_id', studentList.map(s => s.id))
 
     if (attErr) {
-      console.error('Attendances error:', attErr.message, attErr.details, attErr.hint, attErr.code)
+      console.error('[attendance-load]', attErr?.message || attErr)
     }
 
     const map = new Map<string, AttendanceRow>()
-    // Default : present
     studentList.forEach(s => {
       map.set(s.id, {
         student_id: s.id,
@@ -196,7 +194,6 @@ export default function AttendancePage() {
         note: null,
       })
     })
-    // Override b existing
     ;(attData || []).forEach((a: any) => {
       map.set(a.student_id, {
         student_id: a.student_id,
@@ -236,10 +233,9 @@ export default function AttendancePage() {
     })
   }
 
-  // ═══ WhatsApp: send absence notification to parent ═══
   const handleWhatsApp = (student: StudentRow) => {
     if (!student.family_phone) {
-      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      toast.error('لا يوجد رقم هاتف لهذا الولي')
       return
     }
 
@@ -248,7 +244,6 @@ export default function AttendancePage() {
       ? STATUS_OPTIONS.find(o => o.value === att.status)?.label || '—'
       : '—'
 
-    // Message based on status
     let message = ''
     if (att?.status === 'absent') {
       message = buildAbsenceMessage({
@@ -268,36 +263,32 @@ export default function AttendancePage() {
     }
 
     const ok = openWhatsApp(student.family_phone, message)
-    if (!ok) {
-      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
-    }
+    if (!ok) toast.error('رقم الهاتف غير صحيح')
   }
 
-  // ═══ WhatsApp: bulk — send to all absent students ═══
   const handleWhatsAppAllAbsents = () => {
     const absents = students.filter(s => attendances.get(s.id)?.status === 'absent')
     if (absents.length === 0) {
-      alert('⚠️ لا يوجد غياب مسجل')
+      toast.warning('لا يوجد غياب مسجل')
       return
     }
     const withPhone = absents.filter(s => s.family_phone)
     const withoutPhone = absents.length - withPhone.length
 
     if (withPhone.length === 0) {
-      alert('⚠️ لا يوجد أرقام هواتف للأولياء. أضف الأرقام أولاً.')
+      toast.error('لا يوجد أرقام هواتف للأولياء')
       return
     }
 
     if (withPhone.length > 5) {
       const ok = confirm(
-        `سيتم فتح ${withPhone.length} نافذة WhatsApp (واحد لكل ولي).\n` +
+        `سيتم فتح ${withPhone.length} نافذة WhatsApp.\n` +
         `${withoutPhone > 0 ? `⚠️ ${withoutPhone} بدون رقم هاتف.\n` : ''}` +
         `هل تريد المتابعة؟`,
       )
       if (!ok) return
     }
 
-    // Open each in a new tab (browser may block popups — one per click needed)
     withPhone.forEach((s, i) => {
       setTimeout(() => {
         const message = buildAbsenceMessage({
@@ -307,19 +298,19 @@ export default function AttendancePage() {
           schoolName,
         })
         openWhatsApp(s.family_phone, message)
-      }, i * 500) // stagger to avoid popup block
+      }, i * 500)
     })
 
+    toast.success(`جارٍ إرسال ${withPhone.length} رسالة WhatsApp...`)
+
     if (withoutPhone > 0) {
-      alert(`⚠️ ${withoutPhone} تلميذ بدون رقم هاتف — لم يتم إرسال رسائل لهم.`)
+      toast.warning(`${withoutPhone} تلميذ بدون رقم هاتف`)
     }
   }
 
   const handleSave = async () => {
     if (!establishmentId || !selectedClass || students.length === 0) return
     setSaving(true)
-    setError('')
-    setSuccess('')
 
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -328,7 +319,6 @@ export default function AttendancePage() {
     try {
       const selectedClassData = classes.find(c => c.id === selectedClass)
 
-      // 1. Prépare data pour upsert
       const attToSave = Array.from(attendances.values()).map(a => ({
         establishment_id: establishmentId,
         student_id: a.student_id,
@@ -343,28 +333,18 @@ export default function AttendancePage() {
         updated_at: new Date().toISOString(),
       }))
 
-      // 2. Upsert
       const { error: upsertErr } = await supabase
         .from('attendances')
         .upsert(attToSave, { onConflict: 'student_id,attendance_date' })
 
       if (upsertErr) throw upsertErr
 
-      let successMsg = `✅ تم حفظ الحضور (${students.length} تلميذ)`
+      let savedMsg = `تم حفظ الحضور (${students.length} تلميذ)`
 
-      // 3. Notifications + Emails
       if (sendNotifications) {
-        const absentStudents = students.filter(s => {
-          const att = attendances.get(s.id)
-          return att && att.status === 'absent'
-        })
+        const absentStudents = students.filter(s => attendances.get(s.id)?.status === 'absent')
+        const lateStudents = students.filter(s => attendances.get(s.id)?.status === 'late')
 
-        const lateStudents = students.filter(s => {
-          const att = attendances.get(s.id)
-          return att && att.status === 'late'
-        })
-
-        // 3.a In-app notifications
         const notifsToInsert: any[] = []
 
         for (const s of absentStudents) {
@@ -376,11 +356,7 @@ export default function AttendancePage() {
             title: '⚠️ غياب التلميذ',
             message: `التلميذ(ة) ${s.first_name} ${s.last_name} غائب(ة) اليوم ${date}`,
             link: '/parent/dashboard',
-            metadata: {
-              student_id: s.id,
-              date,
-              student_name: `${s.first_name} ${s.last_name}`,
-            },
+            metadata: { student_id: s.id, date, student_name: `${s.first_name} ${s.last_name}` },
           })
         }
 
@@ -404,7 +380,6 @@ export default function AttendancePage() {
           if (notifErr) console.error('Notif error:', notifErr)
         }
 
-        // 3.b 📧 Email للأولياء (غياب فقط)
         if (absentStudents.length > 0) {
           try {
             const emailRes = await fetch('/api/establishment/absence-alert', {
@@ -417,27 +392,21 @@ export default function AttendancePage() {
             })
             const emailData = await emailRes.json()
 
-            if (emailData.sent > 0) {
-              successMsg += ` + ${emailData.sent} إيميل`
-            }
-            if (emailData.failed > 0) {
-              successMsg += ` (${emailData.failed} فشل)`
-            }
-            if (emailData.skipped > 0) {
-              successMsg += ` (${emailData.skipped} بلا إيميل)`
-            }
+            if (emailData.sent > 0) savedMsg += ` + ${emailData.sent} إيميل`
+            if (emailData.failed > 0) savedMsg += ` (${emailData.failed} فشل)`
+            if (emailData.skipped > 0) savedMsg += ` (${emailData.skipped} بلا إيميل)`
           } catch (e) {
             console.error('Email send failed:', e)
           }
         }
 
-        successMsg += ' + إشعار الأولياء'
+        savedMsg += ' + إشعار الأولياء'
       }
 
-      setSuccess(successMsg)
-      setTimeout(() => setSuccess(''), 5000)
+      toast.success(savedMsg)
     } catch (err: any) {
-      setError(err.message || 'حدث خطأ')
+      console.error('[attendance-save]', err?.message || err)
+      toast.error(err.message || 'حدث خطأ')
     } finally {
       setSaving(false)
     }
@@ -465,7 +434,7 @@ export default function AttendancePage() {
 
   const handleExportExcel = () => {
     if (students.length === 0) {
-      alert('لا يوجد تلاميذ')
+      toast.warning('لا يوجد تلاميذ')
       return
     }
     const data = students.map(s => {
@@ -484,9 +453,23 @@ export default function AttendancePage() {
     XLSX.utils.book_append_sheet(wb, ws, 'الحضور')
     const className = classes.find(c => c.id === selectedClass)?.name || 'classe'
     XLSX.writeFile(wb, `attendance-${className}-${date}.xlsx`)
+    toast.success('تم تصدير Excel')
   }
 
-  if (loading && classes.length === 0) return <div className="p-6 text-center">Chargement...</div>
+  if (loading && classes.length === 0) {
+    return (
+      <div className="p-6 space-y-6" dir="rtl">
+        <div className="h-10 w-64 bg-slate-100 rounded-lg animate-pulse" />
+        <div className="h-32 bg-slate-100 rounded-2xl animate-pulse" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {[1, 2, 3, 4, 5].map(i => (
+            <div key={i} className="h-24 bg-slate-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+        <div className="h-96 bg-slate-100 rounded-2xl animate-pulse" />
+      </div>
+    )
+  }
   if (permissionsLoading || roleLoading) return <div className="p-6 text-center">Chargement...</div>
   if (!canView) return <div className="p-6">ليس لديك صلاحية</div>
 
@@ -495,7 +478,6 @@ export default function AttendancePage() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -511,7 +493,6 @@ export default function AttendancePage() {
             <button
               onClick={handleWhatsAppAllAbsents}
               className="inline-flex items-center gap-2 bg-[#25D366] text-white px-4 py-2.5 rounded-lg hover:bg-[#1da851] font-medium text-sm shadow-sm"
-              title="إرسال رسائل WhatsApp لكل الغائبين"
             >
               <MessageCircle className="h-4 w-4" />
               WhatsApp للغائبين ({absentCount})
@@ -531,9 +512,6 @@ export default function AttendancePage() {
           </button>
         </div>
       </header>
-
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
-      {success && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg">{success}</div>}
 
       <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -572,7 +550,7 @@ export default function AttendancePage() {
                 className="h-4 w-4 text-indigo-600 rounded"
               />
               <Bell className="h-4 w-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-700">إشعار الأولياء (إيميل + in-app)</span>
+              <span className="text-sm font-medium text-blue-700">إشعار الأولياء</span>
             </label>
           </div>
         </div>
@@ -764,11 +742,7 @@ export default function AttendancePage() {
                               ? 'bg-[#25D366] text-white hover:bg-[#1da851] shadow-sm'
                               : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                           }`}
-                          title={
-                            s.family_phone
-                              ? `إرسال WhatsApp إلى ${s.family_name || 'الولي'} (${s.family_phone})`
-                              : 'لا يوجد رقم هاتف'
-                          }
+                          title={s.family_phone ? `WhatsApp ${s.family_phone}` : 'لا يوجد رقم هاتف'}
                         >
                           <MessageCircle className="h-4 w-4" />
                           <span className="hidden sm:inline">WhatsApp</span>

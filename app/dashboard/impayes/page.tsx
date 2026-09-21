@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserRole } from '@/lib/useUserRole'
 import { buildImpayeMessage, openWhatsApp } from '@/lib/whatsapp'
+import { toast } from 'sonner'
 import {
   AlertCircle, Search, RefreshCw, Bell, MessageCircle, Mail,
   Send, TrendingDown, Users, Wallet, Clock, CheckCircle2,
@@ -38,19 +39,15 @@ export default function ImpayesPage() {
   const { role, loading: roleLoading } = useUserRole()
 
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   const [unpaidStudents, setUnpaidStudents] = useState<UnpaidStudent[]>([])
   const [schoolName, setSchoolName] = useState('')
 
-  // Filtres
   const [searchTerm, setSearchTerm] = useState('')
   const [classFilter, setClassFilter] = useState('all')
   const [levelFilter, setLevelFilter] = useState('all')
   const [minAmount, setMinAmount] = useState('')
 
-  // Relance modal
   const [relanceStudent, setRelanceStudent] = useState<UnpaidStudent | null>(null)
   const [relanceType, setRelanceType] = useState<'notification' | 'sms' | 'email' | 'all'>('all')
   const [sending, setSending] = useState(false)
@@ -77,7 +74,6 @@ export default function ImpayesPage() {
 
   const loadData = async () => {
     setLoading(true)
-    setError('')
     const supabase = createClient()
 
     const { data: instData, error: instError } = await supabase
@@ -96,7 +92,8 @@ export default function ImpayesPage() {
       .order('due_date', { ascending: true })
 
     if (instError) {
-      setError(instError.message)
+      console.error('[impayes]', instError?.message || instError)
+      toast.error(instError.message)
       setLoading(false)
       return
     }
@@ -184,10 +181,9 @@ export default function ImpayesPage() {
     }), { count: 0, amount: 0, installments: 0 })
   }, [filtered])
 
-  // ═══ WhatsApp: send payment reminder ═══
   const handleWhatsApp = (s: UnpaidStudent) => {
     if (!s.parent_phone) {
-      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      toast.error('لا يوجد رقم هاتف لهذا الولي')
       return
     }
 
@@ -201,15 +197,13 @@ export default function ImpayesPage() {
 
     const ok = openWhatsApp(s.parent_phone, message)
     if (!ok) {
-      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
+      toast.error('رقم الهاتف غير صحيح')
     }
   }
 
   const handleRelance = async () => {
     if (!relanceStudent) return
     setSending(true)
-    setError('')
-    setSuccess('')
 
     try {
       const res = await fetch('/api/establishment/send-reminder', {
@@ -237,11 +231,11 @@ export default function ImpayesPage() {
       if (relanceType === 'all' || relanceType === 'sms') parts.push('SMS')
       if (relanceType === 'all' || relanceType === 'email') parts.push('البريد')
 
-      setSuccess(`✅ تم إرسال ${parts.join(' + ')} إلى ${relanceStudent.full_name}`)
+      toast.success(`تم إرسال ${parts.join(' + ')} إلى ${relanceStudent.full_name}`)
       setRelanceStudent(null)
-      setTimeout(() => setSuccess(''), 3000)
     } catch (err: any) {
-      setError(err.message)
+      console.error('[impayes-relance]', err?.message || err)
+      toast.error(err.message)
     } finally {
       setSending(false)
     }
@@ -254,7 +248,26 @@ export default function ImpayesPage() {
     return { label: `${days} يوم (متأخر جداً)`, color: 'bg-red-200 text-red-900 font-bold' }
   }
 
-  if (loading || roleLoading) return <div className="p-6">Chargement...</div>
+  // Skeleton
+  if (loading || roleLoading) {
+    return (
+      <div className="p-6 space-y-6" dir="rtl">
+        <div className="h-10 w-64 bg-slate-100 rounded-lg animate-pulse" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-28 bg-slate-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+        <div className="h-32 bg-slate-100 rounded-2xl animate-pulse" />
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-40 bg-slate-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   if (!isDirector && !isSecretary) return <div className="p-6">ليس لديك صلاحية</div>
 
   return (
@@ -274,9 +287,6 @@ export default function ImpayesPage() {
           <RefreshCw className="h-4 w-4" /> تحديث
         </button>
       </header>
-
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
-      {success && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg">{success}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
@@ -407,7 +417,6 @@ export default function ImpayesPage() {
                   })}
                 </div>
 
-                {/* Actions */}
                 <div className="mt-3 flex justify-end gap-2">
                   <button
                     onClick={() => handleWhatsApp(s)}
@@ -417,11 +426,6 @@ export default function ImpayesPage() {
                         ? 'bg-[#25D366] text-white hover:bg-[#1da851] shadow-sm'
                         : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                     }`}
-                    title={
-                      s.parent_phone
-                        ? `إرسال WhatsApp إلى ${s.family_name || 'الولي'} (${s.parent_phone})`
-                        : 'لا يوجد رقم هاتف'
-                    }
                   >
                     <MessageCircle className="h-4 w-4" /> WhatsApp
                   </button>
@@ -457,40 +461,33 @@ export default function ImpayesPage() {
                 <input type="radio" name="relance" checked={relanceType === 'all'} onChange={() => setRelanceType('all')} className="text-indigo-600" />
                 <div className="flex-1">
                   <p className="font-medium text-slate-800">الكل (إشعار + SMS + بريد)</p>
-                  <p className="text-xs text-slate-500">إرسال عبر جميع القنوات</p>
                 </div>
               </label>
-
               <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                 <input type="radio" name="relance" checked={relanceType === 'notification'} onChange={() => setRelanceType('notification')} className="text-indigo-600" />
                 <Bell className="h-4 w-4 text-slate-500" />
                 <div className="flex-1">
                   <p className="font-medium text-slate-800">إشعار فقط</p>
-                  <p className="text-xs text-slate-500">يظهر في بوابة ولي الأمر</p>
                 </div>
               </label>
-
               <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                 <input type="radio" name="relance" checked={relanceType === 'sms'} onChange={() => setRelanceType('sms')} className="text-indigo-600" />
                 <MessageCircle className="h-4 w-4 text-slate-500" />
                 <div className="flex-1">
                   <p className="font-medium text-slate-800">SMS</p>
-                  <p className="text-xs text-slate-500" dir="ltr">{relanceStudent.parent_phone || 'لا يوجد رقم'}</p>
                 </div>
               </label>
-
               <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                 <input type="radio" name="relance" checked={relanceType === 'email'} onChange={() => setRelanceType('email')} className="text-indigo-600" />
                 <Mail className="h-4 w-4 text-slate-500" />
                 <div className="flex-1">
                   <p className="font-medium text-slate-800">البريد الإلكتروني</p>
-                  <p className="text-xs text-slate-500" dir="ltr">{relanceStudent.parent_email || 'لا يوجد بريد'}</p>
                 </div>
               </label>
             </div>
 
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 mb-4">
-              ⚠️ <strong>ملاحظة:</strong> SMS والبريد سيتطلبان تفعيل الخدمة لاحقاً. حالياً يتم تسجيل الطلب في النظام.
+              ⚠️ SMS والبريد سيتطلبان تفعيل الخدمة لاحقاً.
             </div>
 
             <div className="flex gap-2 justify-end">

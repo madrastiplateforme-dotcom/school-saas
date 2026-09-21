@@ -8,6 +8,7 @@ import { useUserPermissions } from '@/lib/useUserPermissions'
 import { useUserRole } from '@/lib/useUserRole'
 import Amount from '@/components/Amount'
 import DateInput from '@/components/DateInput'
+import { toast } from 'sonner'
 import { Save, Lock, Search, X, User, CheckCircle2 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 
@@ -66,15 +67,11 @@ export default function NewPaymentPage() {
   const [cashRegisterId, setCashRegisterId] = useState('')
 
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
-  // ─── Search combobox state ───
   const [studentQuery, setStudentQuery] = useState('')
   const [studentDropdownOpen, setStudentDropdownOpen] = useState(false)
   const studentRef = useRef<HTMLDivElement>(null)
 
-  // ─── Fetch initial ───
   useEffect(() => {
     if (!establishmentId || !role) {
       setLoading(false)
@@ -107,7 +104,6 @@ export default function NewPaymentPage() {
       .select('id, name, type, owner_user_id')
       .eq('establishment_id', sid)
 
-    // ✅ السكرتيرة والمدير: غير الصندوق ديالهم
     if (isSecretary || isDirector) {
       caisseQuery = caisseQuery.eq('owner_user_id', user.id)
     }
@@ -122,7 +118,6 @@ export default function NewPaymentPage() {
     setLoading(false)
   }
 
-  // ─── Close dropdown outside ───
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (studentRef.current && !studentRef.current.contains(e.target as Node)) {
@@ -133,7 +128,6 @@ export default function NewPaymentPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // ─── Filtered students ───
   const filteredStudents = useMemo(() => {
     const q = studentQuery.trim().toLowerCase()
     if (!q) return students.slice(0, 50)
@@ -167,8 +161,12 @@ export default function NewPaymentPage() {
       .in('status', ['pending', 'partially_paid'])
       .order('due_date', { ascending: true })
 
-    if (error) setError(error.message)
-    else setInstallments(data || [])
+    if (error) {
+      console.error('[new-payment-installments]', error?.message || error)
+      toast.error(error.message)
+    } else {
+      setInstallments(data || [])
+    }
   }
 
   const handleClearStudent = () => {
@@ -190,12 +188,6 @@ export default function NewPaymentPage() {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // 🔔 Notifications in-app paiement (création)
-  //   - Directeur: TOUJOURS
-  //   - Secrétaire: TOUTES (toujours)
-  //   - Parent: seulement ses enfants
-  // ═══════════════════════════════════════════════════════════
   const notifyPaymentParties = async (params: {
     paymentId: string
     amount: number
@@ -222,7 +214,6 @@ export default function NewPaymentPage() {
       },
     }
 
-    // 1) Directeurs — TOUJOURS
     const { data: directors } = await supabase
       .from('user_profiles')
       .select('user_id')
@@ -233,7 +224,6 @@ export default function NewPaymentPage() {
       inserts.push({ ...baseNotif, user_id: d.user_id })
     }
 
-    // 2) Secrétaires — TOUTES
     const { data: secretaries } = await supabase
       .from('user_profiles')
       .select('user_id')
@@ -245,7 +235,6 @@ export default function NewPaymentPage() {
       inserts.push({ ...baseNotif, user_id: s.user_id })
     }
 
-    // 3) Parent — seulement si c'est son enfant
     const { data: studentRow } = await supabase
       .from('students')
       .select('family_id')
@@ -293,9 +282,6 @@ export default function NewPaymentPage() {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // 📧 Emails paiement (API route server-side)
-  // ═══════════════════════════════════════════════════════════
   const triggerPaymentEmails = async (paymentId: string) => {
     try {
       const res = await fetch('/api/payments/send-email', {
@@ -316,35 +302,31 @@ export default function NewPaymentPage() {
 
   const handleSavePayment = async () => {
     if (!selectedInstallment || !establishmentId || !paymentAmount) {
-      setError('يرجى اختيار قسط وإدخال مبلغ')
+      toast.error('يرجى اختيار قسط وإدخال مبلغ')
       return
     }
 
     const amount = Number(paymentAmount)
     const remaining = selectedInstallment.amount - selectedInstallment.paid_amount
     if (amount <= 0 || amount > remaining) {
-      setError('المبلغ غير صالح')
+      toast.error('المبلغ غير صالح')
       return
     }
 
-    // ✅ السكرتيرة والمدير: الصندوق ديالهم أوتوماتيكياً
     const finalCaisseId = (isSecretary || isDirector)
       ? cashRegisters[0]?.id
       : cashRegisterId
 
     if (!finalCaisseId) {
-      setError('لا يوجد صندوق متاح')
+      toast.error('لا يوجد صندوق متاح')
       return
     }
 
     setSaving(true)
-    setError('')
-    setSuccess('')
 
     const supabase = createClient()
 
     try {
-      // ✅ INSERT payment + récupérer l'id
       const { data: paymentData, error: paymentError } = await supabase
         .from('payments')
         .insert({
@@ -365,7 +347,6 @@ export default function NewPaymentPage() {
 
       if (paymentError) throw paymentError
 
-      // ✅ UPDATE installment
       const newPaidAmount = selectedInstallment.paid_amount + amount
       const newStatus =
         newPaidAmount >= selectedInstallment.amount ? 'paid' : 'partially_paid'
@@ -377,14 +358,12 @@ export default function NewPaymentPage() {
 
       if (updateError) throw updateError
 
-      // ✅ Audit
       await logAudit(
         'create_payment',
         { amount, studentId: selectedStudentId },
         establishmentId!,
       )
 
-      // ✅ Notifications in-app
       if (paymentData && selectedStudent) {
         await notifyPaymentParties({
           paymentId: paymentData.id,
@@ -397,12 +376,11 @@ export default function NewPaymentPage() {
         })
       }
 
-      // ✅ Emails (via API route server-side)
       if (paymentData) {
         await triggerPaymentEmails(paymentData.id)
       }
 
-      setSuccess('✅ تم تسجيل الدفعة بنجاح')
+      toast.success('تم تسجيل الدفعة بنجاح')
       setSelectedInstallment(null)
       setSelectedInstallmentId('')
       setPaymentAmount('')
@@ -413,16 +391,26 @@ export default function NewPaymentPage() {
         handleSelectStudent(selectedStudent)
       }
     } catch (err: any) {
-      setError(err?.message || 'حدث خطأ')
+      console.error('[new-payment-save]', err?.message || err)
+      toast.error(err?.message || 'حدث خطأ')
     } finally {
       setSaving(false)
     }
   }
 
+  // ═══ Skeleton ═══
   if (loading || permissionsLoading || roleLoading) {
     return (
-      <div className="p-6 text-center" dir="rtl">
-        <p className="text-slate-500">جارٍ التحميل...</p>
+      <div className="p-6 max-w-3xl mx-auto space-y-6" dir="rtl">
+        <div className="h-10 w-48 bg-slate-100 rounded-lg animate-pulse" />
+        <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-6">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="space-y-2">
+              <div className="h-4 w-24 bg-slate-100 rounded animate-pulse" />
+              <div className="h-11 bg-slate-100 rounded-lg animate-pulse" />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -443,18 +431,6 @@ export default function NewPaymentPage() {
         <Save className="h-6 w-6 text-indigo-600" />
         دفعة جديدة
       </h1>
-
-      {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4" />
-          {success}
-        </div>
-      )}
 
       <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-6">
         {/* ═══════ التلميذ — Searchable Combobox ═══════ */}
@@ -668,7 +644,6 @@ export default function NewPaymentPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               الصندوق
             </label>
-            {/* ✅ السكرتيرة والمدير: green box */}
             {(isSecretary || isDirector) ? (
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-3">
                 <Lock className="h-4 w-4 text-emerald-600 flex-shrink-0" />
