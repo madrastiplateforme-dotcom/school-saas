@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import DateInput from '@/components/DateInput'
 import { Search, GraduationCap, UserMinus, Eye, Pencil, Trash2 } from 'lucide-react'
 
@@ -38,6 +39,8 @@ export default function StudentsPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
+  const { yearId } = useAcademicYear()
+
   const canViewStudents = hasPermission('students', 'view')
   const canEditStudents = hasPermission('students', 'edit')
 
@@ -60,29 +63,105 @@ export default function StudentsPage() {
   const [savingDepart, setSavingDepart] = useState(false)
 
   useEffect(() => {
-    if (!establishmentId) return
-    fetchAllData(establishmentId)
-  }, [establishmentId])
+    if (!establishmentId || !yearId) return
+    fetchAllData(establishmentId, yearId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, yearId])
 
-  const fetchAllData = async (sid: string) => {
+  const fetchAllData = async (sid: string, yid: string) => {
     const supabase = createClient()
+
+    // 1) Enrollments dyal l'année active
+    const { data: enrollmentsData, error: enrErr } = await supabase
+      .from('enrollments')
+      .select('id, student_id, academic_year_id, level_id, class_id, status')
+      .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
+
+    if (enrErr) {
+      setError(enrErr.message)
+      setLoading(false)
+      return
+    }
+
+    const studentIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.student_id).filter(Boolean)),
+    )
+
+    if (studentIds.length === 0) {
+      setStudents([])
+      setLoading(false)
+      return
+    }
+
+    // 2) Students
     const { data: studentsData, error: studentsError } = await supabase
       .from('students')
       .select(`
         *,
-        families (family_name, father_name, mother_name),
-        enrollments (
-          id, academic_year_id, level_id, class_id, status,
-          academic_years (name),
-          levels (name),
-          classes (name)
-        )
+        families (family_name, father_name, mother_name)
       `)
       .eq('establishment_id', sid)
+      .in('id', studentIds)
       .order('created_at', { ascending: false })
 
-    if (studentsError) setError(studentsError.message)
-    else setStudents(studentsData || [])
+    if (studentsError) {
+      setError(studentsError.message)
+      setLoading(false)
+      return
+    }
+
+    // 3) Enrichir les enrollments (year/level/class)
+    const yearIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.academic_year_id).filter(Boolean)),
+    )
+    const levelIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.level_id).filter(Boolean)),
+    )
+    const classIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.class_id).filter(Boolean)),
+    )
+
+    const [yearsRes, levelsRes, classesRes] = await Promise.all([
+      yearIds.length
+        ? supabase.from('academic_years').select('id, name').in('id', yearIds)
+        : Promise.resolve({ data: [] as any[] }),
+      levelIds.length
+        ? supabase.from('levels').select('id, name').in('id', levelIds)
+        : Promise.resolve({ data: [] as any[] }),
+      classIds.length
+        ? supabase.from('classes').select('id, name').in('id', classIds)
+        : Promise.resolve({ data: [] as any[] }),
+    ])
+
+    const yearMap = new Map((yearsRes.data || []).map((y: any) => [y.id, y]))
+    const levelMap = new Map((levelsRes.data || []).map((l: any) => [l.id, l]))
+    const classMap = new Map((classesRes.data || []).map((c: any) => [c.id, c]))
+
+    const enrollmentsByStudent = new Map<string, any[]>()
+    for (const e of enrollmentsData || []) {
+      const enriched = {
+        id: e.id,
+        academic_year_id: e.academic_year_id,
+        level_id: e.level_id,
+        class_id: e.class_id,
+        status: e.status,
+        academic_years: yearMap.get(e.academic_year_id) || null,
+        levels: levelMap.get(e.level_id) || null,
+        classes: e.class_id ? classMap.get(e.class_id) || null : null,
+      }
+      if (!enrollmentsByStudent.has(e.student_id)) {
+        enrollmentsByStudent.set(e.student_id, [])
+      }
+      enrollmentsByStudent.get(e.student_id)!.push(enriched)
+    }
+
+    const merged: Student[] = (studentsData || []).map((s: any) => ({
+      ...s,
+      enrollments: enrollmentsByStudent.get(s.id) || [],
+    }))
+
+    setStudents(merged)
     setLoading(false)
   }
 
@@ -111,7 +190,7 @@ export default function StudentsPage() {
       .eq('id', editStudent.id)
     if (!error) {
       setEditStudent(null)
-      fetchAllData(establishmentId)
+      if (yearId) fetchAllData(establishmentId, yearId)
     } else {
       setError(error.message)
     }
@@ -120,19 +199,36 @@ export default function StudentsPage() {
 
   const handleDeleteStudent = async (studentId: string) => {
     const supabase = createClient()
-    const { count: enrollmentCount } = await supabase.from('enrollments').select('*', { count: 'exact', head: true }).eq('student_id', studentId)
-    const { count: contractCount } = await supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('student_id', studentId)
-    const { count: installmentCount } = await supabase.from('installments').select('*', { count: 'exact', head: true }).eq('student_id', studentId)
-    const { count: paymentCount } = await supabase.from('payments').select('*', { count: 'exact', head: true }).eq('student_id', studentId)
+    const { count: enrollmentCount } = await supabase
+      .from('enrollments')
+      .select('*', { count: 'exact', head: true })
+      .eq('student_id', studentId)
+    const { count: contractCount } = await supabase
+      .from('contracts')
+      .select('*', { count: 'exact', head: true })
+      .eq('student_id', studentId)
+    const { count: installmentCount } = await supabase
+      .from('installments')
+      .select('*', { count: 'exact', head: true })
+      .eq('student_id', studentId)
+    const { count: paymentCount } = await supabase
+      .from('payments')
+      .select('*', { count: 'exact', head: true })
+      .eq('student_id', studentId)
 
-    if ((enrollmentCount || 0) > 0 || (contractCount || 0) > 0 || (installmentCount || 0) > 0 || (paymentCount || 0) > 0) {
+    if (
+      (enrollmentCount || 0) > 0 ||
+      (contractCount || 0) > 0 ||
+      (installmentCount || 0) > 0 ||
+      (paymentCount || 0) > 0
+    ) {
       alert('لا يمكن حذف هذا التلميذ لأن لديه تاريخ أكاديمي ومالي.')
       return
     }
     if (!confirm('Voulez-vous vraiment supprimer cet élève ?')) return
     const { error } = await supabase.from('students').delete().eq('id', studentId)
     if (error) setError(error.message)
-    else fetchAllData(establishmentId!)
+    else if (yearId) fetchAllData(establishmentId!, yearId)
   }
 
   const handleDepartStudent = async () => {
@@ -140,13 +236,50 @@ export default function StudentsPage() {
     setSavingDepart(true)
     const supabase = createClient()
     try {
-      await supabase.from('students').update({ status: 'left' }).eq('id', departStudent.id)
-      await supabase.from('enrollments').update({ status: 'completed' }).eq('student_id', departStudent.id).eq('status', 'active')
-      await supabase.from('contracts').update({ status: 'completed', end_date: departDate }).eq('student_id', departStudent.id).eq('status', 'active')
-      await supabase.from('installments').update({ status: 'cancelled' }).eq('student_id', departStudent.id).gt('due_date', departDate).in('status', ['pending', 'partially_paid'])
+      // Update enrollment status f l'année active
+      if (yearId) {
+        await supabase
+          .from('enrollments')
+          .update({ status: 'completed' })
+          .eq('student_id', departStudent.id)
+          .eq('academic_year_id', yearId)
+          .eq('status', 'active')
+      }
+
+      await supabase
+        .from('contracts')
+        .update({ status: 'completed', end_date: departDate })
+        .eq('student_id', departStudent.id)
+        .eq('academic_year_id', yearId || '')
+        .eq('status', 'active')
+
+      await supabase
+        .from('installments')
+        .update({ status: 'cancelled' })
+        .eq('student_id', departStudent.id)
+        .gt('due_date', departDate)
+        .in('status', ['pending', 'partially_paid'])
+
+      // Check s'il reste des enrollments actifs dans d'autres années
+      const { data: otherEnrollments } = await supabase
+        .from('enrollments')
+        .select('id')
+        .eq('student_id', departStudent.id)
+        .eq('status', 'active')
+
+      const hasOtherActive = (otherEnrollments || []).length > 0
+
+      // Si aucune autre enrollment active → status left
+      if (!hasOtherActive) {
+        await supabase
+          .from('students')
+          .update({ status: 'left' })
+          .eq('id', departStudent.id)
+      }
+
       setDepartStudent(null)
       setDepartDate('')
-      fetchAllData(establishmentId!)
+      if (yearId) fetchAllData(establishmentId!, yearId)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -154,10 +287,11 @@ export default function StudentsPage() {
     }
   }
 
-  const filteredStudents = students.filter((s) =>
-    `${s.first_name} ${s.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (s.massar_code || '').includes(searchTerm) ||
-    (s.families?.family_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredStudents = students.filter(
+    (s) =>
+      `${s.first_name} ${s.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.massar_code || '').includes(searchTerm) ||
+      (s.families?.family_name || '').toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   if (loading || permissionsLoading) return <div className="p-6">Chargement...</div>
@@ -179,57 +313,129 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
 
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Nom complet</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Massar</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Sexe</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Famille</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Inscription</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Statut</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Nom complet
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Massar
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Sexe
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Famille
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Inscription
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Statut
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-100">
             {filteredStudents.length === 0 ? (
-              <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400">Aucun élève</td></tr>
+              <tr>
+                <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                  Aucun élève
+                </td>
+              </tr>
             ) : (
               filteredStudents.map((student) => (
                 <tr key={student.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{student.first_name} {student.last_name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.massar_code || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.gender}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.families?.family_name || student.families?.father_name || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {student.first_name} {student.last_name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {student.massar_code || '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {student.gender}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {student.families?.family_name ||
+                      student.families?.father_name ||
+                      '-'}
+                  </td>
                   <td className="px-6 py-4 text-sm text-gray-500">
-                    {student.enrollments && student.enrollments.length > 0 ? (
-                      student.enrollments.map((enr) => (
-                        <div key={enr.id} className="text-xs">{enr.academic_years?.name} - {enr.levels?.name} - {enr.classes?.name || 'Sans classe'}</div>
-                      ))
-                    ) : '-'}
+                    {student.enrollments && student.enrollments.length > 0
+                      ? student.enrollments.map((enr) => (
+                          <div key={enr.id} className="text-xs">
+                            {enr.academic_years?.name} - {enr.levels?.name} -{' '}
+                            {enr.classes?.name || 'Sans classe'}
+                          </div>
+                        ))
+                      : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      student.status === 'active' ? 'bg-green-100 text-green-700' :
-                      student.status === 'left' ? 'bg-gray-100 text-gray-600' :
-                      'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {student.status === 'active' ? 'نشط' : student.status === 'left' ? 'غادر' : 'موقوف'}
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        student.status === 'active'
+                          ? 'bg-green-100 text-green-700'
+                          : student.status === 'left'
+                            ? 'bg-gray-100 text-gray-600'
+                            : 'bg-yellow-100 text-yellow-700'
+                      }`}
+                    >
+                      {student.status === 'active'
+                        ? 'نشط'
+                        : student.status === 'left'
+                          ? 'غادر'
+                          : 'موقوف'}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => router.push(`/dashboard/student-finance/${student.id}`)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="الوضعية المالية"><Eye className="h-4 w-4" /></button>
+                      <button
+                        onClick={() =>
+                          router.push(`/dashboard/student-finance/${student.id}`)
+                        }
+                        className="p-1 text-green-600 hover:bg-green-50 rounded"
+                        title="الوضعية المالية"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
                       {canEditStudents && student.status === 'active' && (
                         <>
-                          <button onClick={() => handleEditStudent(student)} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="تعديل"><Pencil className="h-4 w-4" /></button>
-                          <button onClick={() => { setDepartStudent(student); setDepartDate(new Date().toISOString().split('T')[0]) }} className="p-1 text-orange-600 hover:bg-orange-50 rounded" title="تسجيل مغادرة"><UserMinus className="h-4 w-4" /></button>
+                          <button
+                            onClick={() => handleEditStudent(student)}
+                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                            title="تعديل"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDepartStudent(student)
+                              setDepartDate(new Date().toISOString().split('T')[0])
+                            }}
+                            className="p-1 text-orange-600 hover:bg-orange-50 rounded"
+                            title="تسجيل مغادرة"
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </button>
                         </>
                       )}
-                      <button onClick={() => handleDeleteStudent(student.id)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="حذف"><Trash2 className="h-4 w-4" /></button>
+                      <button
+                        onClick={() => handleDeleteStudent(student.id)}
+                        className="p-1 text-red-600 hover:bg-red-50 rounded"
+                        title="حذف"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -238,163 +444,146 @@ export default function StudentsPage() {
           </tbody>
         </table>
       </div>
-{/* Edit modal */}
-{editStudent && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-lg max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
-      <h3 className="text-lg font-semibold mb-4">تعديل تلميذ</h3>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            الاسم الشخصي <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            value={editFirstName}
-            onChange={(e) => setEditFirstName(e.target.value)}
-            className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            placeholder="مثال: أحمد"
-          />
-        </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            الاسم العائلي <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            value={editLastName}
-            onChange={(e) => setEditLastName(e.target.value)}
-            className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            placeholder="مثال: العلوي"
-          />
-        </div>
+      {/* Edit modal */}
+      {editStudent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">تعديل تلميذ</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الاسم الشخصي <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editFirstName}
+                  onChange={(e) => setEditFirstName(e.target.value)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="مثال: أحمد"
+                />
+              </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            رمز مسار (Code Massar)
-          </label>
-          <input
-            type="text"
-            value={editMassarCode}
-            onChange={(e) => setEditMassarCode(e.target.value)}
-            className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            placeholder="مثال: A123456789"
-          />
-        </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الاسم العائلي <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editLastName}
+                  onChange={(e) => setEditLastName(e.target.value)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="مثال: العلوي"
+                />
+              </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            الجنس <span className="text-red-500">*</span>
-          </label>
-          <select
-            value={editGender}
-            onChange={(e) => setEditGender(e.target.value)}
-            className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          >
-            <option value="ذكر">ذكر</option>
-            <option value="أنثى">أنثى</option>
-          </select>
-        </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  رمز مسار (Code Massar)
+                </label>
+                <input
+                  type="text"
+                  value={editMassarCode}
+                  onChange={(e) => setEditMassarCode(e.target.value)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="مثال: A123456789"
+                />
+              </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            تاريخ الازدياد
-          </label>
-          <DateInput
-            value={editBirthDate}
-            onChange={(isoDate) => setEditBirthDate(isoDate)}
-          />
-        </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الجنس <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={editGender}
+                  onChange={(e) => setEditGender(e.target.value)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value="ذكر">ذكر</option>
+                  <option value="أنثى">أنثى</option>
+                </select>
+              </div>
 
-        <div className="flex gap-2 justify-end pt-4 border-t">
-          <button
-            onClick={handleSaveEdit}
-            disabled={savingEdit}
-            className="h-10 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {savingEdit ? 'جارٍ الحفظ...' : 'حفظ'}
-          </button>
-          <button
-            onClick={() => setEditStudent(null)}
-            className="h-10 px-6 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            إلغاء
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  تاريخ الازدياد
+                </label>
+                <DateInput
+                  value={editBirthDate}
+                  onChange={(isoDate) => setEditBirthDate(isoDate)}
+                />
+              </div>
 
-{/* Depart modal */}
-{departStudent && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-lg max-w-md w-full p-6">
-      <h3 className="text-lg font-semibold mb-4">تسجيل مغادرة</h3>
-      <p className="mb-4 text-gray-700">
-        التلميذ: <span className="font-medium">{departStudent.first_name} {departStudent.last_name}</span>
-      </p>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            تاريخ المغادرة <span className="text-red-500">*</span>
-          </label>
-          <DateInput
-            value={departDate}
-            onChange={(isoDate) => setDepartDate(isoDate)}
-            className="h-10"
-          />
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={savingEdit}
+                  className="h-10 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {savingEdit ? 'جارٍ الحفظ...' : 'حفظ'}
+                </button>
+                <button
+                  onClick={() => setEditStudent(null)}
+                  className="h-10 px-6 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            سبب المغادرة
-          </label>
-          <textarea
-            value={departReason}
-            onChange={(e) => setDepartReason(e.target.value)}
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            placeholder="مثال: انتقال إلى مدينة أخرى"
-          ></textarea>
-        </div>
-
-        <div className="flex gap-2 justify-end pt-4 border-t">
-          <button
-            onClick={handleDepartStudent}
-            disabled={savingDepart}
-            className="h-10 px-6 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
-          >
-            {savingDepart ? 'جارٍ الحفظ...' : 'تأكيد المغادرة'}
-          </button>
-          <button
-            onClick={() => setDepartStudent(null)}
-            className="h-10 px-6 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            إلغاء
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
       {/* Depart modal */}
       {departStudent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <h3 className="text-lg font-semibold mb-4">تسجيل مغادرة</h3>
-            <p className="mb-4">{departStudent.first_name} {departStudent.last_name}</p>
+            <p className="mb-4 text-gray-700">
+              التلميذ:{' '}
+              <span className="font-medium">
+                {departStudent.first_name} {departStudent.last_name}
+              </span>
+            </p>
             <div className="space-y-4">
-              <DateInput
-                value={departDate}
-                onChange={(isoDate) => setDepartDate(isoDate)}
-                className="h-10"
-              />
-              <textarea value={departReason} onChange={(e) => setDepartReason(e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="سبب المغادرة"></textarea>
-              <div className="flex gap-2 justify-end">
-                <button onClick={handleDepartStudent} disabled={savingDepart} className="h-10 px-4 bg-orange-600 text-white rounded-lg">تأكيد</button>
-                <button onClick={() => setDepartStudent(null)} className="h-10 px-4 bg-white border border-gray-300 rounded-lg">إلغاء</button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  تاريخ المغادرة <span className="text-red-500">*</span>
+                </label>
+                <DateInput
+                  value={departDate}
+                  onChange={(isoDate) => setDepartDate(isoDate)}
+                  className="h-10"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  سبب المغادرة
+                </label>
+                <textarea
+                  value={departReason}
+                  onChange={(e) => setDepartReason(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="مثال: انتقال إلى مدينة أخرى"
+                ></textarea>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <button
+                  onClick={handleDepartStudent}
+                  disabled={savingDepart}
+                  className="h-10 px-6 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+                >
+                  {savingDepart ? 'جارٍ الحفظ...' : 'تأكيد المغادرة'}
+                </button>
+                <button
+                  onClick={() => setDepartStudent(null)}
+                  className="h-10 px-6 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  إلغاء
+                </button>
               </div>
             </div>
           </div>

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { generateInstallmentsForContract } from '@/lib/billing'
 import DateInput from '@/components/DateInput'
 import {
@@ -81,6 +82,8 @@ export default function ContractsPage() {
   const router = useRouter()
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
+  const { yearId } = useAcademicYear()
+
   const canViewContracts = hasPermission('contracts', 'view')
   const canCreateContracts = hasPermission('contracts', 'create')
   const canDeleteContracts = hasPermission('contracts', 'delete')
@@ -121,9 +124,10 @@ export default function ContractsPage() {
   const [editSaving, setEditSaving] = useState(false)
 
   useEffect(() => {
-    if (!establishmentId) return
-    fetchAllData(establishmentId)
-  }, [establishmentId])
+    if (!establishmentId || !yearId) return
+    fetchAllData(establishmentId, yearId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, yearId])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -135,27 +139,98 @@ export default function ContractsPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const fetchAllData = async (sid: string) => {
+  const fetchAllData = async (sid: string, yid: string) => {
     const supabase = createClient()
 
-    const { data: studentsData, error: studentsError } = await supabase
-      .from('students')
-      .select(`
-        id, first_name, last_name, massar_code,
-        enrollments (
-          id, academic_year_id, level_id, class_id,
-          academic_years (name, start_date, end_date),
-          levels (name),
-          classes (name)
-        )
-      `)
+    // ✅ 1) Élèves actifs f l'année via enrollments
+    const { data: enrollmentsData, error: enrError } = await supabase
+      .from('enrollments')
+      .select('id, student_id, academic_year_id, level_id, class_id')
       .eq('establishment_id', sid)
-      .order('created_at', { ascending: false })
+      .eq('academic_year_id', yid)
 
-    // ✅ FIX : cast pour éviter les erreurs TS sur les JOINs
-    if (studentsError) setError(studentsError.message)
-    else setStudents((studentsData as any) || [])
+    if (enrError) {
+      setError(enrError.message)
+      setLoading(false)
+      return
+    }
 
+    const studentIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.student_id).filter(Boolean)),
+    )
+
+    // 2) Charger les students
+    let studentsData: any[] = []
+    if (studentIds.length > 0) {
+      const { data: sData, error: studentsError } = await supabase
+        .from('students')
+        .select('id, first_name, last_name, massar_code')
+        .eq('establishment_id', sid)
+        .in('id', studentIds)
+        .order('first_name', { ascending: true })
+
+      if (studentsError) setError(studentsError.message)
+      studentsData = sData || []
+    }
+
+    // 3) Charger années / niveaux / classes pour les enrollments
+    const yearIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.academic_year_id).filter(Boolean)),
+    )
+    const levelIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.level_id).filter(Boolean)),
+    )
+    const classIds = Array.from(
+      new Set((enrollmentsData || []).map((e: any) => e.class_id).filter(Boolean)),
+    )
+
+    const [yearsRes, levelsRes, classesRes] = await Promise.all([
+      yearIds.length
+        ? supabase
+            .from('academic_years')
+            .select('id, name, start_date, end_date')
+            .in('id', yearIds)
+        : Promise.resolve({ data: [] as any[] }),
+      levelIds.length
+        ? supabase.from('levels').select('id, name').in('id', levelIds)
+        : Promise.resolve({ data: [] as any[] }),
+      classIds.length
+        ? supabase.from('classes').select('id, name').in('id', classIds)
+        : Promise.resolve({ data: [] as any[] }),
+    ])
+
+    const yearMap = new Map((yearsRes.data || []).map((y: any) => [y.id, y]))
+    const levelMap = new Map((levelsRes.data || []).map((l: any) => [l.id, l]))
+    const classMap = new Map((classesRes.data || []).map((c: any) => [c.id, c]))
+
+    const enrollmentsByStudent = new Map<string, any[]>()
+    for (const e of enrollmentsData || []) {
+      const enriched = {
+        id: e.id,
+        academic_year_id: e.academic_year_id,
+        level_id: e.level_id,
+        class_id: e.class_id,
+        academic_years: yearMap.get(e.academic_year_id) || null,
+        levels: levelMap.get(e.level_id) || null,
+        classes: e.class_id ? classMap.get(e.class_id) || null : null,
+      }
+      if (!enrollmentsByStudent.has(e.student_id)) {
+        enrollmentsByStudent.set(e.student_id, [])
+      }
+      enrollmentsByStudent.get(e.student_id)!.push(enriched)
+    }
+
+    const mergedStudents: StudentOption[] = studentsData.map((s) => ({
+      id: s.id,
+      first_name: s.first_name,
+      last_name: s.last_name,
+      massar_code: s.massar_code,
+      enrollments: enrollmentsByStudent.get(s.id) || [],
+    }))
+
+    setStudents(mergedStudents)
+
+    // ✅ 4) Contrats filtrés par année active
     const { data: contractsData, error: contractsError } = await supabase
       .from('contracts')
       .select(`
@@ -166,9 +241,9 @@ export default function ContractsPage() {
         contract_items (services (name))
       `)
       .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
       .order('created_at', { ascending: false })
 
-    // ✅ FIX : cast
     if (contractsError) setError(contractsError.message)
     else setContracts((contractsData as any) || [])
 
@@ -184,15 +259,18 @@ export default function ContractsPage() {
     setStartDate('')
     setEndDate('')
 
-    if (!studentId) return
+    if (!studentId || !yearId) return
 
     const student = students.find((s) => s.id === studentId)
     if (!student || !student.enrollments || student.enrollments.length === 0) {
-      setError('هذا التلميذ غير مسجل في أي سنة دراسية. سجّله أولاً.')
+      setError('هذا التلميذ غير مسجل في السنة الحالية. سجّله أولاً.')
       return
     }
 
-    const enrollment = student.enrollments[0]
+    // ✅ Enrollment dyal l'année active
+    const enrollment =
+      student.enrollments.find((e) => e.academic_year_id === yearId) ||
+      student.enrollments[0]
     setSelectedEnrollment(enrollment)
 
     if (enrollment.academic_years?.start_date) setStartDate(enrollment.academic_years.start_date)
@@ -367,7 +445,7 @@ export default function ContractsPage() {
         contractId: contractData.id,
         startDate,
         endDate: finalEndDate || null,
-        services: selectedServices as any,  // ✅ FIX : cast
+        services: selectedServices as any,
       })
 
       if (installments.length > 0) {
@@ -389,7 +467,7 @@ export default function ContractsPage() {
       setNotes('')
       setStudentSearch('')
       setShowForm(false)
-      fetchAllData(establishmentId)
+      if (yearId) fetchAllData(establishmentId, yearId)
     } catch (err: any) {
       setError(err.message || 'حدث خطأ')
     } finally {
@@ -562,7 +640,7 @@ export default function ContractsPage() {
           contractId: editContract.id,
           startDate: editStartDate,
           endDate: newServicesEndDate,
-          services: newItems as any,  // ✅ FIX : cast
+          services: newItems as any,
         })
 
         if (newInstallments.length > 0) {
@@ -581,7 +659,7 @@ export default function ContractsPage() {
       )
       setTimeout(() => setSuccess(''), 4000)
       setEditContract(null)
-      fetchAllData(establishmentId)
+      if (yearId) fetchAllData(establishmentId, yearId)
     } catch (err: any) {
       console.error('❌ Save edit error:', err?.message || err)
       setError(err.message || 'حدث خطأ')
@@ -635,7 +713,7 @@ export default function ContractsPage() {
       setTimeout(() => setSuccess(''), 4000)
       setSuspendDialog(null)
       setSuspendReason('')
-      fetchAllData(establishmentId)
+      if (yearId) fetchAllData(establishmentId, yearId)
     } catch (err: any) {
       console.error('❌ Suspend error:', err?.message || err)
       setError(err?.message || 'حدث خطأ')
@@ -679,7 +757,7 @@ export default function ContractsPage() {
           contractId: contract.id,
           startDate: today,
           endDate,
-          services: services as any,  // ✅ FIX : cast
+          services: services as any,
         })
 
         if (newInstallments.length > 0) {
@@ -703,7 +781,7 @@ export default function ContractsPage() {
 
       setSuccess('✅ تم إعادة تفعيل العقد وتوليد الأقساط الجديدة')
       setTimeout(() => setSuccess(''), 4000)
-      fetchAllData(establishmentId)
+      if (yearId) fetchAllData(establishmentId, yearId)
     } catch (err: any) {
       console.error('❌ Reactivate error:', err?.message || err)
       setError(err?.message || 'حدث خطأ')
@@ -757,7 +835,7 @@ export default function ContractsPage() {
 
     setSuccess('✅ تم حذف العقد نهائياً')
     setTimeout(() => setSuccess(''), 3000)
-    fetchAllData(establishmentId!)
+    if (yearId) fetchAllData(establishmentId!, yearId)
   }
 
   const handlePrintContract = (contractId: string) => {
@@ -997,7 +1075,7 @@ export default function ContractsPage() {
       <div className="bg-white p-6 rounded-xl shadow-sm">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">قائمة العقود ({contracts.length})</h2>
-          <button onClick={() => fetchAllData(establishmentId!)} className="inline-flex items-center gap-1 text-indigo-600 hover:underline">
+          <button onClick={() => yearId && fetchAllData(establishmentId!, yearId)} className="inline-flex items-center gap-1 text-indigo-600 hover:underline">
             <RefreshCw className="h-4 w-4" /> تحديث
           </button>
         </div>

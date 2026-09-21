@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import Amount from '@/components/Amount'
 import DateInput from '@/components/DateInput'
 import { toast } from 'sonner'
@@ -40,6 +41,8 @@ export default function NewPaymentPage() {
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
+
   const canCreatePayments = hasPermission('payments', 'create')
   const isSecretary = role === 'secretaire'
   const isDirector = role === 'directeur'
@@ -73,15 +76,14 @@ export default function NewPaymentPage() {
   const studentRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!establishmentId || !role) {
-      setLoading(false)
+    if (!establishmentId || !role || !yearId) {
       return
     }
-    fetchInitialData(establishmentId)
+    fetchInitialData(establishmentId, yearId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [establishmentId, role])
+  }, [establishmentId, role, yearId])
 
-  const fetchInitialData = async (sid: string) => {
+  const fetchInitialData = async (sid: string, yid: string) => {
     const supabase = createClient()
     const {
       data: { user },
@@ -90,19 +92,33 @@ export default function NewPaymentPage() {
 
     setCurrentUserId(user.id)
 
-    const { data: studentsData } = await supabase
-      .from('students')
-      .select('id, first_name, last_name, massar_code')
+    const { data: enrollmentsData } = await supabase
+      .from('enrollments')
+      .select('student_id')
       .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
       .eq('status', 'active')
-      .order('first_name', { ascending: true })
 
-    setStudents(studentsData || [])
+    const studentIds = (enrollmentsData || []).map((e: any) => e.student_id)
+
+    let studentsData: Student[] = []
+    if (studentIds.length > 0) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, first_name, last_name, massar_code')
+        .eq('establishment_id', sid)
+        .eq('status', 'active')
+        .in('id', studentIds)
+        .order('first_name', { ascending: true })
+      studentsData = (data as Student[]) || []
+    }
+    setStudents(studentsData)
 
     let caisseQuery = supabase
       .from('cash_registers')
       .select('id, name, type, owner_user_id')
       .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
 
     if (isSecretary || isDirector) {
       caisseQuery = caisseQuery.eq('owner_user_id', user.id)
@@ -150,13 +166,27 @@ export default function NewPaymentPage() {
     setSelectedInstallment(null)
     setInstallments([])
 
-    if (!establishmentId) return
+    if (!establishmentId || !yearId) return
 
     const supabase = createClient()
+
+    const { data: contractsData } = await supabase
+      .from('contracts')
+      .select('id')
+      .eq('student_id', student.id)
+      .eq('establishment_id', establishmentId)
+      .eq('academic_year_id', yearId)
+
+    const contractIds = (contractsData || []).map((c: any) => c.id)
+    if (contractIds.length === 0) {
+      setInstallments([])
+      return
+    }
+
     const { data, error } = await supabase
       .from('installments')
       .select('*')
-      .eq('student_id', student.id)
+      .in('contract_id', contractIds)
       .eq('establishment_id', establishmentId)
       .in('status', ['pending', 'partially_paid'])
       .order('due_date', { ascending: true })
@@ -188,6 +218,36 @@ export default function NewPaymentPage() {
     }
   }
 
+  const loadRoleIds = async (supabase: any, sid: string) => {
+    const { data: roles } = await supabase
+      .from('roles')
+      .select('id, name')
+      .eq('establishment_id', sid)
+
+    const directorIds: string[] = []
+    const secretaryIds: string[] = []
+
+    for (const r of roles || []) {
+      const n = (r.name || '').toLowerCase()
+      if (
+        n.includes('directeur') ||
+        n.includes('director') ||
+        n.includes('مدير')
+      ) {
+        directorIds.push(r.id)
+      }
+      if (
+        n.includes('secretaire') ||
+        n.includes('secrétaire') ||
+        n.includes('secretary') ||
+        n.includes('سكرتير')
+      ) {
+        secretaryIds.push(r.id)
+      }
+    }
+    return { directorIds, secretaryIds }
+  }
+
   const notifyPaymentParties = async (params: {
     paymentId: string
     amount: number
@@ -214,25 +274,27 @@ export default function NewPaymentPage() {
       },
     }
 
-    const { data: directors } = await supabase
-      .from('user_profiles')
-      .select('user_id')
-      .eq('establishment_id', params.establishmentId)
-      .eq('role', 'directeur')
+    const { directorIds, secretaryIds } = await loadRoleIds(
+      supabase,
+      params.establishmentId,
+    )
 
-    for (const d of directors || []) {
-      inserts.push({ ...baseNotif, user_id: d.user_id })
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('user_id, role_id')
+      .eq('establishment_id', params.establishmentId)
+
+    for (const p of profiles || []) {
+      if (directorIds.includes(p.role_id)) {
+        inserts.push({ ...baseNotif, user_id: p.user_id })
+      }
     }
 
-    const { data: secretaries } = await supabase
-      .from('user_profiles')
-      .select('user_id')
-      .eq('establishment_id', params.establishmentId)
-      .eq('role', 'secretaire')
-
-    for (const s of secretaries || []) {
-      if (inserts.some((i) => i.user_id === s.user_id)) continue
-      inserts.push({ ...baseNotif, user_id: s.user_id })
+    for (const p of profiles || []) {
+      if (secretaryIds.includes(p.role_id)) {
+        if (inserts.some((i) => i.user_id === p.user_id)) continue
+        inserts.push({ ...baseNotif, user_id: p.user_id })
+      }
     }
 
     const { data: studentRow } = await supabase
@@ -306,16 +368,21 @@ export default function NewPaymentPage() {
       return
     }
 
+    if (!yearId) {
+      toast.error('لا توجد سنة دراسية محددة')
+      return
+    }
+
     const amount = Number(paymentAmount)
-    const remaining = selectedInstallment.amount - selectedInstallment.paid_amount
+    const remaining =
+      selectedInstallment.amount - selectedInstallment.paid_amount
     if (amount <= 0 || amount > remaining) {
       toast.error('المبلغ غير صالح')
       return
     }
 
-    const finalCaisseId = (isSecretary || isDirector)
-      ? cashRegisters[0]?.id
-      : cashRegisterId
+    const finalCaisseId =
+      isSecretary || isDirector ? cashRegisters[0]?.id : cashRegisterId
 
     if (!finalCaisseId) {
       toast.error('لا يوجد صندوق متاح')
@@ -331,6 +398,7 @@ export default function NewPaymentPage() {
         .from('payments')
         .insert({
           establishment_id: establishmentId,
+          academic_year_id: yearId,
           student_id: selectedStudentId,
           installment_id: selectedInstallment.id,
           amount,
@@ -398,13 +466,12 @@ export default function NewPaymentPage() {
     }
   }
 
-  // ═══ Skeleton ═══
   if (loading || permissionsLoading || roleLoading) {
     return (
       <div className="p-6 max-w-3xl mx-auto space-y-6" dir="rtl">
         <div className="h-10 w-48 bg-slate-100 rounded-lg animate-pulse" />
         <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-6">
-          {[1, 2, 3, 4].map(i => (
+          {[1, 2, 3, 4].map((i) => (
             <div key={i} className="space-y-2">
               <div className="h-4 w-24 bg-slate-100 rounded animate-pulse" />
               <div className="h-11 bg-slate-100 rounded-lg animate-pulse" />
@@ -450,7 +517,10 @@ export default function NewPaymentPage() {
                     {selectedStudent.first_name} {selectedStudent.last_name}
                   </p>
                   {selectedStudent.massar_code && (
-                    <p className="text-[10px] text-slate-500 font-mono" dir="ltr">
+                    <p
+                      className="text-[10px] text-slate-500 font-mono"
+                      dir="ltr"
+                    >
                       {selectedStudent.massar_code}
                     </p>
                   )}
@@ -590,7 +660,9 @@ export default function NewPaymentPage() {
             <p className="text-sm font-bold">
               المتبقي:{' '}
               <Amount
-                value={selectedInstallment.amount - selectedInstallment.paid_amount}
+                value={
+                  selectedInstallment.amount - selectedInstallment.paid_amount
+                }
               />
             </p>
           </div>
@@ -644,7 +716,7 @@ export default function NewPaymentPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               الصندوق
             </label>
-            {(isSecretary || isDirector) ? (
+            {isSecretary || isDirector ? (
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-3">
                 <Lock className="h-4 w-4 text-emerald-600 flex-shrink-0" />
                 <div>

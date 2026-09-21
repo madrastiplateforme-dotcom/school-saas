@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import { useUserRole } from '@/lib/useUserRole'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import Amount from '@/components/Amount'
 import DateInput from '@/components/DateInput'
 import { buildPaymentMessage, openWhatsApp } from '@/lib/whatsapp'
@@ -32,6 +33,7 @@ type Payment = {
   deleted_at: string | null
   deleted_by: string | null
   delete_reason: string | null
+  academic_year_id: string | null
   students: { first_name: string; last_name: string } | null
   installments: { description: string } | null
   cash_registers: { name: string } | null
@@ -63,6 +65,8 @@ export default function PaymentsPage() {
   const establishmentId = useEstablishmentId()
   const { hasPermission, loading: permissionsLoading } = useUserPermissions()
   const { role, loading: roleLoading } = useUserRole()
+  const { yearId } = useAcademicYear()
+
   const canViewPayments = hasPermission('payments', 'view')
   const canCreatePayments = hasPermission('payments', 'create')
 
@@ -92,17 +96,20 @@ export default function PaymentsPage() {
   const [cancelReason, setCancelReason] = useState('')
   const [cancelConfirmText, setCancelConfirmText] = useState('')
   const [cancelling, setCancelling] = useState(false)
-  const [modalError, setModalError] = useState('') // ← inline error في الـ modal فقط
+  const [modalError, setModalError] = useState('')
 
   useEffect(() => {
-    if (!establishmentId || !role) return
-    fetchPayments(establishmentId)
-  }, [establishmentId, role, showDeleted])
+    if (!establishmentId || !role || !yearId) return
+    fetchPayments(establishmentId, yearId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, role, showDeleted, yearId])
 
-  const fetchPayments = async (sid: string) => {
+  const fetchPayments = async (sid: string, yid: string) => {
     setLoading(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return
 
     setCurrentUserId(user.id)
@@ -116,10 +123,12 @@ export default function PaymentsPage() {
         if (data?.name) setSchoolName(data.name)
       })
 
+    // ✅ Caisses filtrées par année active
     let caisseQuery = supabase
       .from('cash_registers')
       .select('id, name')
       .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
 
     if (isSecretary) {
       caisseQuery = caisseQuery.eq('owner_user_id', user.id)
@@ -128,19 +137,21 @@ export default function PaymentsPage() {
     const { data: cashData } = await caisseQuery
     setCashRegisters(cashData || [])
 
-    const caisseIds = (cashData || []).map(c => c.id)
+    const caisseIds = (cashData || []).map((c) => c.id)
 
+    // ✅ Payments filtrés par année active
     let query = supabase
       .from('payments')
       .select(`
         id, amount, payment_date, method, reference, notes,
         student_id, installment_id, cash_register_id, user_id,
-        deleted_at, deleted_by, delete_reason,
+        deleted_at, deleted_by, delete_reason, academic_year_id,
         students (first_name, last_name),
         installments (description),
         cash_registers (name)
       `)
       .eq('establishment_id', sid)
+      .eq('academic_year_id', yid)
 
     if (isSecretary && caisseIds.length > 0) {
       query = query.in('cash_register_id', caisseIds)
@@ -162,7 +173,9 @@ export default function PaymentsPage() {
     }
     setPayments((data as any) || [])
 
-    const studentIds = Array.from(new Set((data || []).map((p: any) => p.student_id).filter(Boolean)))
+    const studentIds = Array.from(
+      new Set((data || []).map((p: any) => p.student_id).filter(Boolean)),
+    )
 
     if (studentIds.length > 0) {
       const { data: studentsData } = await supabase
@@ -171,7 +184,9 @@ export default function PaymentsPage() {
         .in('id', studentIds)
 
       const familyIds = Array.from(
-        new Set((studentsData || []).map((s: any) => s.family_id).filter(Boolean)),
+        new Set(
+          (studentsData || []).map((s: any) => s.family_id).filter(Boolean),
+        ),
       )
 
       const familyIdToPhone = new Map<string, string>()
@@ -204,10 +219,12 @@ export default function PaymentsPage() {
     return payments.filter((p) => {
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase()
-        const name = `${p.students?.first_name || ''} ${p.students?.last_name || ''}`.toLowerCase()
+        const name =
+          `${p.students?.first_name || ''} ${p.students?.last_name || ''}`.toLowerCase()
         const desc = (p.installments?.description || '').toLowerCase()
         const ref = (p.reference || '').toLowerCase()
-        if (!name.includes(term) && !desc.includes(term) && !ref.includes(term)) return false
+        if (!name.includes(term) && !desc.includes(term) && !ref.includes(term))
+          return false
       }
       if (methodFilter !== 'all' && p.method !== methodFilter) return false
       if (caisseFilter !== 'all' && p.cash_register_id !== caisseFilter) return false
@@ -218,10 +235,13 @@ export default function PaymentsPage() {
   }, [payments, searchTerm, methodFilter, caisseFilter, dateFrom, dateTo])
 
   const totals = useMemo(() => {
-    return filteredPayments.reduce((acc, p) => ({
-      count: acc.count + 1,
-      amount: acc.amount + Number(p.amount),
-    }), { count: 0, amount: 0 })
+    return filteredPayments.reduce(
+      (acc, p) => ({
+        count: acc.count + 1,
+        amount: acc.amount + Number(p.amount),
+      }),
+      { count: 0, amount: 0 },
+    )
   }, [filteredPayments])
 
   const resetFilters = () => {
@@ -232,7 +252,12 @@ export default function PaymentsPage() {
     setDateTo('')
   }
 
-  const hasActiveFilters = searchTerm || methodFilter !== 'all' || caisseFilter !== 'all' || dateFrom || dateTo
+  const hasActiveFilters =
+    searchTerm ||
+    methodFilter !== 'all' ||
+    caisseFilter !== 'all' ||
+    dateFrom ||
+    dateTo
 
   const handleExportExcel = () => {
     if (filteredPayments.length === 0) {
@@ -240,15 +265,17 @@ export default function PaymentsPage() {
       return
     }
 
-    const data = filteredPayments.map(p => ({
-      'التاريخ': p.payment_date,
-      'التلميذ': p.students ? `${p.students.first_name} ${p.students.last_name}` : '-',
-      'القسط': p.installments?.description || '-',
-      'المبلغ': Number(p.amount),
-      'الطريقة': METHOD_LABELS[p.method] || p.method,
-      'المرجع': p.reference || '-',
-      'الصندوق': p.cash_registers?.name || '-',
-      'الحالة': p.deleted_at ? 'محذوفة' : 'نشطة',
+    const data = filteredPayments.map((p) => ({
+      التاريخ: p.payment_date,
+      التلميذ: p.students
+        ? `${p.students.first_name} ${p.students.last_name}`
+        : '-',
+      القسط: p.installments?.description || '-',
+      المبلغ: Number(p.amount),
+      الطريقة: METHOD_LABELS[p.method] || p.method,
+      المرجع: p.reference || '-',
+      الصندوق: p.cash_registers?.name || '-',
+      الحالة: p.deleted_at ? 'محذوفة' : 'نشطة',
       'سبب الحذف': p.delete_reason || '-',
     }))
 
@@ -291,7 +318,9 @@ export default function PaymentsPage() {
       if (p.user_id !== currentUserId) return false
       const paymentDate = new Date(p.payment_date)
       const today = new Date()
-      const diffDays = Math.floor((today.getTime() - paymentDate.getTime()) / (1000 * 60 * 60 * 24))
+      const diffDays = Math.floor(
+        (today.getTime() - paymentDate.getTime()) / (1000 * 60 * 60 * 24),
+      )
       return diffDays <= 1
     }
 
@@ -304,7 +333,9 @@ export default function PaymentsPage() {
       return
     }
     if (!canCancelPayment(payment)) {
-      toast.error('لا يمكنك حذف هذه الدفعة — السكرتيرة يمكنها حذف دفعاتها فقط في نفس اليوم')
+      toast.error(
+        'لا يمكنك حذف هذه الدفعة — السكرتيرة يمكنها حذف دفعاتها فقط في نفس اليوم',
+      )
       return
     }
     setCancelPayment(payment)
@@ -341,6 +372,37 @@ export default function PaymentsPage() {
     }
   }
 
+  // Helper: rj3e les role IDs li kaymthlo Directeur / Secrétaire
+  const loadRoleIds = async (supabase: any, sid: string) => {
+    const { data: roles } = await supabase
+      .from('roles')
+      .select('id, name')
+      .eq('establishment_id', sid)
+
+    const directorIds: string[] = []
+    const secretaryIds: string[] = []
+
+    for (const r of roles || []) {
+      const n = (r.name || '').toLowerCase()
+      if (
+        n.includes('directeur') ||
+        n.includes('director') ||
+        n.includes('مدير')
+      ) {
+        directorIds.push(r.id)
+      }
+      if (
+        n.includes('secretaire') ||
+        n.includes('secrétaire') ||
+        n.includes('secretary') ||
+        n.includes('سكرتير')
+      ) {
+        secretaryIds.push(r.id)
+      }
+    }
+    return { directorIds, secretaryIds }
+  }
+
   const handleConfirmCancel = async () => {
     if (!cancelPayment || !establishmentId) return
 
@@ -374,11 +436,12 @@ export default function PaymentsPage() {
 
         if (inst) {
           const newPaidAmount = Math.max(0, Number(inst.paid_amount) - amount)
-          const newStatus = newPaidAmount === 0
-            ? 'pending'
-            : newPaidAmount < Number(inst.amount)
-            ? 'partially_paid'
-            : 'paid'
+          const newStatus =
+            newPaidAmount === 0
+              ? 'pending'
+              : newPaidAmount < Number(inst.amount)
+                ? 'partially_paid'
+                : 'paid'
 
           await supabase
             .from('installments')
@@ -418,25 +481,28 @@ export default function PaymentsPage() {
         },
       }
 
-      const { data: directors } = await supabase
-        .from('user_profiles')
-        .select('user_id')
-        .eq('establishment_id', establishmentId)
-        .eq('role', 'directeur')
+      // ✅ FIX: user_profiles 3ndha role_id (machi 'role')
+      const { directorIds, secretaryIds } = await loadRoleIds(
+        supabase,
+        establishmentId,
+      )
 
-      for (const d of directors || []) {
-        notifInserts.push({ ...notifBase, user_id: d.user_id })
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('user_id, role_id')
+        .eq('establishment_id', establishmentId)
+
+      for (const p of profiles || []) {
+        if (directorIds.includes(p.role_id)) {
+          notifInserts.push({ ...notifBase, user_id: p.user_id })
+        }
       }
 
-      const { data: secretaries } = await supabase
-        .from('user_profiles')
-        .select('user_id')
-        .eq('establishment_id', establishmentId)
-        .eq('role', 'secretaire')
-
-      for (const s of secretaries || []) {
-        if (notifInserts.some((i) => i.user_id === s.user_id)) continue
-        notifInserts.push({ ...notifBase, user_id: s.user_id })
+      for (const p of profiles || []) {
+        if (secretaryIds.includes(p.role_id)) {
+          if (notifInserts.some((i) => i.user_id === p.user_id)) continue
+          notifInserts.push({ ...notifBase, user_id: p.user_id })
+        }
       }
 
       if (studentId) {
@@ -470,7 +536,10 @@ export default function PaymentsPage() {
           .from('notifications')
           .insert(notifInserts)
         if (notifError) {
-          console.error('⚠️ Notifications error:', notifError?.message || notifError)
+          console.error(
+            '⚠️ Notifications error:',
+            notifError?.message || notifError,
+          )
         }
       }
 
@@ -478,7 +547,7 @@ export default function PaymentsPage() {
 
       toast.success('تم حذف الدفعة + إشعار الأطراف')
       closeCancelModal()
-      fetchPayments(establishmentId)
+      if (yearId) fetchPayments(establishmentId, yearId)
     } catch (err: any) {
       console.error('[handleConfirmCancel]', err?.message || err)
       setModalError(err.message || 'حدث خطأ')
@@ -496,8 +565,11 @@ export default function PaymentsPage() {
           <div className="h-10 w-64 bg-slate-100 rounded-lg animate-pulse" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-28 bg-slate-100 rounded-2xl animate-pulse" />
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-28 bg-slate-100 rounded-2xl animate-pulse"
+            />
           ))}
         </div>
         <div className="h-40 bg-slate-100 rounded-2xl animate-pulse" />
@@ -528,7 +600,9 @@ export default function PaymentsPage() {
             {isSecretary ? 'مدفوعاتي' : 'المدفوعات'}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {isSecretary ? 'جميع الدفعات المسجلة في صندوقك' : 'جميع مدفوعات المؤسسة'}
+            {isSecretary
+              ? 'جميع الدفعات المسجلة في صندوقك'
+              : 'جميع مدفوعات المؤسسة'}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -546,7 +620,7 @@ export default function PaymentsPage() {
             </button>
           )}
           <button
-            onClick={() => fetchPayments(establishmentId!)}
+            onClick={() => yearId && fetchPayments(establishmentId!, yearId)}
             className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm"
           >
             <RefreshCw className="h-4 w-4" /> تحديث
@@ -571,15 +645,23 @@ export default function PaymentsPage() {
       {showDeleted && isDirector && (
         <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm">
           <Archive className="h-5 w-5" />
-          <span>أنت تستعرض <strong>الدفعات المحذوفة</strong> فقط.</span>
+          <span>
+            أنت تستعرض <strong>الدفعات المحذوفة</strong> فقط.
+          </span>
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className={`bg-gradient-to-br ${showDeleted ? 'from-red-500 to-red-700' : 'from-emerald-500 to-emerald-700'} rounded-2xl p-5 text-white shadow-lg`}>
+        <div
+          className={`bg-gradient-to-br ${
+            showDeleted ? 'from-red-500 to-red-700' : 'from-emerald-500 to-emerald-700'
+          } rounded-2xl p-5 text-white shadow-lg`}
+        >
           <div className="flex items-center gap-2 mb-2 opacity-90">
             <TrendingUp className="h-5 w-5" />
-            <span className="text-sm">{showDeleted ? 'إجمالي المحذوفة' : 'إجمالي المدفوعات'}</span>
+            <span className="text-sm">
+              {showDeleted ? 'إجمالي المحذوفة' : 'إجمالي المدفوعات'}
+            </span>
           </div>
           <p className="text-3xl font-bold">{totals.amount.toFixed(2)} DH</p>
         </div>
@@ -601,7 +683,8 @@ export default function PaymentsPage() {
             <span className="text-sm font-medium">متوسط الدفعة</span>
           </div>
           <p className="text-2xl font-bold text-slate-800">
-            {totals.count > 0 ? (totals.amount / totals.count).toFixed(2) : '0.00'} DH
+            {totals.count > 0 ? (totals.amount / totals.count).toFixed(2) : '0.00'}{' '}
+            DH
           </p>
         </div>
       </div>
@@ -650,7 +733,9 @@ export default function PaymentsPage() {
         {showFilters && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-4 border-t border-gray-100">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">طريقة الدفع</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                طريقة الدفع
+              </label>
               <select
                 value={methodFilter}
                 onChange={(e) => setMethodFilter(e.target.value)}
@@ -666,7 +751,9 @@ export default function PaymentsPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">الصندوق</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                الصندوق
+              </label>
               <select
                 value={caisseFilter}
                 onChange={(e) => setCaisseFilter(e.target.value)}
@@ -674,18 +761,24 @@ export default function PaymentsPage() {
               >
                 <option value="all">الكل</option>
                 {cashRegisters.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">من تاريخ</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                من تاريخ
+              </label>
               <DateInput value={dateFrom} onChange={setDateFrom} className="h-10" />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">إلى تاريخ</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                إلى تاريخ
+              </label>
               <DateInput value={dateTo} onChange={setDateTo} className="h-10" />
             </div>
           </div>
@@ -695,7 +788,8 @@ export default function PaymentsPage() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-bold text-slate-800">
-            {showDeleted ? 'الدفعات المحذوفة' : 'قائمة المدفوعات'} ({filteredPayments.length})
+            {showDeleted ? 'الدفعات المحذوفة' : 'قائمة المدفوعات'} (
+            {filteredPayments.length})
           </h2>
         </div>
 
@@ -703,7 +797,11 @@ export default function PaymentsPage() {
           <div className="p-16 text-center">
             <Wallet className="h-16 w-16 text-slate-300 mx-auto mb-4" />
             <p className="text-slate-500 font-medium">
-              {showDeleted ? 'لا توجد دفعات محذوفة' : hasActiveFilters ? 'لا توجد نتائج مطابقة' : 'لا توجد مدفوعات'}
+              {showDeleted
+                ? 'لا توجد دفعات محذوفة'
+                : hasActiveFilters
+                  ? 'لا توجد نتائج مطابقة'
+                  : 'لا توجد مدفوعات'}
             </p>
           </div>
         ) : (
@@ -711,13 +809,27 @@ export default function PaymentsPage() {
             <table className="min-w-full divide-y divide-gray-100">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">التاريخ</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">التلميذ</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">القسط</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">المبلغ</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">الطريقة</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">الصندوق</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">إجراءات</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    التاريخ
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    التلميذ
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    القسط
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    المبلغ
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    الطريقة
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    الصندوق
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    إجراءات
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -736,11 +848,21 @@ export default function PaymentsPage() {
                         {payment.payment_date}
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className={payment.deleted_at ? 'text-red-700 line-through' : 'text-gray-900'}>
-                          {payment.students ? `${payment.students.first_name} ${payment.students.last_name}` : '-'}
+                        <div
+                          className={
+                            payment.deleted_at
+                              ? 'text-red-700 line-through'
+                              : 'text-gray-900'
+                          }
+                        >
+                          {payment.students
+                            ? `${payment.students.first_name} ${payment.students.last_name}`
+                            : '-'}
                         </div>
                         {payment.deleted_at && payment.delete_reason && (
-                          <div className="text-xs text-red-600 mt-0.5">🗑️ {payment.delete_reason}</div>
+                          <div className="text-xs text-red-600 mt-0.5">
+                            🗑️ {payment.delete_reason}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-600">
@@ -748,13 +870,22 @@ export default function PaymentsPage() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-bold">
                         {payment.deleted_at ? (
-                          <span className="text-red-500 line-through">{Number(payment.amount).toFixed(2)} DH</span>
+                          <span className="text-red-500 line-through">
+                            {Number(payment.amount).toFixed(2)} DH
+                          </span>
                         ) : (
-                          <span className="text-emerald-600">+ {Number(payment.amount).toFixed(2)} DH</span>
+                          <span className="text-emerald-600">
+                            + {Number(payment.amount).toFixed(2)} DH
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${METHOD_COLORS[payment.method] || 'bg-slate-100 text-slate-700'}`}>
+                        <span
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                            METHOD_COLORS[payment.method] ||
+                            'bg-slate-100 text-slate-700'
+                          }`}
+                        >
                           {METHOD_LABELS[payment.method] || payment.method}
                         </span>
                       </td>
@@ -772,14 +903,23 @@ export default function PaymentsPage() {
                                   ? 'text-[#25D366] hover:bg-emerald-50'
                                   : 'text-slate-300 cursor-not-allowed'
                               }`}
-                              title={phone ? `إرسال WhatsApp للولي (${phone})` : 'لا يوجد رقم هاتف'}
+                              title={
+                                phone
+                                  ? `إرسال WhatsApp للولي (${phone})`
+                                  : 'لا يوجد رقم هاتف'
+                              }
                             >
                               <MessageCircle className="h-4 w-4" />
                             </button>
                           )}
 
                           <button
-                            onClick={() => window.open(`/api/pdf/payment-receipt?paymentId=${payment.id}`, '_blank')}
+                            onClick={() =>
+                              window.open(
+                                `/api/pdf/payment-receipt?paymentId=${payment.id}`,
+                                '_blank',
+                              )
+                            }
                             className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
                             title="تحميل الإيصال"
                           >
@@ -794,7 +934,11 @@ export default function PaymentsPage() {
                                   ? 'text-red-600 hover:bg-red-50'
                                   : 'text-slate-300 cursor-not-allowed'
                               }`}
-                              title={canCancelPayment(payment) ? 'حذف الدفعة' : 'لا يمكن الحذف'}
+                              title={
+                                canCancelPayment(payment)
+                                  ? 'حذف الدفعة'
+                                  : 'لا يمكن الحذف'
+                              }
                               disabled={!canCancelPayment(payment)}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -818,7 +962,11 @@ export default function PaymentsPage() {
               <span className="text-sm font-medium text-slate-600">
                 {showDeleted ? 'مجموع المحذوفة' : 'المجموع'}
               </span>
-              <span className={`text-lg font-bold ${showDeleted ? 'text-red-700' : 'text-emerald-700'}`}>
+              <span
+                className={`text-lg font-bold ${
+                  showDeleted ? 'text-red-700' : 'text-emerald-700'
+                }`}
+              >
                 {totals.amount.toFixed(2)} DH
               </span>
             </div>
@@ -843,20 +991,28 @@ export default function PaymentsPage() {
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">التلميذ</span>
                 <span className="font-medium text-slate-800">
-                  {cancelPayment.students ? `${cancelPayment.students.first_name} ${cancelPayment.students.last_name}` : '-'}
+                  {cancelPayment.students
+                    ? `${cancelPayment.students.first_name} ${cancelPayment.students.last_name}`
+                    : '-'}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">القسط</span>
-                <span className="font-medium text-slate-800">{cancelPayment.installments?.description || '-'}</span>
+                <span className="font-medium text-slate-800">
+                  {cancelPayment.installments?.description || '-'}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">التاريخ</span>
-                <span className="font-medium text-slate-800">{cancelPayment.payment_date}</span>
+                <span className="font-medium text-slate-800">
+                  {cancelPayment.payment_date}
+                </span>
               </div>
               <div className="flex justify-between text-base border-t border-slate-200 pt-2 mt-2">
                 <span className="text-slate-500 font-medium">المبلغ</span>
-                <span className="font-bold text-red-600">- {Number(cancelPayment.amount).toFixed(2)} DH</span>
+                <span className="font-bold text-red-600">
+                  - {Number(cancelPayment.amount).toFixed(2)} DH
+                </span>
               </div>
             </div>
 
@@ -883,13 +1039,17 @@ export default function PaymentsPage() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 text-sm"
                 placeholder="مثال: خطأ في المبلغ، دفعة مكررة، إلغاء من طرف ولي الأمر..."
               />
-              <p className="text-xs text-slate-500 mt-1">{cancelReason.length}/5 أحرف على الأقل</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {cancelReason.length}/5 أحرف على الأقل
+              </p>
             </div>
 
             <div className="mb-4">
               <label className="block text-sm font-bold text-slate-700 mb-2">
                 للتأكيد، اكتب كلمة{' '}
-                <span className="text-red-600 font-mono bg-red-50 px-2 py-0.5 rounded">حذف</span>{' '}
+                <span className="text-red-600 font-mono bg-red-50 px-2 py-0.5 rounded">
+                  حذف
+                </span>{' '}
                 <span className="text-red-500">*</span>
               </label>
               <input
@@ -910,7 +1070,11 @@ export default function PaymentsPage() {
             <div className="flex gap-2 justify-end pt-4 border-t border-slate-100">
               <button
                 onClick={handleConfirmCancel}
-                disabled={cancelling || !cancelReason.trim() || cancelConfirmText.trim().toUpperCase() !== 'حذف'}
+                disabled={
+                  cancelling ||
+                  !cancelReason.trim() ||
+                  cancelConfirmText.trim().toUpperCase() !== 'حذف'
+                }
                 className="h-11 px-6 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
               >
                 <Trash2 className="h-4 w-4" />
