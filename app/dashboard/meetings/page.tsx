@@ -3,10 +3,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
+import { openWhatsApp } from '@/lib/whatsapp'
 import {
   Calendar, Plus, X, Save, RefreshCw, Users, Clock, MapPin,
   Edit, Trash2, UserCheck, BookOpen, ChevronDown, ChevronUp,
-  CheckCircle2, AlertCircle, Info,
+  CheckCircle2, AlertCircle, Info, MessageCircle,
 } from 'lucide-react'
 
 type Slot = {
@@ -21,7 +22,6 @@ type Slot = {
   student_name?: string
 }
 
-// ✅ FIX: teacher_name / class_name acceptent null (l'API renvoie null, pas undefined)
 type Meeting = {
   id: string
   title: string
@@ -67,6 +67,10 @@ export default function MeetingsPage() {
   const [classes, setClasses] = useState<any[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
+  // ═══ WhatsApp: map parent_user_id → phone ═══
+  const [parentPhones, setParentPhones] = useState<Map<string, string>>(new Map())
+  const [schoolName, setSchoolName] = useState('')
+
   // Modal create/edit
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -86,8 +90,22 @@ export default function MeetingsPage() {
   const [count, setCount] = useState(8)
 
   useEffect(() => {
-    if (establishmentId) loadData()
+    if (establishmentId) {
+      loadData()
+      loadSchoolName()
+    }
   }, [establishmentId])
+
+  const loadSchoolName = async () => {
+    if (!establishmentId) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('establishments')
+      .select('name')
+      .eq('id', establishmentId)
+      .maybeSingle()
+    if (data?.name) setSchoolName(data.name)
+  }
 
   const loadData = async () => {
     setLoading(true)
@@ -95,7 +113,6 @@ export default function MeetingsPage() {
     const supabase = createClient()
 
     try {
-      // Teachers
       const { data: staffData } = await supabase
         .from('staff')
         .select('id, full_name')
@@ -104,7 +121,6 @@ export default function MeetingsPage() {
         .order('full_name')
       setTeachers(staffData || [])
 
-      // Classes
       const { data: classData } = await supabase
         .from('classes')
         .select('id, name, levels(name)')
@@ -112,7 +128,6 @@ export default function MeetingsPage() {
         .order('name')
       setClasses(classData || [])
 
-      // Meetings with teacher + class + slots
       const { data: meetingsData, error: mErr } = await supabase
         .from('meetings')
         .select(`
@@ -128,7 +143,6 @@ export default function MeetingsPage() {
 
       const meetingIds = (meetingsData || []).map((m: any) => m.id)
 
-      // Slots
       let slotsData: any[] = []
       if (meetingIds.length > 0) {
         const { data: slots } = await supabase
@@ -139,7 +153,6 @@ export default function MeetingsPage() {
         slotsData = slots || []
       }
 
-      // Parent + student names for booked slots
       const parentIds = slotsData.map((s: any) => s.parent_user_id).filter(Boolean)
       const studentIds = slotsData.map((s: any) => s.student_id).filter(Boolean)
 
@@ -165,6 +178,22 @@ export default function MeetingsPage() {
           studentNames[s.id] = `${s.first_name} ${s.last_name}`
         })
       }
+
+      // ═══ WhatsApp: fetch parent phones via families.parent_user_id ═══
+      const phoneMap = new Map<string, string>()
+      if (parentIds.length > 0) {
+        const { data: familiesData } = await supabase
+          .from('families')
+          .select('parent_user_id, phone')
+          .in('parent_user_id', parentIds)
+
+        ;(familiesData || []).forEach((f: any) => {
+          if (f.parent_user_id && f.phone) {
+            phoneMap.set(f.parent_user_id, f.phone)
+          }
+        })
+      }
+      setParentPhones(phoneMap)
 
       const list: Meeting[] = (meetingsData || []).map((m: any) => ({
         id: m.id,
@@ -201,6 +230,56 @@ export default function MeetingsPage() {
       setError(e.message || 'خطأ')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ═══ WhatsApp: send meeting confirmation to booked parent ═══
+  const handleWhatsApp = (slot: Slot, meeting: Meeting) => {
+    if (!slot.parent_user_id) {
+      alert('⚠️ هذا الحجز ما عندوش ولي أمر')
+      return
+    }
+
+    const phone = parentPhones.get(slot.parent_user_id)
+    if (!phone) {
+      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      return
+    }
+
+    const timeStr = `${slot.start_time.slice(0, 5)} - ${slot.end_time.slice(0, 5)}`
+
+    const lines = [
+      `السلام عليكم${slot.parent_name ? ' ' + slot.parent_name : ''}،`,
+      ``,
+      `نؤكد لكم موعد اللقاء:`,
+      ``,
+      `📌 *الموضوع:* ${meeting.title}`,
+      `📅 *التاريخ:* ${dayName(meeting.meeting_date)} ${formatDate(meeting.meeting_date)}`,
+      `⏰ *التوقيت:* ${timeStr}`,
+    ]
+
+    if (meeting.location) {
+      lines.push(`📍 *المكان:* ${meeting.location}`)
+    }
+    if (meeting.teacher_name) {
+      lines.push(`👤 *مع:* ${meeting.teacher_name}`)
+    }
+    if (slot.student_name) {
+      lines.push(`🎓 *التلميذ:* ${slot.student_name}`)
+    }
+
+    lines.push(
+      ``,
+      `نرجو الحضور في الوقت المحدد. شكراً لكم.`,
+      ``,
+      schoolName ? `— ${schoolName}` : '',
+    )
+
+    const message = lines.filter((l) => l !== undefined).join('\n').trim()
+
+    const ok = openWhatsApp(phone, message)
+    if (!ok) {
+      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
     }
   }
 
@@ -304,7 +383,6 @@ export default function MeetingsPage() {
     }
   }
 
-  // ─── SLOTS ───
   const openSlotsModal = (meetingId: string) => {
     setSlotsMeetingId(meetingId)
     setStartTime('10:00')
@@ -321,7 +399,6 @@ export default function MeetingsPage() {
     const supabase = createClient()
 
     try {
-      // Générer les slots
       const [sh, sm] = startTime.split(':').map(Number)
       let current = sh * 60 + sm
 
@@ -410,7 +487,6 @@ export default function MeetingsPage() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-      {/* Header */}
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -448,7 +524,6 @@ export default function MeetingsPage() {
         </div>
       )}
 
-      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center gap-2 mb-2">
@@ -488,7 +563,6 @@ export default function MeetingsPage() {
         </div>
       </div>
 
-      {/* Meetings list */}
       {meetings.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
           <Users className="h-16 w-16 text-slate-300 mx-auto mb-4" />
@@ -515,7 +589,6 @@ export default function MeetingsPage() {
                   m.status === 'closed' ? 'border-slate-200 opacity-75' : 'border-gray-100'
                 }`}
               >
-                {/* Header */}
                 <div className="p-5 flex items-start justify-between gap-3 flex-wrap">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -614,7 +687,6 @@ export default function MeetingsPage() {
                   </div>
                 </div>
 
-                {/* Slots */}
                 {isExpanded && (
                   <div className="border-t border-gray-100 bg-slate-50/50 p-4">
                     {m.slots.length === 0 ? (
@@ -634,6 +706,10 @@ export default function MeetingsPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         {m.slots.map((s) => {
                           const booked = !!s.parent_user_id
+                          const phone = s.parent_user_id
+                            ? parentPhones.get(s.parent_user_id)
+                            : undefined
+
                           return (
                             <div
                               key={s.id}
@@ -670,12 +746,34 @@ export default function MeetingsPage() {
                                       التلميذ: {s.student_name}
                                     </p>
                                   )}
-                                  <button
-                                    onClick={() => handleCancelBooking(s)}
-                                    className="text-[10px] text-rose-600 hover:text-rose-800 font-bold mt-1"
-                                  >
-                                    إلغاء الحجز
-                                  </button>
+
+                                  {/* ═══ Actions for booked slot ═══ */}
+                                  <div className="flex items-center gap-2 pt-1">
+                                    <button
+                                      onClick={() => handleWhatsApp(s, m)}
+                                      disabled={!phone}
+                                      className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition ${
+                                        phone
+                                          ? 'bg-[#25D366] text-white hover:bg-[#1da851] shadow-sm'
+                                          : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                      }`}
+                                      title={
+                                        phone
+                                          ? `إرسال WhatsApp للولي (${phone})`
+                                          : 'لا يوجد رقم هاتف'
+                                      }
+                                    >
+                                      <MessageCircle className="h-3 w-3" />
+                                      WhatsApp
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleCancelBooking(s)}
+                                      className="text-[10px] text-rose-600 hover:text-rose-800 font-bold"
+                                    >
+                                      إلغاء الحجز
+                                    </button>
+                                  </div>
                                 </div>
                               ) : (
                                 <span className="text-xs text-slate-400">
@@ -695,7 +793,6 @@ export default function MeetingsPage() {
         </div>
       )}
 
-      {/* Modal Create/Edit Meeting */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-lg w-full my-8">
@@ -830,7 +927,6 @@ export default function MeetingsPage() {
         </div>
       )}
 
-      {/* Modal Add Slots */}
       {showSlotsModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-md w-full my-8">

@@ -6,7 +6,11 @@ import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
 import { useUserPermissions } from '@/lib/useUserPermissions'
 import DateInput from '@/components/DateInput'
-import { Search, Wallet, X, CheckCircle, Clock, AlertCircle, FileText } from 'lucide-react'
+import { openWhatsApp } from '@/lib/whatsapp'
+import {
+  Search, Wallet, X, CheckCircle, Clock, AlertCircle, FileText,
+  MessageCircle,
+} from 'lucide-react'
 
 type Installment = {
   id: string
@@ -49,6 +53,10 @@ export default function InstallmentsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
+  // ═══ WhatsApp: map student_id → phone ═══
+  const [studentPhones, setStudentPhones] = useState<Map<string, string>>(new Map())
+  const [schoolName, setSchoolName] = useState('')
+
   const [showModal, setShowModal] = useState(false)
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null)
   const [paymentAmount, setPaymentAmount] = useState<number>(0)
@@ -64,7 +72,19 @@ export default function InstallmentsPage() {
   useEffect(() => {
     if (!establishmentId) return
     fetchData(establishmentId)
+    loadSchoolName()
   }, [establishmentId])
+
+  const loadSchoolName = async () => {
+    if (!establishmentId) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('establishments')
+      .select('name')
+      .eq('id', establishmentId)
+      .maybeSingle()
+    if (data?.name) setSchoolName(data.name)
+  }
 
   const fetchData = async (sid: string) => {
     const supabase = createClient()
@@ -73,7 +93,7 @@ export default function InstallmentsPage() {
       .from('installments')
       .select(`
         *,
-        students (first_name, last_name),
+        students (first_name, last_name, family_id),
         contracts (id, start_date, end_date),
         payments (id)
       `)
@@ -82,6 +102,44 @@ export default function InstallmentsPage() {
 
     if (installmentsError) setError(installmentsError.message)
     else setInstallments(installmentsData || [])
+
+    // ═══ WhatsApp: fetch family phones (R1: separate queries) ═══
+    const studentIds = Array.from(
+      new Set((installmentsData || []).map((i: any) => i.student_id).filter(Boolean)),
+    )
+
+    if (studentIds.length > 0) {
+      const { data: studentsData } = await supabase
+        .from('students')
+        .select('id, family_id')
+        .in('id', studentIds)
+
+      const familyIds = Array.from(
+        new Set((studentsData || []).map((s: any) => s.family_id).filter(Boolean)),
+      )
+
+      const familyIdToPhone = new Map<string, string>()
+      if (familyIds.length > 0) {
+        const { data: familiesData } = await supabase
+          .from('families')
+          .select('id, phone')
+          .in('id', familyIds)
+
+        ;(familiesData || []).forEach((f: any) => {
+          if (f.phone) familyIdToPhone.set(f.id, f.phone)
+        })
+      }
+
+      const studentIdToPhone = new Map<string, string>()
+      ;(studentsData || []).forEach((s: any) => {
+        const phone = s.family_id ? familyIdToPhone.get(s.family_id) : null
+        if (phone) studentIdToPhone.set(s.id, phone)
+      })
+
+      setStudentPhones(studentIdToPhone)
+    } else {
+      setStudentPhones(new Map())
+    }
 
     const { data: cashData, error: cashError } = await supabase
       .from('cash_registers')
@@ -95,6 +153,65 @@ export default function InstallmentsPage() {
     }
 
     setLoading(false)
+  }
+
+  // ═══ WhatsApp: send installment reminder ═══
+  const handleWhatsApp = (inst: Installment) => {
+    const phone = studentPhones.get(inst.student_id)
+    if (!phone) {
+      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      return
+    }
+
+    const studentName = inst.students
+      ? `${inst.students.first_name} ${inst.students.last_name}`
+      : 'التلميذ'
+
+    const remaining = inst.amount - inst.paid_amount
+    const isOverdue = inst.status !== 'paid' && inst.due_date < today
+
+    // Header based on status
+    let header = ''
+    if (isOverdue) {
+      header = `نذكركم بأن القسط التالي قد تأخر عن موعد استحقاقه:`
+    } else if (inst.status === 'partially_paid') {
+      header = `نذكركم بأن القسط التالي لم يكتمل بعد:`
+    } else {
+      header = `نذكركم بأن القسط التالي مستحق:`
+    }
+
+    const lines = [
+      `السلام عليكم،`,
+      ``,
+      header,
+      ``,
+      `📋 *القسط:* ${inst.description}`,
+      `📅 *تاريخ الاستحقاق:* ${inst.due_date}`,
+      `💰 *المبلغ الإجمالي:* ${inst.amount.toFixed(2)} DH`,
+    ]
+
+    if (inst.paid_amount > 0) {
+      lines.push(`✅ *المدفوع:* ${inst.paid_amount.toFixed(2)} DH`)
+      lines.push(`⚠️ *المتبقي:* ${remaining.toFixed(2)} DH`)
+    } else {
+      lines.push(`⚠️ *المبلغ المتبقي:* ${remaining.toFixed(2)} DH`)
+    }
+
+    lines.push(
+      ``,
+      isOverdue
+        ? `نرجو التكرم بالأداء في أقرب وقت ممكن.`
+        : `نرجو التكرم بالأداء قبل التاريخ المذكور.`,
+      ``,
+      schoolName ? `— ${schoolName}` : '',
+    )
+
+    const message = lines.filter((l) => l !== undefined).join('\n').trim()
+
+    const ok = openWhatsApp(phone, message)
+    if (!ok) {
+      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
+    }
   }
 
   const openPaymentModal = (installment: Installment) => {
@@ -195,13 +312,13 @@ export default function InstallmentsPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6" dir="rtl">
       <header className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <Wallet className="h-6 w-6 text-indigo-600" />
-          Échéances
+          الأقساط
         </h1>
-        <p className="text-gray-600">Suivez les paiements des échéances</p>
+        <p className="text-gray-600">تتبع مدفوعات الأقساط + تذكير الأولياء</p>
       </header>
 
       {error && <div className="mb-4 text-red-600">{error}</div>}
@@ -245,48 +362,71 @@ export default function InstallmentsPage() {
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المدفوع</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">المتبقي</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الحالة</th>
-                  {canCreatePayments && (
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">إجراء</th>
-                  )}
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">إجراء</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredInstallments.map((inst) => (
-                  <tr key={inst.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {inst.students ? `${inst.students.first_name} ${inst.students.last_name}` : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{inst.description}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{inst.due_date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{inst.amount} DH</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{inst.paid_amount} DH</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {inst.amount - inst.paid_amount} DH
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(inst)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <div className="flex items-center gap-2">
-                        {inst.status !== 'paid' && canCreatePayments && (
-                          <button
-                            onClick={() => openPaymentModal(inst)}
-                            className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg hover:bg-indigo-100 text-xs"
-                          >
-                            تسجيل دفعة
-                          </button>
-                        )}
-                        {inst.payments && inst.payments.length > 0 && (
-                          <button
-                            onClick={() => handleDownloadReceipt(inst.id)}
-                            className="text-blue-600 hover:text-blue-800"
-                            title="تحميل إيصال"
-                          >
-                            <FileText className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredInstallments.map((inst) => {
+                  const phone = studentPhones.get(inst.student_id)
+                  return (
+                    <tr key={inst.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {inst.students ? `${inst.students.first_name} ${inst.students.last_name}` : '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{inst.description}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{inst.due_date}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{inst.amount} DH</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{inst.paid_amount} DH</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {inst.amount - inst.paid_amount} DH
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(inst)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <div className="flex items-center gap-2">
+                          {/* WhatsApp button — only for unpaid / partially paid */}
+                          {inst.status !== 'paid' && (
+                            <button
+                              onClick={() => handleWhatsApp(inst)}
+                              disabled={!phone}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                                phone
+                                  ? 'bg-[#25D366] text-white hover:bg-[#1da851] shadow-sm'
+                                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                              }`}
+                              title={
+                                phone
+                                  ? `إرسال WhatsApp للولي (${phone})`
+                                  : 'لا يوجد رقم هاتف'
+                              }
+                            >
+                              <MessageCircle className="h-3.5 w-3.5" />
+                              WhatsApp
+                            </button>
+                          )}
+
+                          {inst.status !== 'paid' && canCreatePayments && (
+                            <button
+                              onClick={() => openPaymentModal(inst)}
+                              className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg hover:bg-indigo-100 text-xs font-medium"
+                            >
+                              تسجيل دفعة
+                            </button>
+                          )}
+
+                          {inst.payments && inst.payments.length > 0 && (
+                            <button
+                              onClick={() => handleDownloadReceipt(inst.id)}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="تحميل إيصال"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -302,83 +442,82 @@ export default function InstallmentsPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-<div className="space-y-4">
-  <div className="bg-gray-50 p-3 rounded-lg space-y-1">
-    <p className="text-sm text-gray-600">
-      <span className="font-medium">التلميذ:</span> {selectedInstallment.students?.first_name} {selectedInstallment.students?.last_name}
-    </p>
-    <p className="text-sm text-gray-600">
-      <span className="font-medium">القسط:</span> {selectedInstallment.description}
-    </p>
-    <p className="text-sm text-gray-600">
-      <span className="font-medium">المبلغ المستحق:</span> {selectedInstallment.amount - selectedInstallment.paid_amount} DH
-    </p>
-  </div>
+            <div className="space-y-4">
+              <div className="bg-gray-50 p-3 rounded-lg space-y-1">
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">التلميذ:</span> {selectedInstallment.students?.first_name} {selectedInstallment.students?.last_name}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">القسط:</span> {selectedInstallment.description}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">المبلغ المستحق:</span> {selectedInstallment.amount - selectedInstallment.paid_amount} DH
+                </p>
+              </div>
 
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">
-      المبلغ المدفوع (درهم) <span className="text-red-500">*</span>
-    </label>
-    <input
-      type="number"
-      min="1"
-      max={selectedInstallment.amount - selectedInstallment.paid_amount}
-      value={paymentAmount}
-      onChange={(e) => setPaymentAmount(Number(e.target.value))}
-      className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-    />
-  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  المبلغ المدفوع (درهم) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={selectedInstallment.amount - selectedInstallment.paid_amount}
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                />
+              </div>
 
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">
-      طريقة الدفع
-    </label>
-    <select
-      value={paymentMethod}
-      onChange={(e) => setPaymentMethod(e.target.value)}
-      className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-    >
-      <option value="cash">نقداً</option>
-      <option value="cheque">شيك</option>
-      <option value="transfer">تحويل بنكي</option>
-      <option value="card">بطاقة</option>
-      <option value="other">أخرى</option>
-    </select>
-  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  طريقة الدفع
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                  <option value="cash">نقداً</option>
+                  <option value="cheque">شيك</option>
+                  <option value="transfer">تحويل بنكي</option>
+                  <option value="card">بطاقة</option>
+                  <option value="other">أخرى</option>
+                </select>
+              </div>
 
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">
-      تاريخ الدفع
-    </label>
-    <DateInput value={paymentDate} onChange={setPaymentDate} />
-  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  تاريخ الدفع
+                </label>
+                <DateInput value={paymentDate} onChange={setPaymentDate} />
+              </div>
 
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">
-      الصندوق
-    </label>
-    <select
-      value={cashRegisterId}
-      onChange={(e) => setCashRegisterId(e.target.value)}
-      className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-    >
-      {cashRegisters.map((cr) => (
-        <option key={cr.id} value={cr.id}>{cr.name}</option>
-      ))}
-    </select>
-  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  الصندوق
+                </label>
+                <select
+                  value={cashRegisterId}
+                  onChange={(e) => setCashRegisterId(e.target.value)}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                  {cashRegisters.map((cr) => (
+                    <option key={cr.id} value={cr.id}>{cr.name}</option>
+                  ))}
+                </select>
+              </div>
 
-  {error && <div className="text-red-600 text-sm">{error}</div>}
+              {error && <div className="text-red-600 text-sm">{error}</div>}
 
-  <button
-    onClick={handleSavePayment}
-    disabled={saving}
-    className="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-  >
-    {saving ? 'جارٍ الحفظ...' : 'حفظ الدفعة'}
-  </button>
-</div>
-
+              <button
+                onClick={handleSavePayment}
+                disabled={saving}
+                className="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {saving ? 'جارٍ الحفظ...' : 'حفظ الدفعة'}
+              </button>
+            </div>
           </div>
         </div>
       )}

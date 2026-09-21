@@ -3,10 +3,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
+import { buildCustomMessage, openWhatsApp } from '@/lib/whatsapp'
 import {
   Shield, Plus, X, Save, Search, RefreshCw, Users, AlertTriangle,
   AlertCircle, Info, Edit, Trash2, Calendar, BookOpen, User as UserIcon,
-  Gavel, Filter, ChevronDown,
+  Gavel, Filter, ChevronDown, MessageCircle,
 } from 'lucide-react'
 
 type Discipline = {
@@ -60,6 +61,10 @@ export default function DisciplinePage() {
   const [disciplines, setDisciplines] = useState<Discipline[]>([])
   const [students, setStudents] = useState<any[]>([])
 
+  // ═══ WhatsApp: map student_id → phone ═══
+  const [studentPhones, setStudentPhones] = useState<Map<string, string>>(new Map())
+  const [schoolName, setSchoolName] = useState('')
+
   const [searchTerm, setSearchTerm] = useState('')
   const [filterSeverity, setFilterSeverity] = useState<string>('')
 
@@ -75,8 +80,22 @@ export default function DisciplinePage() {
   const [formDescription, setFormDescription] = useState('')
 
   useEffect(() => {
-    if (establishmentId) loadData()
+    if (establishmentId) {
+      loadData()
+      loadSchoolName()
+    }
   }, [establishmentId])
+
+  const loadSchoolName = async () => {
+    if (!establishmentId) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('establishments')
+      .select('name')
+      .eq('id', establishmentId)
+      .maybeSingle()
+    if (data?.name) setSchoolName(data.name)
+  }
 
   const loadData = async () => {
     setLoading(true)
@@ -87,12 +106,36 @@ export default function DisciplinePage() {
       // Students
       const { data: studentsData } = await supabase
         .from('students')
-        .select('id, first_name, last_name, massar_code')
+        .select('id, first_name, last_name, massar_code, family_id')
         .eq('establishment_id', establishmentId)
         .eq('status', 'active')
         .order('first_name')
 
       setStudents(studentsData || [])
+
+      // ═══ WhatsApp: fetch family phones ═══
+      const familyIds = Array.from(
+        new Set((studentsData || []).map((s: any) => s.family_id).filter(Boolean)),
+      )
+
+      const familyIdToPhone = new Map<string, string>()
+      if (familyIds.length > 0) {
+        const { data: familiesData } = await supabase
+          .from('families')
+          .select('id, phone')
+          .in('id', familyIds)
+
+        ;(familiesData || []).forEach((f: any) => {
+          if (f.phone) familyIdToPhone.set(f.id, f.phone)
+        })
+      }
+
+      const studentIdToPhone = new Map<string, string>()
+      ;(studentsData || []).forEach((s: any) => {
+        const phone = s.family_id ? familyIdToPhone.get(s.family_id) : null
+        if (phone) studentIdToPhone.set(s.id, phone)
+      })
+      setStudentPhones(studentIdToPhone)
 
       // Disciplines avec student + class
       const { data: dData, error: dErr } = await supabase
@@ -147,6 +190,46 @@ export default function DisciplinePage() {
       setError(e.message || 'خطأ')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ═══ WhatsApp: send discipline notification ═══
+  const handleWhatsApp = (d: Discipline) => {
+    const phone = studentPhones.get(d.student_id)
+    if (!phone) {
+      alert('⚠️ لا يوجد رقم هاتف لهذا الولي. أضفه في ملف العائلة أولاً.')
+      return
+    }
+
+    const severityEmoji =
+      d.severity === 'high' ? '🔴' : d.severity === 'medium' ? '🟠' : '🟡'
+
+    const lines = [
+      `السلام عليكم،`,
+      ``,
+      `نحيطكم علماً بتسجيل مخالفة في حق ابنكم/ابنتكم *${d.student_name}* بتاريخ *${formatDate(d.incident_date)}*.`,
+      ``,
+      `📋 *النوع:* ${categoryLabel(d.category)}`,
+      `⚠️ *الدرجة:* ${severityEmoji} ${severityLabel(d.severity)}`,
+      `📌 *العنوان:* ${d.title}`,
+    ]
+
+    if (d.description) {
+      lines.push(``, `📝 *التفاصيل:* ${d.description}`)
+    }
+
+    lines.push(
+      ``,
+      `نرجو التواصل مع الإدارة لمتابعة الموضوع.`,
+      ``,
+      schoolName ? `— ${schoolName}` : '',
+    )
+
+    const message = lines.filter((l) => l !== undefined).join('\n').trim()
+
+    const ok = openWhatsApp(phone, message)
+    if (!ok) {
+      alert('⚠️ رقم الهاتف غير صحيح. تحقق من الصيغة (مثال: 0612345678)')
     }
   }
 
@@ -205,38 +288,38 @@ export default function DisciplinePage() {
         if (upErr) throw upErr
         setSuccess('✅ تم التحديث')
       } else {
-  const { data: newDisc, error: insErr } = await supabase
-    .from('disciplines')
-    .insert(payload)
-    .select('id')
-    .single()
-  if (insErr) throw insErr
+        const { data: newDisc, error: insErr } = await supabase
+          .from('disciplines')
+          .insert(payload)
+          .select('id')
+          .single()
+        if (insErr) throw insErr
 
-  // 📧 إرسال إيميل للوالد
-  if (newDisc?.id) {
-    try {
-      const res = await fetch('/api/establishment/discipline-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disciplineId: newDisc.id }),
-      })
-      const json = await res.json()
-      if (json.sent) {
-        setSuccess('✅ تم تسجيل المخالفة + إرسال إيميل للوالد')
-      } else if (json.skipped) {
-        setSuccess(`✅ تم تسجيل المخالفة (لم يُرسل إيميل — ${json.reason || ''})`)
-      } else {
-        setSuccess('✅ تم تسجيل المخالفة')
+        // 📧 إرسال إيميل للوالد
+        if (newDisc?.id) {
+          try {
+            const res = await fetch('/api/establishment/discipline-alert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ disciplineId: newDisc.id }),
+            })
+            const json = await res.json()
+            if (json.sent) {
+              setSuccess('✅ تم تسجيل المخالفة + إرسال إيميل للوالد')
+            } else if (json.skipped) {
+              setSuccess(`✅ تم تسجيل المخالفة (لم يُرسل إيميل — ${json.reason || ''})`)
+            } else {
+              setSuccess('✅ تم تسجيل المخالفة')
+            }
+          } catch (e) {
+            console.error('Email send failed:', e)
+            setSuccess('✅ تم تسجيل المخالفة (فشل إرسال الإيميل)')
+          }
+          setTimeout(() => setSuccess(''), 5000)
+        } else {
+          setSuccess('✅ تم تسجيل المخالفة')
+        }
       }
-    } catch (e) {
-      console.error('Email send failed:', e)
-      setSuccess('✅ تم تسجيل المخالفة (فشل إرسال الإيميل)')
-    }
-    setTimeout(() => setSuccess(''), 5000)
-  } else {
-    setSuccess('✅ تم تسجيل المخالفة')
-  }
-}
 
       setTimeout(() => setSuccess(''), 3000)
       setShowModal(false)
@@ -294,7 +377,6 @@ export default function DisciplinePage() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-      {/* Header */}
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -332,7 +414,6 @@ export default function DisciplinePage() {
         </div>
       )}
 
-      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center gap-2 mb-2">
@@ -375,7 +456,6 @@ export default function DisciplinePage() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3 flex-wrap">
         <Filter className="h-4 w-4 text-slate-500" />
         <div className="flex gap-2 flex-wrap">
@@ -418,7 +498,6 @@ export default function DisciplinePage() {
         </div>
       </div>
 
-      {/* List */}
       {filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
           <Shield className="h-16 w-16 text-slate-300 mx-auto mb-4" />
@@ -438,90 +517,109 @@ export default function DisciplinePage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((d) => (
-            <div
-              key={d.id}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition overflow-hidden"
-            >
-              <div className="flex items-stretch">
-                {/* Severity bar */}
-                <div
-                  className={`w-1.5 flex-shrink-0 ${
-                    d.severity === 'high'
-                      ? 'bg-rose-500'
-                      : d.severity === 'medium'
-                      ? 'bg-amber-500'
-                      : 'bg-emerald-500'
-                  }`}
-                />
+          {filtered.map((d) => {
+            const phone = studentPhones.get(d.student_id)
+            return (
+              <div
+                key={d.id}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition overflow-hidden"
+              >
+                <div className="flex items-stretch">
+                  <div
+                    className={`w-1.5 flex-shrink-0 ${
+                      d.severity === 'high'
+                        ? 'bg-rose-500'
+                        : d.severity === 'medium'
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                    }`}
+                  />
 
-                <div className="flex-1 p-5">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap mb-2">
-                        <span
-                          className={`text-xs font-bold px-2 py-0.5 rounded-md border ${severityStyle(d.severity)}`}
-                        >
-                          {severityLabel(d.severity)}
-                        </span>
-                        <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                          {categoryLabel(d.category)}
-                        </span>
-                        <span className="text-xs text-slate-500 flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {formatDate(d.incident_date)}
-                        </span>
-                      </div>
-
-                      <h3 className="font-bold text-slate-800 text-base mb-1">
-                        {d.title}
-                      </h3>
-
-                      {d.description && (
-                        <p className="text-sm text-slate-600 line-clamp-2 mb-2">
-                          {d.description}
-                        </p>
-                      )}
-
-                      <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <UserIcon className="h-3 w-3" />
-                          {d.student_name}
-                        </span>
-                        {d.class_name && (
-                          <span className="flex items-center gap-1">
-                            <BookOpen className="h-3 w-3" />
-                            {d.class_name}
+                  <div className="flex-1 p-5">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          <span
+                            className={`text-xs font-bold px-2 py-0.5 rounded-md border ${severityStyle(d.severity)}`}
+                          >
+                            {severityLabel(d.severity)}
                           </span>
-                        )}
-                      </div>
-                    </div>
+                          <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                            {categoryLabel(d.category)}
+                          </span>
+                          <span className="text-xs text-slate-500 flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {formatDate(d.incident_date)}
+                          </span>
+                        </div>
 
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => openEdit(d)}
-                        className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition"
-                        title="تعديل"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(d.id)}
-                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
-                        title="حذف"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                        <h3 className="font-bold text-slate-800 text-base mb-1">
+                          {d.title}
+                        </h3>
+
+                        {d.description && (
+                          <p className="text-sm text-slate-600 line-clamp-2 mb-2">
+                            {d.description}
+                          </p>
+                        )}
+
+                        <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <UserIcon className="h-3 w-3" />
+                            {d.student_name}
+                          </span>
+                          {d.class_name && (
+                            <span className="flex items-center gap-1">
+                              <BookOpen className="h-3 w-3" />
+                              {d.class_name}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* WhatsApp button */}
+                        <button
+                          onClick={() => handleWhatsApp(d)}
+                          disabled={!phone}
+                          className={`p-2 rounded-lg transition ${
+                            phone
+                              ? 'text-[#25D366] hover:bg-emerald-50'
+                              : 'text-slate-300 cursor-not-allowed'
+                          }`}
+                          title={
+                            phone
+                              ? `إرسال WhatsApp للولي (${phone})`
+                              : 'لا يوجد رقم هاتف'
+                          }
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          onClick={() => openEdit(d)}
+                          className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition"
+                          title="تعديل"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(d.id)}
+                          className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                          title="حذف"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
-      {/* Modal Create/Edit */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-lg w-full my-8">
@@ -539,7 +637,6 @@ export default function DisciplinePage() {
             </div>
 
             <div className="p-6 space-y-4">
-              {/* Student */}
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">
                   التلميذ(ة) *
@@ -559,7 +656,6 @@ export default function DisciplinePage() {
                 </select>
               </div>
 
-              {/* Date + Category */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2">
@@ -591,7 +687,6 @@ export default function DisciplinePage() {
                 </div>
               </div>
 
-              {/* Severity */}
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">
                   درجة الخطورة *
@@ -614,7 +709,6 @@ export default function DisciplinePage() {
                 </div>
               </div>
 
-              {/* Title */}
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">
                   العنوان *
@@ -628,7 +722,6 @@ export default function DisciplinePage() {
                 />
               </div>
 
-              {/* Description */}
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">
                   الوصف (اختياري)
