@@ -105,19 +105,21 @@ export default function EvaluationsPage() {
     setTermsCount(tc)
     setTermNames(tn)
 
-    // ✅ Classes dyal l'année active
+    // ✅ Classes dyal l'année active (mappées vers ClassRow)
     const { data: cls } = await supabase
       .from('classes')
       .select('id, name, level_id, levels(name)')
       .eq('establishment_id', establishmentId)
       .eq('academic_year_id', contextYearId)
       .order('name')
-    setClasses((cls || []).map((c: any) => ({
+
+    const mappedClasses: ClassRow[] = (cls || []).map((c: any) => ({
       id: c.id,
       name: c.name,
       level_id: c.level_id,
       level_name: c.levels?.name || null,
-    })))
+    }))
+    setClasses(mappedClasses)
 
     // Subjects (globales)
     const { data: subs } = await supabase
@@ -137,7 +139,7 @@ export default function EvaluationsPage() {
       .order('order_index', { ascending: true })
     setTypes(tps || [])
 
-    await loadEvaluations(cls || [], subs || [], tps || [])
+    await loadEvaluations(mappedClasses, subs || [], tps || [])
 
     setLoading(false)
   }
@@ -199,7 +201,7 @@ export default function EvaluationsPage() {
 
   const openCreate = () => {
     resetForm()
-    setFilterYear(contextYearId)
+    setFilterYear(contextYearId || '')
     if (filterClass) setFormClass(filterClass)
     if (filterTerm) setFormTerm(Number(filterTerm))
     setShowModal(true)
