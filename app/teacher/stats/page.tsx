@@ -1,7 +1,9 @@
+// app/teacher/stats/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   BarChart3, RefreshCw, Users, BookOpen, TrendingUp, Award,
   GraduationCap, Info,
@@ -21,6 +23,8 @@ type ClassStat = {
 const COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6']
 
 export default function TeacherStatsPage() {
+  const { yearId } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [classStats, setClassStats] = useState<ClassStat[]>([])
@@ -29,10 +33,13 @@ export default function TeacherStatsPage() {
   const [overallAvg, setOverallAvg] = useState<number | null>(null)
 
   useEffect(() => {
+    if (!yearId) return
     loadData()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     setError('')
     const supabase = createClient()
@@ -95,12 +102,13 @@ export default function TeacherStatsPage() {
         return
       }
 
-      // Classes WHERE level_id IN
+      // Classes WHERE level_id IN AND academic_year_id = yearId
       const { data: classesData } = await supabase
         .from('classes')
         .select('id, name, level_id')
         .in('level_id', levelIds)
         .eq('establishment_id', estabId)
+        .eq('academic_year_id', yearId)
 
       const classList = classesData || []
       const classIds = classList.map((c: any) => c.id)
@@ -112,12 +120,13 @@ export default function TeacherStatsPage() {
         return
       }
 
-      // Students count per class (query séparée)
+      // Students count per class (année active)
       const { data: enrolls } = await supabase
         .from('enrollments')
         .select('class_id, student_id')
         .in('class_id', classIds)
         .eq('establishment_id', estabId)
+        .eq('academic_year_id', yearId)
         .eq('status', 'active')
 
       const studentsByClass: Record<string, Set<string>> = {}
@@ -126,12 +135,13 @@ export default function TeacherStatsPage() {
         studentsByClass[e.class_id].add(e.student_id)
       })
 
-      // Evaluations for these classes (query séparée)
+      // Evaluations for these classes (année active)
       const { data: evals } = await supabase
         .from('evaluations')
         .select('id, class_id')
         .in('class_id', classIds)
         .eq('establishment_id', estabId)
+        .eq('academic_year_id', yearId)
         .eq('is_active', true)
 
       const evalIds = (evals || []).map((e: any) => e.id)

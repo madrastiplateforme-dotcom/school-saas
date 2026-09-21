@@ -5,18 +5,26 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { fetchTeacherData, TeacherClass } from '@/lib/useTeacherData'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { BookOpen, RefreshCw, Users, GraduationCap, ChevronLeft } from 'lucide-react'
 
 export default function TeacherClassesPage() {
+  const { yearId } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [classes, setClasses] = useState<TeacherClass[]>([])
   const [schoolName, setSchoolName] = useState('')
   const [totalStudents, setTotalStudents] = useState(0)
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    if (!yearId) return
+    loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true); setError('')
     const supabase = createClient()
     try {
@@ -31,7 +39,11 @@ export default function TeacherClassesPage() {
       const est = (profile as any)?.establishments
       if (est?.name) setSchoolName(est.name)
 
-      const { classes: list, totalStudents: tot } = await fetchTeacherData(supabase, user.id)
+      const { classes: list, totalStudents: tot } = await fetchTeacherData(
+        supabase,
+        user.id,
+        yearId,
+      )
       setClasses(list)
       setTotalStudents(tot)
     } catch (e: any) {

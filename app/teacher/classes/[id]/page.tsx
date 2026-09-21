@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   BookOpen, RefreshCw, Users, GraduationCap, ChevronLeft,
   AlertCircle, Search, User, UserCheck, ShieldAlert,
@@ -20,6 +21,7 @@ type Student = {
 export default function TeacherClassDetailPage() {
   const params = useParams()
   const classId = params?.id as string
+  const { yearId } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -30,9 +32,13 @@ export default function TeacherClassDetailPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [search, setSearch] = useState('')
 
-  useEffect(() => { if (classId) loadData() }, [classId])
+  useEffect(() => {
+    if (classId && yearId) loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId, yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true); setError('')
     const supabase = createClient()
     try {
@@ -59,15 +65,18 @@ export default function TeacherClassDetailPage() {
         new Set((ts || []).map((r: any) => r.subject_id).filter(Boolean)),
       )
 
-      // 3) Class
+      // 3) Class — filtrée aussi par année
       const { data: cls } = await supabase
         .from('classes')
-        .select('id, name, level_id')
+        .select('id, name, level_id, academic_year_id')
         .eq('id', classId)
+        .eq('academic_year_id', yearId)
         .maybeSingle()
 
       if (!cls) {
-        setError('القسم غير موجود'); setLoading(false); return
+        setError('القسم غير موجود في هذه السنة');
+        setLoading(false);
+        return
       }
 
       // ✅ AUTHORIZATION: level de la classe doit être dans les levels du prof
@@ -91,11 +100,12 @@ export default function TeacherClassDetailPage() {
         setSubjects((subjs || []).map((s: any) => s.name))
       }
 
-      // 6) Students via enrollments (SANS JOIN sur students)
+      // 6) Students via enrollments de l'année active
       const { data: enrolls } = await supabase
         .from('enrollments')
         .select('student_id')
         .eq('class_id', classId)
+        .eq('academic_year_id', yearId)
         .eq('status', 'active')
 
       const studentIds = (enrolls || [])
@@ -163,46 +173,45 @@ export default function TeacherClassDetailPage() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-     
       <header>
-  <Link href="/teacher/classes"
-    className="text-xs text-sky-600 hover:text-sky-800 inline-flex items-center gap-1 mb-1">
-    <ChevronLeft className="h-3 w-3" /> رجع للأقسام
-  </Link>
-  <div className="flex items-center justify-between flex-wrap gap-3">
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-        <BookOpen className="h-6 w-6 text-sky-600" />
-        {className}
-      </h1>
-      <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
-        {levelName && (
-          <span className="flex items-center gap-1">
-            <GraduationCap className="h-3 w-3" /> {levelName}
-          </span>
-        )}
-        <span className="flex items-center gap-1">
-          <Users className="h-3 w-3" />
-          <span dir="ltr" className="font-bold">{students.length}</span> تلميذ
-        </span>
-      </div>
-    </div>
-    <div className="flex items-center gap-2 flex-wrap">
-      <Link href="/teacher/attendance"
-        className="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-lg hover:bg-emerald-700 font-medium text-sm">
-        <UserCheck className="h-4 w-4" /> تسجيل الحضور
-      </Link>
-      <Link href="/teacher/discipline"
-        className="inline-flex items-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg hover:bg-amber-700 font-medium text-sm">
-        <ShieldAlert className="h-4 w-4" /> الانضباط
-      </Link>
-      <button onClick={loadData}
-        className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm">
-        <RefreshCw className="h-4 w-4" /> تحديث
-      </button>
-    </div>
-  </div>
-</header>
+        <Link href="/teacher/classes"
+          className="text-xs text-sky-600 hover:text-sky-800 inline-flex items-center gap-1 mb-1">
+          <ChevronLeft className="h-3 w-3" /> رجع للأقسام
+        </Link>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <BookOpen className="h-6 w-6 text-sky-600" />
+              {className}
+            </h1>
+            <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
+              {levelName && (
+                <span className="flex items-center gap-1">
+                  <GraduationCap className="h-3 w-3" /> {levelName}
+                </span>
+              )}
+              <span className="flex items-center gap-1">
+                <Users className="h-3 w-3" />
+                <span dir="ltr" className="font-bold">{students.length}</span> تلميذ
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link href="/teacher/attendance"
+              className="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-lg hover:bg-emerald-700 font-medium text-sm">
+              <UserCheck className="h-4 w-4" /> تسجيل الحضور
+            </Link>
+            <Link href="/teacher/discipline"
+              className="inline-flex items-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg hover:bg-amber-700 font-medium text-sm">
+              <ShieldAlert className="h-4 w-4" /> الانضباط
+            </Link>
+            <button onClick={loadData}
+              className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm">
+              <RefreshCw className="h-4 w-4" /> تحديث
+            </button>
+          </div>
+        </div>
+      </header>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">

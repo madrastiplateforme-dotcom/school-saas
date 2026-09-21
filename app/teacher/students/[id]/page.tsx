@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   User, RefreshCw, ChevronLeft, BookOpen, GraduationCap, Calendar,
   AlertCircle, CheckCircle2, XCircle, Clock, TrendingUp,
@@ -65,6 +66,7 @@ const statusLabel = (s: string) => {
 export default function TeacherStudentDetailPage() {
   const params = useParams()
   const studentId = params?.id as string
+  const { yearId } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -76,9 +78,13 @@ export default function TeacherStudentDetailPage() {
   const [attends, setAttends] = useState<AttendRow[]>([])
   const [disciplines, setDisciplines] = useState<DiscRow[]>([])
 
-  useEffect(() => { if (studentId) loadData() }, [studentId])
+  useEffect(() => {
+    if (studentId && yearId) loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentId, yearId])
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true); setError('')
     const supabase = createClient()
     try {
@@ -113,11 +119,12 @@ export default function TeacherStudentDetailPage() {
         setError('التلميذ غير موجود'); setLoading(false); return
       }
 
-      // 4) Enrollment → class (SANS JOIN)
+      // 4) Enrollment → class (année active)
       const { data: enrolls } = await supabase
         .from('enrollments')
         .select('class_id, level_id')
         .eq('student_id', studentId)
+        .eq('academic_year_id', yearId)
         .eq('status', 'active')
         .limit(1)
 
@@ -126,14 +133,14 @@ export default function TeacherStudentDetailPage() {
         setAuthorized(false); setLoading(false); return
       }
 
-      // 5) Class info (SANS JOIN)
+      // 5) Class info
       const { data: cls } = await supabase
         .from('classes')
         .select('id, name, level_id')
         .eq('id', enr.class_id)
         .maybeSingle()
 
-      // ✅ AUTHORIZATION: level ديال class خاصو يكون فـ levels ديال الأستاذ
+      // ✅ AUTHORIZATION: level de la classe doit être dans les levels du prof
       if (!cls?.level_id || !levelIds.includes(cls.level_id)) {
         setAuthorized(false); setLoading(false); return
       }
@@ -158,7 +165,7 @@ export default function TeacherStudentDetailPage() {
         level_name: levelName,
       })
 
-      // 7) Grades (SANS JOIN)
+      // 7) Grades (SANS JOIN) — filtrées par année via evaluations
       const { data: gradesRaw } = await supabase
         .from('grades')
         .select('id, score, evaluation_id')
@@ -174,6 +181,7 @@ export default function TeacherStudentDetailPage() {
           .from('evaluations')
           .select('id, name, date, coefficient, subject_id')
           .in('id', evalIds)
+          .eq('academic_year_id', yearId)
 
         const subjectIds = Array.from(
           new Set((evals || []).map((e: any) => e.subject_id).filter(Boolean)),
@@ -214,16 +222,17 @@ export default function TeacherStudentDetailPage() {
       )
       setGrades(mappedGrades)
 
-      // 8) Attendances (SANS JOIN)
+      // 8) Attendances (année active)
       const { data: atData } = await supabase
         .from('attendances')
         .select('id, attendance_date, status, note')
         .eq('student_id', studentId)
+        .eq('academic_year_id', yearId)
         .order('attendance_date', { ascending: false })
         .limit(100)
       setAttends(atData || [])
 
-      // 9) Disciplines (SANS JOIN sur discipline_actions)
+      // 9) Disciplines (SANS JOIN — pas de filtre année directe)
       const { data: discData } = await supabase
         .from('disciplines')
         .select('id, incident_date, category, severity, title, description')
