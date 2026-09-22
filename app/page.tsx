@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft, BarChart3, Check, ChevronLeft, GraduationCap, ShieldCheck,
   Sparkles, Users, Wallet, Calendar, FileText, MessageSquare, Lock,
@@ -22,20 +22,35 @@ const T = {
     startFree: 'ابدأ مجاناً',
     announcement: 'جديد: دعم كامل لـ WhatsApp Business   ',
     announcementLink: 'اكتشف المزيد',
+    // ============ WELCOME MODAL ============
+    welcome: {
+      badge: 'مرحباً بك في مدرستي',
+      title: 'المنصة رقم 1 لتسيير المدارس الخاصة بالمغرب',
+      desc: 'وفّر ساعات من عملك الإداري كل أسبوع. أدر التلاميذ، الأقساط، النقط، والتواصل مع الأولياء — كل شيء في مكان واحد.',
+      bullets: [
+        'ابدأ مجاناً — حتى 20 تلميذاً بدون أي تكلفة',
+        'إعداد في أقل من 10 دقائق، بدون بطاقة بنكية',
+        'ثقة أكثر من 100 مؤسسة تعليمية مغربية',
+      ],
+      cta1: 'ابدأ الآن مجاناً',
+      cta2: 'استكشف المنصة',
+      ctaSkip: 'تخطي',
+    },
+    // ============ HERO ============
     hero: {
       badge: 'منصة عصرية للمدارس الخاصة بالمغرب',
       title1: 'تسيير مدرستك،',
       title2: 'بوضوح وراحة بال.',
       desc: 'كل ما تحتاجه الإدارة في مساحة واحدة: التلاميذ، التسجيل، الأقساط، الصندوق، النقط، الحضور، والتواصل مع الأولياء.',
-      cta1: 'أنشئ حساب مؤسستك',
+      cta1: 'أنشئ حساب مؤسستك مجاناً',
       cta2: 'شاهد عرضاً توضيحياً',
       eyebrowTrust: 'بدون بطاقة بنكية · إعداد في 10 دقائق',
       trust: ['بيانات منظّمة وآمنة', 'تجربة مجانية مدى الحياة', 'بدون بطاقة بنكية'],
     },
     mockup: { kicker: 'نظرة سريعة', title: 'ملخص المؤسسة', students: 'التلاميذ النشطون', revenue: 'مداخيل هذا الشهر', collect: 'حالة التحصيل', remaining: 'المتبقي', success: 'نسبة النجاح' },
     stats: [
-      { value: '248', label: 'تلميذ نشط' },
-      { value: '98%', label: 'نسبة الرضا' },
+      { value: '100+', label: 'مؤسسة تثق بنا' },
+      { value: '15,000+', label: 'تلميذ مُدار' },
       { value: '12h', label: 'موفرة أسبوعياً' },
       { value: '24/7', label: 'دعم متواصل' },
     ],
@@ -196,7 +211,7 @@ const T = {
         { q: 'هل يمكنني إلغاء الاشتراك في أي وقت؟', a: 'بالتأكيد. لا توجد أي التزامات طويلة الأمد. يمكنك الإلغاء بنقرة واحدة من لوحة التحكم.' },
         { q: 'هل تدعم المنصة Massar؟', a: 'قريباً، خطة الاحترافية ستشمل التكامل مع منظومة Massar لتبادل معلومات التلاميذ بسهولة.' },
         { q: 'هل هناك تطبيق للهاتف؟', a: 'المنصة تعمل على جميع الأجهزة (حاسوب، لوحي، هاتف) كـ Progressive Web App. يمكنك تثبيتها على شاشة هاتفك الرئيسية.' },
-        { q: 'كيف يتم الدعم؟', a: 'دعم عبر البريد الإلكتروني والهاتف. الخطط المدفوعة تتمتع بأولوية في الرد (أقل من ساعتين في أوقات العمل).' },
+        { q: 'كيف يتم الدعم؟', a: 'دعم عبر البريد الإلكتروني والهاتف والواتساب. الخطط المدفوعة تتمتع بأولوية في الرد (أقل من ساعتين في أوقات العمل).' },
       ],
     },
     finalCta: {
@@ -215,9 +230,13 @@ const T = {
       cookies: 'ملفات الكوكيز',
       law0908: 'القانون 09-08',
       contact: 'تواصل معنا',
-      address: 'الدار البيضاء، المملكة المغربية',
+      address: 'المملكة المغربية',
       copyright: 'جميع الحقوق محفوظة.',
       madeIn: 'صنع في المغرب بكل فخر',
+      emailValue: 'madrasti.plateforme@gmail.com',
+      phoneValue: '+212 6 67 22 92 22',
+      whatsappLabel: 'تواصل عبر واتساب',
+      whatsappUrl: 'https://wa.me/212667229222',
     },
   },
   fr: {
@@ -229,20 +248,33 @@ const T = {
     startFree: 'Commencer gratuitement',
     announcement: 'Nouveau : support complet WhatsApp Business',
     announcementLink: 'En savoir plus',
+    welcome: {
+      badge: 'Bienvenue sur Madrasti',
+      title: 'La plateforme n°1 de gestion des écoles privées au Maroc',
+      desc: 'Économisez des heures de gestion administrative chaque semaine. Gérez élèves, échéances, notes et communication parents — tout en un.',
+      bullets: [
+        'Commencez gratuitement — jusqu\'à 20 élèves sans frais',
+        'Prêt en moins de 10 minutes, sans carte bancaire',
+        'La confiance de plus de 100 établissements au Maroc',
+      ],
+      cta1: 'Commencer gratuitement',
+      cta2: 'Découvrir la plateforme',
+      ctaSkip: 'Passer',
+    },
     hero: {
       badge: 'Plateforme moderne pour les écoles privées au Maroc',
       title1: 'Gérez votre école,',
       title2: 'en toute clarté.',
       desc: 'Tout ce dont votre administration a besoin dans un seul espace : élèves, inscriptions, échéances, caisse, notes, présence, et communication avec les parents.',
-      cta1: 'Créer mon établissement',
+      cta1: 'Créer mon établissement gratuitement',
       cta2: 'Voir la démo',
       eyebrowTrust: 'Sans carte bancaire · Prêt en 10 minutes',
       trust: ['Données organisées et sécurisées', 'Essai gratuit à vie', 'Sans carte bancaire'],
     },
     mockup: { kicker: 'Aperçu rapide', title: 'Résumé de l\'établissement', students: 'Élèves actifs', revenue: 'Revenus ce mois', collect: 'Taux de recouvrement', remaining: 'Restant', success: 'Taux de réussite' },
     stats: [
-      { value: '248', label: 'Élèves actifs' },
-      { value: '98%', label: 'Satisfaction' },
+      { value: '100+', label: 'Écoles nous font confiance' },
+      { value: '15,000+', label: 'Élèves gérés' },
       { value: '12h', label: 'Économisées/sem.' },
       { value: '24/7', label: 'Support continu' },
     ],
@@ -403,7 +435,7 @@ const T = {
         { q: 'Puis-je résilier à tout moment ?', a: 'Absolument. Aucun engagement à long terme. Résiliation en un clic depuis le tableau de bord.' },
         { q: 'La plateforme supporte-t-elle Massar ?', a: 'Bientôt, l\'offre Pro inclura l\'intégration avec Massar pour échanger les informations élèves.' },
         { q: 'Y a-t-il une application mobile ?', a: 'La plateforme fonctionne sur tous les appareils (PC, tablette, mobile) en PWA. Installation possible sur votre écran d\'accueil.' },
-        { q: 'Comment fonctionne le support ?', a: 'Support par email et téléphone. Les offres payantes ont la priorité (moins de 2h en heures ouvrables).' },
+        { q: 'Comment fonctionne le support ?', a: 'Support par email, téléphone et WhatsApp. Les offres payantes ont la priorité (moins de 2h en heures ouvrables).' },
       ],
     },
     finalCta: {
@@ -422,9 +454,13 @@ const T = {
       cookies: 'Cookies',
       law0908: 'Loi 09-08',
       contact: 'Contact',
-      address: 'Casablanca, Maroc',
+      address: 'Royaume du Maroc',
       copyright: 'Tous droits réservés.',
       madeIn: 'Fait au Maroc avec fierté',
+      emailValue: 'madrasti.plateforme@gmail.com',
+      phoneValue: '+212 6 67 22 92 22',
+      whatsappLabel: 'Discuter sur WhatsApp',
+      whatsappUrl: 'https://wa.me/212667229222',
     },
   },
 } as const
@@ -443,9 +479,58 @@ const roleGradients = [
   'from-amber-500 to-amber-700',
 ]
 
+// ============ SCROLL REVEAL HOOK ============
+function useReveal() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true)
+          obs.disconnect()
+        }
+      },
+      { threshold: 0.12 }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+  return { ref, visible }
+}
+
+function Reveal({
+  children,
+  delay = 0,
+  className = '',
+}: {
+  children: React.ReactNode
+  delay?: number
+  className?: string
+}) {
+  const { ref, visible } = useReveal()
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(24px)',
+        transition: `opacity 700ms cubic-bezier(.2,.7,.3,1) ${delay}ms, transform 700ms cubic-bezier(.2,.7,.3,1) ${delay}ms`,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
 // ============ PAGE ============
 export default function Home() {
   const [lang, setLang] = useState<Lang>('ar')
+  const [welcomeOpen, setWelcomeOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const t = T[lang]
 
   // Set document lang & dir dynamically
@@ -454,8 +539,183 @@ export default function Home() {
     document.documentElement.dir = t.dir
   }, [lang, t.lang, t.dir])
 
+  // Welcome modal — once per visitor
+  useEffect(() => {
+    setMounted(true)
+    try {
+      const seen = localStorage.getItem('madrasti_welcomed')
+      if (!seen) {
+        const timer = setTimeout(() => setWelcomeOpen(true), 400)
+        return () => clearTimeout(timer)
+      }
+    } catch {
+      // SSR / privacy mode — ignore
+    }
+  }, [])
+
+  const closeWelcome = () => {
+    setWelcomeOpen(false)
+    try {
+      localStorage.setItem('madrasti_welcomed', '1')
+    } catch {}
+  }
+
   return (
     <main dir={t.dir} className="min-h-screen overflow-hidden bg-[#fbfcfe] text-[#102a43]">
+
+      {/* ============ GLOBAL KEYFRAMES ============ */}
+      <style jsx global>{`
+        @keyframes fade-in-up {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes scale-in {
+          from { opacity: 0; transform: scale(.94); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes float-slow {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-8px); }
+        }
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        @keyframes pulse-ring {
+          0% { transform: scale(.9); opacity: .7; }
+          70% { transform: scale(1.4); opacity: 0; }
+          100% { transform: scale(1.4); opacity: 0; }
+        }
+        .anim-fade-up { animation: fade-in-up .7s cubic-bezier(.2,.7,.3,1) both; }
+        .anim-fade { animation: fade-in .5s ease both; }
+        .anim-scale { animation: scale-in .5s cubic-bezier(.2,.7,.3,1) both; }
+        .anim-float { animation: float-slow 5s ease-in-out infinite; }
+        .pulse-ring::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          box-shadow: 0 0 0 2px currentColor;
+          animation: pulse-ring 2.4s cubic-bezier(.2,.7,.3,1) infinite;
+        }
+      `}</style>
+
+      {/* ============ WELCOME MODAL ============ */}
+      {mounted && welcomeOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 anim-fade"
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-[#0b2f35]/70 backdrop-blur-md"
+            onClick={closeWelcome}
+          />
+
+          {/* Card */}
+          <div
+            dir={t.dir}
+            className="relative w-full max-w-lg overflow-hidden rounded-[1.75rem] border border-white/15 bg-white p-7 shadow-2xl anim-scale sm:p-9"
+          >
+            {/* Decorative gradient */}
+            <div
+              className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full opacity-40 blur-3xl"
+              style={{ background: 'radial-gradient(circle, #10b981 0%, transparent 70%)' }}
+            />
+            <div
+              className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full opacity-30 blur-3xl"
+              style={{ background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)' }}
+            />
+
+            {/* Close button */}
+            <button
+              onClick={closeWelcome}
+              className="absolute left-4 top-4 grid h-9 w-9 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 rtl:left-auto rtl:right-4"
+              aria-label={t.welcome.ctaSkip}
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="relative">
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+                <Sparkles className="h-3.5 w-3.5" />
+                {t.welcome.badge}
+              </div>
+
+              {/* Logo */}
+              <div className="mt-5 flex items-center gap-3">
+                <span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-900/20">
+                  <GraduationCap className="h-8 w-8" />
+                </span>
+                <div>
+                  <p className="text-2xl font-black tracking-tight text-[#102a43]">
+                    {t.brand}
+                  </p>
+                  <p className="text-xs text-slate-500">{t.footer.madeIn}</p>
+                </div>
+              </div>
+
+              {/* Title */}
+              <h2 className="mt-6 text-2xl font-black leading-tight text-slate-900 sm:text-3xl">
+                {t.welcome.title}
+              </h2>
+
+              {/* Desc */}
+              <p className="mt-3 text-sm leading-7 text-slate-600">
+                {t.welcome.desc}
+              </p>
+
+              {/* Bullets */}
+              <ul className="mt-5 space-y-2.5">
+                {t.welcome.bullets.map((b, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-2.5 text-sm text-slate-700 anim-fade-up"
+                    style={{ animationDelay: `${200 + i * 100}ms` }}
+                  >
+                    <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700">
+                      <Check className="h-3 w-3" />
+                    </span>
+                    <span className="font-medium">{b}</span>
+                  </li>
+                ))}
+              </ul>
+
+              {/* CTAs */}
+              <div className="mt-7 flex flex-wrap gap-3">
+                <Link
+                  href="/register"
+                  onClick={closeWelcome}
+                  className="inline-flex flex-1 min-w-[160px] items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/25 transition hover:-translate-y-0.5 hover:bg-emerald-600"
+                >
+                  <Rocket className="h-4 w-4" />
+                  {t.welcome.cta1}
+                </Link>
+                <button
+                  onClick={closeWelcome}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                >
+                  {t.welcome.cta2}
+                </button>
+              </div>
+
+              {/* Skip link */}
+              <button
+                onClick={closeWelcome}
+                className="mt-5 block w-full text-center text-xs text-slate-400 underline-offset-4 transition hover:text-slate-600 hover:underline"
+              >
+                {t.welcome.ctaSkip}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ============ ANNOUNCEMENT ============ */}
       <div className="bg-[#0b4c42] py-2 px-4 text-center text-xs text-emerald-100">
@@ -537,26 +797,41 @@ export default function Home() {
 
         <section className="mx-auto grid max-w-7xl gap-12 px-5 pb-24 pt-14 lg:grid-cols-[1.12fr_.88fr] lg:px-8 lg:pb-32 lg:pt-20">
           <div className="max-w-2xl">
-            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-emerald-100">
+            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-emerald-100 anim-fade-up">
               <Sparkles className="h-4 w-4" />
               {t.hero.badge}
             </p>
 
-            <h1 className="text-4xl font-black leading-[1.15] tracking-tight sm:text-5xl lg:text-6xl">
+            <h1
+              className="text-4xl font-black leading-[1.15] tracking-tight sm:text-5xl lg:text-6xl anim-fade-up"
+              style={{ animationDelay: '80ms' }}
+            >
               {t.hero.title1}
               <br />
               <span className="text-emerald-300">{t.hero.title2}</span>
             </h1>
 
-            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-200">{t.hero.desc}</p>
+            <p
+              className="mt-6 max-w-xl text-lg leading-8 text-slate-200 anim-fade-up"
+              style={{ animationDelay: '160ms' }}
+            >
+              {t.hero.desc}
+            </p>
 
-            <div className="mt-9 flex flex-wrap gap-3">
+            <div
+              className="mt-9 flex flex-wrap gap-3 anim-fade-up"
+              style={{ animationDelay: '240ms' }}
+            >
               <Link
                 href="/register"
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-6 py-3.5 font-bold text-[#083a33] shadow-lg shadow-emerald-950/25 transition hover:-translate-y-0.5 hover:bg-emerald-300"
+                className="group inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-6 py-3.5 font-bold text-[#083a33] shadow-lg shadow-emerald-950/25 transition hover:-translate-y-0.5 hover:bg-emerald-300"
               >
                 <span>{t.hero.cta1}</span>
-                <ArrowLeft className={`h-4 w-4 ${lang === 'fr' ? 'rotate-180' : ''}`} />
+                <ArrowLeft
+                  className={`h-4 w-4 transition group-hover:-translate-x-1 ${
+                    lang === 'fr' ? 'rotate-180 group-hover:translate-x-1' : ''
+                  }`}
+                />
               </Link>
               <Link
                 href="#demo"
@@ -567,9 +842,17 @@ export default function Home() {
               </Link>
             </div>
 
-            <p className="mt-4 text-xs text-emerald-200/80">{t.hero.eyebrowTrust}</p>
+            <p
+              className="mt-4 text-xs text-emerald-200/80 anim-fade-up"
+              style={{ animationDelay: '320ms' }}
+            >
+              {t.hero.eyebrowTrust}
+            </p>
 
-            <div className="mt-9 flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/70">
+            <div
+              className="mt-9 flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/70 anim-fade-up"
+              style={{ animationDelay: '400ms' }}
+            >
               {t.hero.trust.map((item, i) => {
                 const Icon = [ShieldCheck, Check, Zap][i]
                 return (
@@ -583,7 +866,7 @@ export default function Home() {
           </div>
 
           {/* Mockup */}
-          <div className="relative mx-auto w-full max-w-md self-center">
+          <div className="relative mx-auto w-full max-w-md self-center anim-fade-up" style={{ animationDelay: '300ms' }}>
             <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-emerald-400/15 blur-2xl" />
             <div className="rounded-[1.75rem] border border-white/15 bg-white/95 p-4 text-[#102a43] shadow-2xl shadow-black/30">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
@@ -620,7 +903,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className={`absolute ${lang === 'ar' ? '-left-8' : '-right-8'} top-32 hidden lg:block`}>
+            <div className={`absolute ${lang === 'ar' ? '-left-8' : '-right-8'} top-32 hidden lg:block anim-float`}>
               <div className="rounded-2xl bg-white p-3 shadow-xl">
                 <div className="flex items-center gap-2">
                   <span className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-700">
@@ -636,7 +919,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className={`absolute ${lang === 'ar' ? '-right-8' : '-left-8'} bottom-20 hidden lg:block`}>
+            <div className={`absolute ${lang === 'ar' ? '-right-8' : '-left-8'} bottom-20 hidden lg:block anim-float`} style={{ animationDelay: '1.5s' }}>
               <div className="rounded-2xl bg-white p-3 shadow-xl">
                 <div className="flex items-center gap-2">
                   <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
@@ -670,452 +953,477 @@ export default function Home() {
       </div>
 
       {/* ============ SOCIAL PROOF ============ */}
-      <section className="border-b border-slate-100 bg-white py-12">
-        <div className="mx-auto max-w-7xl px-5 lg:px-8">
-          <p className="text-center text-xs font-bold uppercase tracking-wider text-slate-400">
-            {t.socialProof.title}
-          </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-5">
-            {t.socialProof.items.map((name, i) => (
-              <span
-                key={i}
-                className="text-base font-black tracking-tight text-slate-300 transition hover:text-slate-500"
-              >
-                {name}
-              </span>
-            ))}
+      <Reveal>
+        <section className="border-b border-slate-100 bg-white py-12">
+          <div className="mx-auto max-w-7xl px-5 lg:px-8">
+            <p className="text-center text-xs font-bold uppercase tracking-wider text-slate-400">
+              {t.socialProof.title}
+            </p>
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-5">
+              {t.socialProof.items.map((name, i) => (
+                <span
+                  key={i}
+                  className="text-base font-black tracking-tight text-slate-300 transition hover:text-emerald-500"
+                >
+                  {name}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </Reveal>
 
       {/* ============ PROBLEMS ============ */}
-      <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="page-kicker">{t.problems.kicker}</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.problems.title}</h2>
-          <p className="mt-4 leading-7 text-slate-500">{t.problems.desc}</p>
-        </div>
-
-        <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-          {t.problems.items.map((p, i) => {
-            const Icon = problemIcons[i]
-            return (
-              <div key={i} className="rounded-2xl border border-rose-100 bg-rose-50/40 p-6">
-                <span className="grid h-11 w-11 place-items-center rounded-xl bg-rose-100 text-rose-700">
-                  <Icon className="h-5 w-5" />
-                </span>
-                <h3 className="mt-4 text-base font-extrabold">{p.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{p.text}</p>
-              </div>
-            )
-          })}
-        </div>
-      </section>
-
-      {/* ============ COMPARISON ============ */}
-      <section className="border-y border-slate-100 bg-white py-20">
-        <div className="mx-auto max-w-7xl px-5 lg:px-8">
+      <Reveal>
+        <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="page-kicker">{t.comparison.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.comparison.title}</h2>
-            <p className="mt-4 leading-7 text-slate-500">{t.comparison.desc}</p>
+            <p className="page-kicker">{t.problems.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.problems.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.problems.desc}</p>
           </div>
 
-          <div className="mt-12 grid gap-5 lg:grid-cols-2">
-            {/* OLD */}
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-7">
-              <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-slate-200 text-slate-500">
-                  <X className="h-5 w-5" />
-                </span>
-                <h3 className="text-lg font-black text-slate-500">{t.comparison.old.title}</h3>
-              </div>
-              <ul className="mt-6 space-y-3.5">
-                {t.comparison.old.items.map((item, i) => (
-                  <li key={i} className="flex items-start gap-2.5 text-sm text-slate-500">
-                    <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
-                    <span className="line-through decoration-slate-300">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* NEW */}
-            <div className="rounded-2xl border-2 border-emerald-500 bg-[#0b4c42] p-7 text-white shadow-2xl shadow-emerald-900/25">
-              <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400 text-[#0b2f35]">
-                  <Check className="h-5 w-5" />
-                </span>
-                <h3 className="text-lg font-black text-emerald-200">{t.comparison.new.title}</h3>
-              </div>
-              <ul className="mt-6 space-y-3.5">
-                {t.comparison.new.items.map((item, i) => (
-                  <li key={i} className="flex items-start gap-2.5 text-sm text-white/95">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ============ FEATURES ============ */}
-      <section id="features" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="page-kicker">{t.features.kicker}</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.features.title}</h2>
-          <p className="mt-4 leading-7 text-slate-500">{t.features.desc}</p>
-        </div>
-
-        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {t.features.items.map((f, i) => {
-            const Icon = featureIcons[i]
-            const color = featureColors[i]
-            const colorMap: Record<string, string> = {
-              emerald: 'bg-emerald-50 text-emerald-700',
-              amber: 'bg-amber-50 text-amber-700',
-              indigo: 'bg-indigo-50 text-indigo-700',
-              purple: 'bg-purple-50 text-purple-700',
-              rose: 'bg-rose-50 text-rose-700',
-              cyan: 'bg-cyan-50 text-cyan-700',
-              orange: 'bg-orange-50 text-orange-700',
-              slate: 'bg-slate-100 text-slate-700',
-            }
-            const isLarge = i === 0 || i === 1
-            return (
-              <article
-                key={i}
-                className={`group rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl ${
-                  isLarge ? 'sm:col-span-2 lg:col-span-2' : ''
-                }`}
-              >
-                <span className={`grid h-12 w-12 place-items-center rounded-2xl ${colorMap[color]}`}>
-                  <Icon className="h-6 w-6" />
-                </span>
-                <h3 className="mt-5 text-base font-extrabold">{f.title}</h3>
-                <p className="mt-2 text-sm leading-7 text-slate-500">{f.text}</p>
-              </article>
-            )
-          })}
-        </div>
-      </section>
-
-      {/* ============ HOW IT WORKS ============ */}
-      <section id="how" className="border-y border-slate-100 bg-white py-20">
-        <div className="mx-auto max-w-7xl px-5 lg:px-8">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="page-kicker">{t.howItWorks.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.howItWorks.title}</h2>
-            <p className="mt-4 leading-7 text-slate-500">{t.howItWorks.desc}</p>
-          </div>
-
-          <div className="relative mt-14 grid gap-8 lg:grid-cols-3">
-            {/* Connector line */}
-            <div className="absolute left-0 right-0 top-12 hidden h-0.5 bg-gradient-to-r from-emerald-200 via-emerald-400 to-emerald-200 lg:block" />
-
-            {t.howItWorks.steps.map((step, i) => {
-              const icons = [Rocket, Settings2, PartyPopper]
-              const Icon = icons[i]
+          <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+            {t.problems.items.map((p, i) => {
+              const Icon = problemIcons[i]
               return (
-                <div key={i} className="relative text-center">
-                  <div className="relative z-10 mx-auto grid h-24 w-24 place-items-center rounded-full border-4 border-white bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-xl shadow-emerald-900/20">
-                    <Icon className="h-9 w-9" />
+                <Reveal key={i} delay={i * 80}>
+                  <div className="group rounded-2xl border border-rose-100 bg-rose-50/40 p-6 transition hover:-translate-y-1 hover:shadow-lg hover:shadow-rose-100/50">
+                    <span className="grid h-11 w-11 place-items-center rounded-xl bg-rose-100 text-rose-700 transition group-hover:scale-110">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <h3 className="mt-4 text-base font-extrabold">{p.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{p.text}</p>
                   </div>
-                  <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                    <Num>{i + 1}</Num>
-                    <span>خطوة</span>
-                  </div>
-                  <h3 className="mt-4 text-lg font-extrabold">{step.title}</h3>
-                  <p className="mx-auto mt-2 max-w-xs text-sm leading-7 text-slate-500">{step.text}</p>
-                </div>
+                </Reveal>
               )
             })}
           </div>
-        </div>
-      </section>
+        </section>
+      </Reveal>
 
-      {/* ============ ADVANCED MODULES ============ */}
-      <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="page-kicker">{t.advanced.kicker}</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-            {t.advanced.title}
-          </h2>
-          <p className="mt-4 leading-7 text-slate-500">{t.advanced.desc}</p>
-        </div>
+      {/* ============ COMPARISON ============ */}
+      <Reveal>
+        <section className="border-y border-slate-100 bg-white py-20">
+          <div className="mx-auto max-w-7xl px-5 lg:px-8">
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="page-kicker">{t.comparison.kicker}</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.comparison.title}</h2>
+              <p className="mt-4 leading-7 text-slate-500">{t.comparison.desc}</p>
+            </div>
 
-        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {t.advanced.items.map((adv, i) => {
-            const icons = [ClipboardCheck, Users, Gavel, Calendar, BarChart3, Smartphone, Send, Palette]
-            const Icon = icons[i]
-            const gradients = [
-              'from-sky-500 to-sky-700',
-              'from-indigo-500 to-indigo-700',
-              'from-rose-500 to-rose-700',
-              'from-emerald-500 to-emerald-700',
-              'from-amber-500 to-amber-700',
-              'from-violet-500 to-violet-700',
-              'from-cyan-500 to-cyan-700',
-              'from-orange-500 to-orange-700',
-            ]
-            const gradient = gradients[i]
-            return (
-              <article
-                key={i}
-                className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-xl"
-              >
-                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-l ${gradient}`} />
-                <span
-                  className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md`}
-                >
-                  <Icon className="h-6 w-6" />
-                </span>
-                <h3 className="mt-5 text-base font-extrabold">{adv.title}</h3>
-                <p className="mt-2 text-sm leading-7 text-slate-500">{adv.text}</p>
-              </article>
-            )
-          })}
-        </div>
-      </section>
+            <div className="mt-12 grid gap-5 lg:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-7">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-slate-200 text-slate-500">
+                    <X className="h-5 w-5" />
+                  </span>
+                  <h3 className="text-lg font-black text-slate-500">{t.comparison.old.title}</h3>
+                </div>
+                <ul className="mt-6 space-y-3.5">
+                  {t.comparison.old.items.map((item, i) => (
+                    <li key={i} className="flex items-start gap-2.5 text-sm text-slate-500">
+                      <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+                      <span className="line-through decoration-slate-300">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-      {/* ============ ROLES ============ */}
-      <section id="roles" className="border-y border-slate-100 bg-white py-20">
-        <div className="mx-auto max-w-7xl px-5 lg:px-8">
+              <div className="rounded-2xl border-2 border-emerald-500 bg-[#0b4c42] p-7 text-white shadow-2xl shadow-emerald-900/25">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400 text-[#0b2f35]">
+                    <Check className="h-5 w-5" />
+                  </span>
+                  <h3 className="text-lg font-black text-emerald-200">{t.comparison.new.title}</h3>
+                </div>
+                <ul className="mt-6 space-y-3.5">
+                  {t.comparison.new.items.map((item, i) => (
+                    <li key={i} className="flex items-start gap-2.5 text-sm text-white/95">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+      </Reveal>
+
+      {/* ============ FEATURES ============ */}
+      <Reveal>
+        <section id="features" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="page-kicker">{t.roles.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.roles.title}</h2>
-            <p className="mt-4 leading-7 text-slate-500">{t.roles.desc}</p>
+            <p className="page-kicker">{t.features.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.features.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.features.desc}</p>
           </div>
 
           <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {t.roles.items.map((r, i) => {
-              const Icon = roleIcons[i]
-              const gradient = roleGradients[i]
+            {t.features.items.map((f, i) => {
+              const Icon = featureIcons[i]
+              const color = featureColors[i]
+              const colorMap: Record<string, string> = {
+                emerald: 'bg-emerald-50 text-emerald-700',
+                amber: 'bg-amber-50 text-amber-700',
+                indigo: 'bg-indigo-50 text-indigo-700',
+                purple: 'bg-purple-50 text-purple-700',
+                rose: 'bg-rose-50 text-rose-700',
+                cyan: 'bg-cyan-50 text-cyan-700',
+                orange: 'bg-orange-50 text-orange-700',
+                slate: 'bg-slate-100 text-slate-700',
+              }
+              const isLarge = i === 0 || i === 1
               return (
-                <div
+                <Reveal
                   key={i}
-                  className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:shadow-xl"
+                  delay={i * 60}
+                  className={isLarge ? 'sm:col-span-2 lg:col-span-2' : ''}
                 >
-                  <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-l ${gradient}`} />
-                  <span className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md`}>
-                    <Icon className="h-6 w-6" />
-                  </span>
-                  <h3 className="mt-5 text-lg font-extrabold">{r.title}</h3>
-                  <p className="mt-2 text-sm leading-7 text-slate-500">{r.text}</p>
-                </div>
+                  <article className="group h-full rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl">
+                    <span className={`grid h-12 w-12 place-items-center rounded-2xl ${colorMap[color]} transition group-hover:scale-110`}>
+                      <Icon className="h-6 w-6" />
+                    </span>
+                    <h3 className="mt-5 text-base font-extrabold">{f.title}</h3>
+                    <p className="mt-2 text-sm leading-7 text-slate-500">{f.text}</p>
+                  </article>
+                </Reveal>
               )
             })}
           </div>
-        </div>
-      </section>
+        </section>
+      </Reveal>
+
+      {/* ============ HOW IT WORKS ============ */}
+      <Reveal>
+        <section id="how" className="border-y border-slate-100 bg-white py-20">
+          <div className="mx-auto max-w-7xl px-5 lg:px-8">
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="page-kicker">{t.howItWorks.kicker}</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.howItWorks.title}</h2>
+              <p className="mt-4 leading-7 text-slate-500">{t.howItWorks.desc}</p>
+            </div>
+
+            <div className="relative mt-14 grid gap-8 lg:grid-cols-3">
+              <div className="absolute left-0 right-0 top-12 hidden h-0.5 bg-gradient-to-r from-emerald-200 via-emerald-400 to-emerald-200 lg:block" />
+
+              {t.howItWorks.steps.map((step, i) => {
+                const icons = [Rocket, Settings2, PartyPopper]
+                const Icon = icons[i]
+                return (
+                  <Reveal key={i} delay={i * 120}>
+                    <div className="relative text-center">
+                      <div className="relative z-10 mx-auto grid h-24 w-24 place-items-center rounded-full border-4 border-white bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-xl shadow-emerald-900/20">
+                        <Icon className="h-9 w-9" />
+                      </div>
+                      <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+                        <Num>{i + 1}</Num>
+                        <span>خطوة</span>
+                      </div>
+                      <h3 className="mt-4 text-lg font-extrabold">{step.title}</h3>
+                      <p className="mx-auto mt-2 max-w-xs text-sm leading-7 text-slate-500">{step.text}</p>
+                    </div>
+                  </Reveal>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+      </Reveal>
+
+      {/* ============ ADVANCED MODULES ============ */}
+      <Reveal>
+        <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="page-kicker">{t.advanced.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
+              {t.advanced.title}
+            </h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.advanced.desc}</p>
+          </div>
+
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {t.advanced.items.map((adv, i) => {
+              const icons = [ClipboardCheck, Users, Gavel, Calendar, BarChart3, Smartphone, Send, Palette]
+              const Icon = icons[i]
+              const gradients = [
+                'from-sky-500 to-sky-700',
+                'from-indigo-500 to-indigo-700',
+                'from-rose-500 to-rose-700',
+                'from-emerald-500 to-emerald-700',
+                'from-amber-500 to-amber-700',
+                'from-violet-500 to-violet-700',
+                'from-cyan-500 to-cyan-700',
+                'from-orange-500 to-orange-700',
+              ]
+              const gradient = gradients[i]
+              return (
+                <Reveal key={i} delay={i * 60}>
+                  <article className="group relative h-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-xl">
+                    <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-l ${gradient}`} />
+                    <span
+                      className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md transition group-hover:scale-110`}
+                    >
+                      <Icon className="h-6 w-6" />
+                    </span>
+                    <h3 className="mt-5 text-base font-extrabold">{adv.title}</h3>
+                    <p className="mt-2 text-sm leading-7 text-slate-500">{adv.text}</p>
+                  </article>
+                </Reveal>
+              )
+            })}
+          </div>
+        </section>
+      </Reveal>
+
+      {/* ============ ROLES ============ */}
+      <Reveal>
+        <section id="roles" className="border-y border-slate-100 bg-white py-20">
+          <div className="mx-auto max-w-7xl px-5 lg:px-8">
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="page-kicker">{t.roles.kicker}</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.roles.title}</h2>
+              <p className="mt-4 leading-7 text-slate-500">{t.roles.desc}</p>
+            </div>
+
+            <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {t.roles.items.map((r, i) => {
+                const Icon = roleIcons[i]
+                const gradient = roleGradients[i]
+                return (
+                  <Reveal key={i} delay={i * 80}>
+                    <div className="group relative h-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:shadow-xl">
+                      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-l ${gradient}`} />
+                      <span className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md transition group-hover:scale-110`}>
+                        <Icon className="h-6 w-6" />
+                      </span>
+                      <h3 className="mt-5 text-lg font-extrabold">{r.title}</h3>
+                      <p className="mt-2 text-sm leading-7 text-slate-500">{r.text}</p>
+                    </div>
+                  </Reveal>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+      </Reveal>
 
       {/* ============ TESTIMONIALS ============ */}
-      <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="page-kicker">{t.testimonials.kicker}</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-            {t.testimonials.title}
-          </h2>
-        </div>
+      <Reveal>
+        <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="page-kicker">{t.testimonials.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
+              {t.testimonials.title}
+            </h2>
+          </div>
 
-        <div className="mt-12 grid gap-5 md:grid-cols-3">
-          {t.testimonials.items.map((tst, i) => (
-            <div key={i} className="relative rounded-2xl border border-slate-100 bg-slate-50/40 p-6">
-              <Quote className="absolute -top-3 right-5 h-8 w-8 text-emerald-200" />
-              <div className="flex items-center gap-1">
-                {Array.from({ length: 5 }).map((_, k) => (
-                  <Star key={k} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                ))}
-              </div>
-              <p className="mt-4 text-sm leading-7 text-slate-700">"{tst.text}"</p>
-              <div className="mt-5 flex items-center gap-3 border-t border-slate-200 pt-4">
-                <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 font-bold text-emerald-700">
-                  {tst.name.charAt(0)}
-                </span>
-                <div>
-                  <p className="text-sm font-bold">{tst.name}</p>
-                  <p className="text-xs text-slate-500">{tst.role}</p>
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
+            {t.testimonials.items.map((tst, i) => (
+              <Reveal key={i} delay={i * 100}>
+                <div className="relative h-full rounded-2xl border border-slate-100 bg-slate-50/40 p-6 transition hover:shadow-lg">
+                  <Quote className="absolute -top-3 right-5 h-8 w-8 text-emerald-200" />
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: 5 }).map((_, k) => (
+                      <Star key={k} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                    ))}
+                  </div>
+                  <p className="mt-4 text-sm leading-7 text-slate-700">"{tst.text}"</p>
+                  <div className="mt-5 flex items-center gap-3 border-t border-slate-200 pt-4">
+                    <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 font-bold text-emerald-700">
+                      {tst.name.charAt(0)}
+                    </span>
+                    <div>
+                      <p className="text-sm font-bold">{tst.name}</p>
+                      <p className="text-xs text-slate-500">{tst.role}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+              </Reveal>
+            ))}
+          </div>
+        </section>
+      </Reveal>
 
       {/* ============ PRICING ============ */}
-      <section id="pricing" className="border-y border-slate-100 bg-white py-20">
-        <div className="mx-auto max-w-7xl px-5 lg:px-8">
-          <div className="text-center">
-            <p className="page-kicker">{t.pricing.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.pricing.title}</h2>
-            <p className="mt-4 leading-7 text-slate-500">{t.pricing.desc}</p>
-          </div>
-
-          <div className="mt-12 grid gap-5 lg:grid-cols-3">
-            {t.pricing.plans.map((plan, i) => {
-              const featured = i === 1
-              const isGratuit = i === 0
-
-              return (
-                <article
-                  key={i}
-                  className={`relative rounded-[1.35rem] border p-7 transition ${
-                    featured
-                      ? 'border-emerald-600 bg-[#0b4c42] text-white shadow-2xl shadow-emerald-900/25 lg:scale-105'
-                      : 'border-slate-200 bg-white hover:border-emerald-200'
-                  }`}
-                >
-                  {featured && (
-                    <span className="absolute -top-3 right-6 rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-amber-950">
-                      {t.pricing.popular}
-                    </span>
-                  )}
-
-                  <p className={`font-bold ${featured ? 'text-emerald-200' : 'text-emerald-700'}`}>
-                    {plan.name}
-                  </p>
-                  <p className={`mt-2 text-sm ${featured ? 'text-emerald-100/80' : 'text-slate-400'}`}>
-                    {plan.description}
-                  </p>
-
-                  <div className="mt-6 flex items-end gap-2 flex-wrap">
-                    {isGratuit ? (
-                      <>
-                        <span className="text-4xl font-black">
-                          <Num>0</Num>
-                        </span>
-                        <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
-                          درهم
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-4xl font-black">
-                          <Num>1.5</Num>
-                        </span>
-                        <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
-                          {t.pricing.currency}
-                        </span>
-                      </>
-                    )}
-                  </div>
-
-                  {!isGratuit && (plan as any).examples && (
-                    <div className={`mt-4 rounded-xl p-3 space-y-1.5 ${
-                      featured ? 'bg-white/10' : 'bg-slate-50'
-                    }`}>
-                      {(plan as any).examples.map((ex: any, k: number) => (
-                        <div
-                          key={k}
-                          className={`flex items-center justify-between text-xs ${
-                            featured ? 'text-emerald-100' : 'text-slate-600'
-                          }`}
-                        >
-                          <span>{ex.students}</span>
-                          <span className="font-bold">
-                            <Num>{ex.price}</Num>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <ul className="mt-6 space-y-3">
-                    {plan.items.map((item, k) => (
-                      <li
-                        key={k}
-                        className={`flex items-center gap-2 text-sm ${
-                          featured ? 'text-white/90' : 'text-slate-600'
-                        }`}
-                      >
-                        <Check className="h-4 w-4 shrink-0 text-emerald-400" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-
-                  <Link
-                    href="/register"
-                    className={`mt-8 flex items-center justify-center rounded-xl px-4 py-3 text-sm font-bold transition ${
-                      featured
-                        ? 'bg-white text-[#0b4c42] hover:bg-emerald-50'
-                        : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-                    }`}
-                  >
-                    {plan.cta}
-                  </Link>
-                </article>
-              )
-            })}
-          </div>
-
-          <p className="mt-8 text-center text-sm text-slate-500">{t.pricing.footer}</p>
-        </div>
-      </section>
-
-      {/* ============ FAQ ============ */}
-      <section id="faq" className="mx-auto max-w-3xl px-5 py-20 lg:px-8">
-        <div className="text-center">
-          <p className="page-kicker">{t.faq.kicker}</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.faq.title}</h2>
-        </div>
-
-        <div className="mt-12 space-y-3">
-          {t.faq.items.map((f, i) => (
-            <details
-              key={i}
-              className="group rounded-2xl border border-slate-200 bg-white transition open:border-emerald-300 open:bg-emerald-50/30"
-            >
-              <summary className="flex cursor-pointer items-center justify-between gap-4 p-5 font-bold text-slate-800 transition hover:text-emerald-700">
-                {f.q}
-                <ChevronLeft
-                  className={`h-5 w-5 shrink-0 transition group-open:-rotate-90 ${
-                    lang === 'fr' ? 'rotate-180' : ''
-                  }`}
-                />
-              </summary>
-              <p className="px-5 pb-5 text-sm leading-7 text-slate-600">{f.a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
-
-      {/* ============ FINAL CTA ============ */}
-      <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-        <div className="relative overflow-hidden rounded-[2rem] bg-[#0b2f35] p-10 text-center text-white lg:p-16">
-          <div
-            className="absolute inset-0 -z-0 opacity-40"
-            style={{
-              backgroundImage:
-                'radial-gradient(circle at 20% 50%, #1b8c77 0, transparent 35%), radial-gradient(circle at 80% 50%, #e9a63a55 0, transparent 35%)',
-            }}
-          />
-          <div className="relative z-10">
-            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">{t.finalCta.title}</h2>
-            <p className="mx-auto mt-4 max-w-2xl leading-7 text-slate-200">{t.finalCta.desc}</p>
-
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Link
-                href="/register"
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-7 py-3.5 font-bold text-[#083a33] shadow-lg shadow-emerald-950/30 transition hover:-translate-y-0.5 hover:bg-emerald-300"
-              >
-                {t.finalCta.cta1}
-                <ArrowLeft className={`h-4 w-4 ${lang === 'fr' ? 'rotate-180' : ''}`} />
-              </Link>
-              <Link
-                href="/login"
-                className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-7 py-3.5 font-bold transition hover:bg-white/10"
-              >
-                {t.finalCta.cta2}
-              </Link>
+      <Reveal>
+        <section id="pricing" className="border-y border-slate-100 bg-white py-20">
+          <div className="mx-auto max-w-7xl px-5 lg:px-8">
+            <div className="text-center">
+              <p className="page-kicker">{t.pricing.kicker}</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.pricing.title}</h2>
+              <p className="mt-4 leading-7 text-slate-500">{t.pricing.desc}</p>
             </div>
 
-            <p className="mt-6 text-sm text-white/60">{t.finalCta.trust}</p>
+            <div className="mt-12 grid gap-5 lg:grid-cols-3">
+              {t.pricing.plans.map((plan, i) => {
+                const featured = i === 1
+                const isGratuit = i === 0
+
+                return (
+                  <Reveal key={i} delay={i * 100}>
+                    <article
+                      className={`relative h-full rounded-[1.35rem] border p-7 transition ${
+                        featured
+                          ? 'border-emerald-600 bg-[#0b4c42] text-white shadow-2xl shadow-emerald-900/25 lg:scale-[1.03]'
+                          : 'border-slate-200 bg-white hover:border-emerald-200'
+                      }`}
+                    >
+                      {featured && (
+                        <span className="absolute -top-3 right-6 rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-amber-950">
+                          {t.pricing.popular}
+                        </span>
+                      )}
+
+                      <p className={`font-bold ${featured ? 'text-emerald-200' : 'text-emerald-700'}`}>
+                        {plan.name}
+                      </p>
+                      <p className={`mt-2 text-sm ${featured ? 'text-emerald-100/80' : 'text-slate-400'}`}>
+                        {plan.description}
+                      </p>
+
+                      <div className="mt-6 flex items-end gap-2 flex-wrap">
+                        {isGratuit ? (
+                          <>
+                            <span className="text-4xl font-black">
+                              <Num>0</Num>
+                            </span>
+                            <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
+                              درهم
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-4xl font-black">
+                              <Num>1.5</Num>
+                            </span>
+                            <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
+                              {t.pricing.currency}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      {!isGratuit && (plan as any).examples && (
+                        <div className={`mt-4 rounded-xl p-3 space-y-1.5 ${
+                          featured ? 'bg-white/10' : 'bg-slate-50'
+                        }`}>
+                          {(plan as any).examples.map((ex: any, k: number) => (
+                            <div
+                              key={k}
+                              className={`flex items-center justify-between text-xs ${
+                                featured ? 'text-emerald-100' : 'text-slate-600'
+                              }`}
+                            >
+                              <span>{ex.students}</span>
+                              <span className="font-bold">
+                                <Num>{ex.price}</Num>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <ul className="mt-6 space-y-3">
+                        {plan.items.map((item, k) => (
+                          <li
+                            key={k}
+                            className={`flex items-center gap-2 text-sm ${
+                              featured ? 'text-white/90' : 'text-slate-600'
+                            }`}
+                          >
+                            <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+
+                      <Link
+                        href="/register"
+                        className={`mt-8 flex items-center justify-center rounded-xl px-4 py-3 text-sm font-bold transition ${
+                          featured
+                            ? 'bg-white text-[#0b4c42] hover:bg-emerald-50'
+                            : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                        }`}
+                      >
+                        {plan.cta}
+                      </Link>
+                    </article>
+                  </Reveal>
+                )
+              })}
+            </div>
+
+            <p className="mt-8 text-center text-sm text-slate-500">{t.pricing.footer}</p>
           </div>
-        </div>
-      </section>
+        </section>
+      </Reveal>
+
+      {/* ============ FAQ ============ */}
+      <Reveal>
+        <section id="faq" className="mx-auto max-w-3xl px-5 py-20 lg:px-8">
+          <div className="text-center">
+            <p className="page-kicker">{t.faq.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.faq.title}</h2>
+          </div>
+
+          <div className="mt-12 space-y-3">
+            {t.faq.items.map((f, i) => (
+              <details
+                key={i}
+                className="group rounded-2xl border border-slate-200 bg-white transition open:border-emerald-300 open:bg-emerald-50/30"
+              >
+                <summary className="flex cursor-pointer items-center justify-between gap-4 p-5 font-bold text-slate-800 transition hover:text-emerald-700">
+                  {f.q}
+                  <ChevronLeft
+                    className={`h-5 w-5 shrink-0 transition group-open:-rotate-90 ${
+                      lang === 'fr' ? 'rotate-180' : ''
+                    }`}
+                  />
+                </summary>
+                <p className="px-5 pb-5 text-sm leading-7 text-slate-600">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+      </Reveal>
+
+      {/* ============ FINAL CTA ============ */}
+      <Reveal>
+        <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+          <div className="relative overflow-hidden rounded-[2rem] bg-[#0b2f35] p-10 text-center text-white lg:p-16">
+            <div
+              className="absolute inset-0 -z-0 opacity-40"
+              style={{
+                backgroundImage:
+                  'radial-gradient(circle at 20% 50%, #1b8c77 0, transparent 35%), radial-gradient(circle at 80% 50%, #e9a63a55 0, transparent 35%)',
+              }}
+            />
+            <div className="relative z-10">
+              <h2 className="text-3xl font-black tracking-tight sm:text-4xl">{t.finalCta.title}</h2>
+              <p className="mx-auto mt-4 max-w-2xl leading-7 text-slate-200">{t.finalCta.desc}</p>
+
+              <div className="mt-8 flex flex-wrap justify-center gap-3">
+                <Link
+                  href="/register"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-7 py-3.5 font-bold text-[#083a33] shadow-lg shadow-emerald-950/30 transition hover:-translate-y-0.5 hover:bg-emerald-300"
+                >
+                  {t.finalCta.cta1}
+                  <ArrowLeft className={`h-4 w-4 ${lang === 'fr' ? 'rotate-180' : ''}`} />
+                </Link>
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-7 py-3.5 font-bold transition hover:bg-white/10"
+                >
+                  {t.finalCta.cta2}
+                </Link>
+              </div>
+
+              <p className="mt-6 text-sm text-white/60">{t.finalCta.trust}</p>
+            </div>
+          </div>
+        </section>
+      </Reveal>
 
       {/* ============ FOOTER ============ */}
       <footer className="bg-[#0b2f35] text-slate-300">
@@ -1128,7 +1436,7 @@ export default function Home() {
                 </span>
                 <span className="text-xl font-black text-white">{t.brand}</span>
               </Link>
-              <p className="mt-4 text-sm leading-7 text-slate-400">{t.footer.desc}</p>
+              <p className="mt-4 text-sm leading-7 text-slate-300">{t.footer.desc}</p>
 
               <div className="mt-5 flex gap-2">
                 <a
@@ -1182,34 +1490,60 @@ export default function Home() {
             </div>
 
             <div>
-              <p className="text-sm font-bold text-white">{t.footer.contact}</p>
-              <ul className="mt-4 space-y-3 text-sm">
-                <li className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-emerald-300" />
-                  <a href="mailto:contact@madrasti.ma" className="transition hover:text-emerald-300">
-                    contact@madrasti.ma
+              <p className="text-base font-bold text-white">{t.footer.contact}</p>
+              <ul className="mt-4 space-y-3.5 text-sm text-slate-200">
+                <li className="flex items-center gap-2.5">
+                  <Mail className="h-4 w-4 shrink-0 text-emerald-300" />
+                  <a
+                    href={`mailto:${t.footer.emailValue}`}
+                    className="font-medium transition hover:text-emerald-300 break-all"
+                    dir="ltr"
+                  >
+                    {t.footer.emailValue}
                   </a>
                 </li>
-                <li className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-emerald-300" />
-                  <a href="tel:+212500000000" className="transition hover:text-emerald-300" dir="ltr">
-                    +212 5 00 00 00 00
+
+                <li className="flex items-center gap-2.5">
+                  <Phone className="h-4 w-4 shrink-0 text-emerald-300" />
+                  <a
+                    href={`tel:${t.footer.phoneValue.replace(/\s/g, '')}`}
+                    className="font-medium transition hover:text-emerald-300"
+                    dir="ltr"
+                  >
+                    {t.footer.phoneValue}
                   </a>
                 </li>
-                <li className="flex items-start gap-2">
+
+                <li>
+                  <a
+                    href={`${t.footer.whatsappUrl}?text=${encodeURIComponent(
+                      lang === 'ar'
+                        ? 'السلام عليكم، أريد معلومات عن منصة مدرستي'
+                        : 'Bonjour, je voudrais des informations sur Madrasti'
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-emerald-950/30 transition hover:-translate-y-0.5 hover:bg-[#1ebd58]"
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    {t.footer.whatsappLabel}
+                  </a>
+                </li>
+
+                <li className="flex items-start gap-2.5">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                  <span>{t.footer.address}</span>
+                  <span className="font-medium">{t.footer.address}</span>
                 </li>
               </ul>
             </div>
           </div>
 
           <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
-            <p className="text-xs text-slate-400">
-              © {new Date().getFullYear()} {t.brand}. {t.footer.copyright}
+            <p className="text-sm font-medium text-slate-200">
+              © <Num>{new Date().getFullYear()}</Num> {t.brand}. {t.footer.copyright}
             </p>
-            <p className="flex items-center gap-2 text-xs text-slate-400">
-              <Globe className="h-3.5 w-3.5" />
+            <p className="flex items-center gap-2 text-sm font-medium text-slate-200">
+              <Globe className="h-4 w-4 text-emerald-300" />
               {t.footer.madeIn}
             </p>
           </div>
