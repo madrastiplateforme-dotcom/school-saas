@@ -38,9 +38,9 @@ const T = {
       { value: '24/7', label: 'دعم متواصل' },
     ],
     problems: {
-      kicker: 'المشاكل الشائعة',
-      title: 'هل تعاني من هذه المشاكل؟',
-      desc: 'كل مدرسة خاصة تواجه تحديات يومية في التسيير. مدرستي وضعت لها حلاً نهائياً.',
+      kicker: 'التحديات اليومية',
+      title: 'التحديات اليومية لتسيير مدرسة خاصة',
+      desc: 'كل مؤسسة تعليمية تواجه تحديات في التسيير اليومي. "مدرستي" صُمّمت لتقديم حلول عملية لكل واحدة منها.',
       items: [
         { title: 'ملفات ورقية متفرقة', text: 'كل معلومة في دفتر أو Excel، والبحث يستغرق وقتاً طويلاً.' },
         { title: 'أقساط ضائعة', text: 'لا تعرف من دفع، من تأخر، ولا المبلغ المتبقي في الصندوق.' },
@@ -49,9 +49,9 @@ const T = {
       ],
     },
     features: {
-      kicker: 'الحل',
-      title: 'كل شيء تحت السيطرة',
-      desc: 'من التسجيل إلى آخر دفعة، واجهة بسيطة لفريق الإدارة، ومعلومات دقيقة تساعدك على اتخاذ القرار بسرعة.',
+      kicker: 'الحل المتكامل',
+      title: 'إدارة متكاملة لمؤسستك',
+      desc: 'من التسجيل إلى آخر دفعة، واجهة موحّدة لفريق الإدارة، ومعلومات دقيقة تساعدك على اتخاذ القرار بثقة.',
       items: [
         { title: 'إدارة التلاميذ والأسر', text: 'ملفات كاملة، تسجيل سريع، ومتابعة دقيقة لكل تلميذ.' },
         { title: 'المالية والصندوق', text: 'أقساط، مدفوعات، مصاريف، تحويلات، وتقارير في مكان واحد.' },
@@ -64,7 +64,7 @@ const T = {
       ],
     },
     advanced: {
-      kicker: 'حلول متكاملة',
+      kicker: 'وحدات متقدمة',
       title: 'كل منصة في مكان واحد',
       desc: 'من القسم إلى ولي الأمر، من الهاتف إلى المكتب — كل ما تحتاجه مدرستك في منصة واحدة.',
       items: [
@@ -79,7 +79,7 @@ const T = {
       ],
     },
     roles: {
-      kicker: 'مصمم للجميع',
+      kicker: 'مصمم لكل دور',
       title: 'واجهة خاصة لكل مستخدم',
       desc: 'كل دور يرى فقط ما يحتاجه، بواجهة مصممة لأداء مهامه بسرعة.',
       items: [
@@ -90,7 +90,7 @@ const T = {
       ],
     },
     testimonials: {
-      kicker: 'شهادات',
+      kicker: 'آراء العملاء',
       title: 'ماذا يقول مديرو المدارس؟',
       items: [
         { name: 'الأستاذ محمد', role: 'مدير مدرسة خاصة - الدار البيضاء', text: 'وفّرنا ساعات من العمل الإداري كل أسبوع، والآباء أصبحوا أكثر تفاعلاً مع المدرسة.' },
@@ -203,9 +203,9 @@ const T = {
       { value: '24/7', label: 'Support continu' },
     ],
     problems: {
-      kicker: 'Problèmes courants',
-      title: 'Vous rencontrez ces problèmes ?',
-      desc: 'Chaque école privée affronte des défis quotidiens. Madrasti leur apporte une solution définitive.',
+      kicker: 'Défis quotidiens',
+      title: 'Les défis quotidiens des écoles privées',
+      desc: 'Chaque établissement fait face à des défis de gestion au quotidien. Madrasti a été conçue pour y répondre concrètement.',
       items: [
         { title: 'Dossiers papier éparpillés', text: 'Chaque information dans un cahier ou Excel, la recherche prend du temps.' },
         { title: 'Échéances perdues', text: 'Vous ne savez pas qui a payé, qui est en retard, ni le solde de la caisse.' },
@@ -214,9 +214,9 @@ const T = {
       ],
     },
     features: {
-      kicker: 'La solution',
-      title: 'Tout sous contrôle',
-      desc: 'De l\'inscription au dernier paiement, une interface simple pour l\'équipe et des informations précises pour décider vite.',
+      kicker: 'La solution intégrée',
+      title: 'Une gestion complète, en toute sérénité',
+      desc: 'De l\'inscription au dernier paiement, une interface unifiée pour votre équipe et des informations précises pour décider avec confiance.',
       items: [
         { title: 'Gestion élèves & familles', text: 'Dossiers complets, inscription rapide, suivi précis de chaque élève.' },
         { title: 'Finance & caisse', text: 'Échéances, paiements, dépenses, transferts et rapports au même endroit.' },
@@ -229,7 +229,7 @@ const T = {
       ],
     },
     advanced: {
-      kicker: 'Solutions intégrées',
+      kicker: 'Modules avancés',
       title: 'Tout-en-un. Pour toute votre école.',
       desc: 'De la classe au parent, du téléphone au bureau — tout ce dont votre école a besoin en une plateforme.',
       items: [
@@ -244,7 +244,7 @@ const T = {
       ],
     },
     roles: {
-      kicker: 'Pensé pour tous',
+      kicker: 'Pensé pour chaque rôle',
       title: 'Une interface pour chaque utilisateur',
       desc: 'Chaque rôle voit uniquement ce dont il a besoin, avec une interface optimisée.',
       items: [
@@ -255,7 +255,7 @@ const T = {
       ],
     },
     testimonials: {
-      kicker: 'Témoignages',
+      kicker: 'Avis clients',
       title: 'Ce que disent les directeurs',
       items: [
         { name: 'M. Mohammed', role: 'Directeur école privée - Casablanca', text: 'Nous avons économisé des heures de travail administratif chaque semaine, et les parents sont plus impliqués.' },
