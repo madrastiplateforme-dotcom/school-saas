@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { fetchTeacherData, TeacherClass } from '@/lib/useTeacherData'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import {
   ShieldAlert, RefreshCw, Plus, Trash2, X, Save, Calendar,
   AlertCircle, Filter, User,
@@ -50,12 +51,14 @@ const fmtDate = (d: string) => {
 const todayISO = () => new Date().toISOString().split('T')[0]
 
 export default function TeacherDisciplinePage() {
+  const { yearId } = useAcademicYear()
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const [authUserId, setAuthUserId] = useState('')   // ⭐ user.id (FK)
+  const [authUserId, setAuthUserId] = useState('')
   const [estabId, setEstabId] = useState('')
 
   const [classes, setClasses] = useState<TeacherClass[]>([])
@@ -74,13 +77,23 @@ export default function TeacherDisciplinePage() {
     description: '',
   })
 
-  useEffect(() => { loadInit() }, [])
-  useEffect(() => { if (selectedClass) loadStudents() }, [selectedClass])
   useEffect(() => {
-    if (authUserId && selectedClass) loadIncidents()
-  }, [authUserId, selectedClass, mineOnly, students])
+    if (yearId) loadInit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearId])
+
+  useEffect(() => {
+    if (selectedClass && yearId) loadStudents()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClass, yearId])
+
+  useEffect(() => {
+    if (authUserId && selectedClass && yearId) loadIncidents()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUserId, selectedClass, mineOnly, students, yearId])
 
   const loadInit = async () => {
+    if (!yearId) return
     setLoading(true); setError('')
     const supabase = createClient()
     try {
@@ -89,7 +102,7 @@ export default function TeacherDisciplinePage() {
       setAuthUserId(user.id)
 
       const { establishmentId, classes: list } =
-        await fetchTeacherData(supabase, user.id)
+        await fetchTeacherData(supabase, user.id, yearId)
 
       setEstabId(establishmentId || '')
       setClasses(list)
@@ -101,12 +114,14 @@ export default function TeacherDisciplinePage() {
   }
 
   const loadStudents = async () => {
+    if (!yearId) return
     const supabase = createClient()
     try {
       const { data: enrolls } = await supabase
         .from('enrollments')
         .select('student_id')
         .eq('class_id', selectedClass)
+        .eq('academic_year_id', yearId)
         .eq('status', 'active')
 
       const ids = (enrolls || []).map((e: any) => e.student_id).filter(Boolean)
@@ -134,7 +149,7 @@ export default function TeacherDisciplinePage() {
   }
 
   const loadIncidents = async () => {
-    if (!estabId) return
+    if (!estabId || !yearId) return
     const supabase = createClient()
     try {
       let q = supabase
@@ -198,52 +213,53 @@ export default function TeacherDisciplinePage() {
     setShowForm(true)
   }
 
- const handleSave = async () => {
-  if (!form.student_id) { setError('خاص تختار تلميذ'); return }
-  if (!form.title.trim()) { setError('خاص تكتب عنوان المخالفة'); return }
-  if (!estabId || !authUserId) { setError('معلومات ناقصة'); return }
+  const handleSave = async () => {
+    if (!form.student_id) { setError('خاص تختار تلميذ'); return }
+    if (!form.title.trim()) { setError('خاص تكتب عنوان المخالفة'); return }
+    if (!estabId || !authUserId) { setError('معلومات ناقصة'); return }
 
-  setSaving(true); setError(''); setSuccess('')
-  const supabase = createClient()
+    setSaving(true); setError(''); setSuccess('')
+    const supabase = createClient()
 
-  try {
-    const payload: any = {
-      establishment_id: estabId,
-      student_id: form.student_id,
-      incident_date: form.incident_date,
-      category: form.category,
-      severity: form.severity,
-      title: form.title.trim(),
-      description: form.description.trim() || null,
-      reported_by: authUserId,
+    try {
+      const payload: any = {
+        establishment_id: estabId,
+        student_id: form.student_id,
+        incident_date: form.incident_date,
+        category: form.category,
+        severity: form.severity,
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        reported_by: authUserId,
+      }
+
+      const { data: inserted, error: insErr } = await supabase
+        .from('disciplines')
+        .insert(payload)
+        .select('id')
+        .single()
+
+      if (insErr) throw insErr
+
+      if (inserted?.id) {
+        fetch('/api/teacher/discipline-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ disciplineId: inserted.id }),
+        }).catch((e) => console.error('[discipline-alert-call]', e))
+      }
+
+      setSuccess('✅ تم تسجيل المخالفة — جارٍ إرسال الإشعار')
+      setTimeout(() => setSuccess(''), 3000)
+      setShowForm(false)
+      await loadIncidents()
+    } catch (e: any) {
+      console.error('[discipline-save]', e?.message || e)
+      setError(e?.message || 'فشل الحفظ')
+    } finally {
+      setSaving(false)
     }
-
-    const { data: inserted, error: insErr } = await supabase
-      .from('disciplines')
-      .insert(payload)
-      .select('id')
-      .single()
-
-    if (insErr) throw insErr
-
-    // ⭐ إيميل المخالفة (fire & forget)
-    if (inserted?.id) {
-      fetch('/api/teacher/discipline-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disciplineId: inserted.id }),
-      }).catch((e) => console.error('[discipline-alert-call]', e))
-    }
-
-    setSuccess('✅ تم تسجيل المخالفة — جارٍ إرسال الإشعار')
-    setTimeout(() => setSuccess(''), 3000)
-    setShowForm(false)
-    await loadIncidents()
-  } catch (e: any) {
-    console.error('[discipline-save]', e?.message || e)
-    setError(e?.message || 'فشل الحفظ')
-  } finally { setSaving(false) }
-}
+  }
 
   const handleDelete = async (id: string) => {
     if (!confirm('واش متأكد؟')) return

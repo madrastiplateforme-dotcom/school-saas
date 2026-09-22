@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useEstablishmentId } from '@/lib/useEstablishmentId'
+import { useAcademicYear } from '@/lib/AcademicYearContext'
 import { buildCustomMessage, openWhatsApp } from '@/lib/whatsapp'
 import { toast } from 'sonner'
 import {
@@ -53,6 +54,7 @@ const formatDate = (d: string) => {
 
 export default function DisciplinePage() {
   const establishmentId = useEstablishmentId()
+  const { yearId } = useAcademicYear()
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -78,11 +80,12 @@ export default function DisciplinePage() {
   const [formDescription, setFormDescription] = useState('')
 
   useEffect(() => {
-    if (establishmentId) {
+    if (establishmentId && yearId) {
       loadData()
       loadSchoolName()
     }
-  }, [establishmentId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [establishmentId, yearId])
 
   const loadSchoolName = async () => {
     if (!establishmentId) return
@@ -96,18 +99,36 @@ export default function DisciplinePage() {
   }
 
   const loadData = async () => {
+    if (!yearId) return
     setLoading(true)
     const supabase = createClient()
 
     try {
-      const { data: studentsData } = await supabase
-        .from('students')
-        .select('id, first_name, last_name, massar_code, family_id')
+      // ✅ Élèves de l'année active via enrollments
+      const { data: enrollsYear } = await supabase
+        .from('enrollments')
+        .select('student_id')
         .eq('establishment_id', establishmentId)
+        .eq('academic_year_id', yearId)
         .eq('status', 'active')
-        .order('first_name')
 
-      setStudents(studentsData || [])
+      const yearStudentIds = Array.from(
+        new Set((enrollsYear || []).map((e: any) => e.student_id).filter(Boolean))
+      ) as string[]
+
+      let studentsData: any[] = []
+      if (yearStudentIds.length > 0) {
+        const { data } = await supabase
+          .from('students')
+          .select('id, first_name, last_name, massar_code, family_id')
+          .eq('establishment_id', establishmentId)
+          .eq('status', 'active')
+          .in('id', yearStudentIds)
+          .order('first_name')
+        studentsData = data || []
+      }
+
+      setStudents(studentsData)
 
       const familyIds = Array.from(
         new Set((studentsData || []).map((s: any) => s.family_id).filter(Boolean)),
@@ -152,6 +173,7 @@ export default function DisciplinePage() {
           .select('student_id, classes(name)')
           .in('student_id', studentIds)
           .eq('establishment_id', establishmentId)
+          .eq('academic_year_id', yearId)
           .eq('status', 'active')
         enrollmentsData = enr || []
       }
