@@ -178,30 +178,17 @@ const T = {
       popular: 'الأكثر اختياراً',
       footer: '20 تلميذاً مجاناً · بدون التزام · إلغاء في أي وقت',
       plans: [
+        { name: 'تجريبية', description: 'للتجربة والانطلاق', items: ['حتى 20 تلميذاً', 'كل الوظائف الأساسية', 'دعم عبر البريد', 'بدون بطاقة بنكية'], cta: 'ابدأ مجاناً' },
         {
-          name: 'تجريبية',
-          description: 'للتجربة والانطلاق',
-          items: ['حتى 20 تلميذاً', 'كل الوظائف الأساسية', 'دعم عبر البريد', 'بدون بطاقة بنكية'],
-          cta: 'ابدأ مجاناً',
-        },
-        {
-          name: 'قياسية',
-          description: 'للمدارس النامية',
+          name: 'قياسية', description: 'للمدارس النامية',
           items: ['كل الوظائف الكاملة', 'المالية، النقط، جدول الحصص', 'الرسائل والإشعارات', 'دعم بالأولوية'],
-          examples: [
-            { students: '100 تلميذ', price: '120 د.م / شهر' },
-            { students: '300 تلميذ', price: '420 د.م / شهر' },
-          ],
+          examples: [{ students: '100 تلميذ', price: '120 د.م / شهر' }, { students: '300 تلميذ', price: '420 د.م / شهر' }],
           cta: 'ابدأ الآن',
         },
         {
-          name: 'احترافية',
-          description: 'للمؤسسات الكبيرة',
+          name: 'احترافية', description: 'للمؤسسات الكبيرة',
           items: ['كل ما في القياسية', 'إشعارات بريد متقدمة (قوالب مخصصة)', 'دعم متعدد المدارس', 'مدير حساب مخصص'],
-          examples: [
-            { students: '500 تلميذ', price: '720 د.م / شهر' },
-            { students: '1000 تلميذ', price: '1470 د.م / شهر' },
-          ],
+          examples: [{ students: '500 تلميذ', price: '720 د.م / شهر' }, { students: '1000 تلميذ', price: '1470 د.م / شهر' }],
           cta: 'اختر الاحترافية',
         },
       ],
@@ -518,7 +505,7 @@ function Reveal({
   )
 }
 
-// ============ SAFE IMAGE (with fallback) ============
+// ============ SAFE IMAGE ============
 function SafeImg({ src, alt, className }: { src: string; alt: string; className?: string }) {
   const [err, setErr] = useState(false)
   if (err) {
@@ -531,13 +518,7 @@ function SafeImg({ src, alt, className }: { src: string; alt: string; className?
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={alt}
-      loading="lazy"
-      className={className}
-      onError={() => setErr(true)}
-    />
+    <img src={src} alt={alt} loading="lazy" className={className} onError={() => setErr(true)} />
   )
 }
 
@@ -556,18 +537,11 @@ export default function Home() {
     document.documentElement.dir = t.dir
   }, [lang, t.lang, t.dir])
 
-  // Welcome modal — once per visitor OR forced with ?welcome=1
+  // ✅ WELCOME MODAL — appears EVERY page load (once per browser session)
   useEffect(() => {
     setMounted(true)
-    try {
-      const params = new URLSearchParams(window.location.search)
-      const force = params.get('welcome') === '1'
-      const seen = localStorage.getItem('madrasti_welcomed')
-      if (force || !seen) {
-        const timer = setTimeout(() => setWelcomeOpen(true), 400)
-        return () => clearTimeout(timer)
-      }
-    } catch {}
+    const timer = setTimeout(() => setWelcomeOpen(true), 300)
+    return () => clearTimeout(timer)
   }, [])
 
   // Back to top
@@ -582,26 +556,26 @@ export default function Home() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setLightbox(null)
-        if (welcomeOpen) closeWelcome()
+        if (welcomeOpen) setWelcomeOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [welcomeOpen])
 
-  const closeWelcome = () => {
-    setWelcomeOpen(false)
-    try {
-      localStorage.setItem('madrasti_welcomed', '1')
-    } catch {}
-  }
+  // Lock body scroll when modal/lightbox open
+  useEffect(() => {
+    const anyOpen = welcomeOpen || !!lightbox
+    document.body.style.overflow = anyOpen ? 'hidden' : ''
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [welcomeOpen, lightbox])
 
   const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
   return (
     <main dir={t.dir} className="min-h-screen overflow-hidden bg-[#fbfcfe] text-[#102a43]">
-
       <style jsx global>{`
         @keyframes fade-in-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -621,21 +595,40 @@ export default function Home() {
         }
       `}</style>
 
-      {/* ============ WELCOME MODAL ============ */}
+      {/* ============ WELCOME MODAL — centered ============ */}
       {mounted && welcomeOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 anim-fade" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-[#0b2f35]/70 backdrop-blur-md" onClick={closeWelcome} />
-          <div dir={t.dir} className="relative w-full max-w-lg overflow-hidden rounded-[1.75rem] border border-white/15 bg-white p-7 shadow-2xl anim-scale sm:p-9">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 anim-fade"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setWelcomeOpen(false)}
+        >
+          {/* Dark backdrop with blur */}
+          <div className="absolute inset-0 bg-[#0b2f35]/75 backdrop-blur-md" />
+
+          {/* Card — centered */}
+          <div
+            dir={t.dir}
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg overflow-hidden rounded-[1.75rem] border border-white/15 bg-white p-7 shadow-2xl anim-scale sm:p-9"
+          >
             <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full opacity-40 blur-3xl" style={{ background: 'radial-gradient(circle, #10b981 0%, transparent 70%)' }} />
             <div className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full opacity-30 blur-3xl" style={{ background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)' }} />
-            <button onClick={closeWelcome} className="absolute left-4 top-4 grid h-9 w-9 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 rtl:left-auto rtl:right-4" aria-label={t.welcome.ctaSkip}>
+
+            <button
+              onClick={() => setWelcomeOpen(false)}
+              className="absolute left-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 rtl:left-auto rtl:right-4"
+              aria-label={t.welcome.ctaSkip}
+            >
               <X className="h-4 w-4" />
             </button>
+
             <div className="relative">
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
                 <Sparkles className="h-3.5 w-3.5" />
                 {t.welcome.badge}
               </div>
+
               <div className="mt-5 flex items-center gap-3">
                 <span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-900/20">
                   <GraduationCap className="h-8 w-8" />
@@ -645,8 +638,13 @@ export default function Home() {
                   <p className="text-xs text-slate-500">{t.footer.madeIn}</p>
                 </div>
               </div>
-              <h2 className="mt-6 text-2xl font-black leading-tight text-slate-900 sm:text-3xl">{t.welcome.title}</h2>
+
+              <h2 className="mt-6 text-2xl font-black leading-tight text-slate-900 sm:text-3xl">
+                {t.welcome.title}
+              </h2>
+
               <p className="mt-3 text-sm leading-7 text-slate-600">{t.welcome.desc}</p>
+
               <ul className="mt-5 space-y-2.5">
                 {t.welcome.bullets.map((b, i) => (
                   <li key={i} className="flex items-start gap-2.5 text-sm text-slate-700 anim-fade-up" style={{ animationDelay: `${200 + i * 100}ms` }}>
@@ -657,16 +655,28 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
+
               <div className="mt-7 flex flex-wrap gap-3">
-                <Link href="/register" onClick={closeWelcome} className="inline-flex flex-1 min-w-[160px] items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/25 transition hover:-translate-y-0.5 hover:bg-emerald-600">
+                <Link
+                  href="/register"
+                  onClick={() => setWelcomeOpen(false)}
+                  className="inline-flex flex-1 min-w-[160px] items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/25 transition hover:-translate-y-0.5 hover:bg-emerald-600"
+                >
                   <Rocket className="h-4 w-4" />
                   {t.welcome.cta1}
                 </Link>
-                <button onClick={closeWelcome} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-bold text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50">
+                <button
+                  onClick={() => setWelcomeOpen(false)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-bold text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+                >
                   {t.welcome.cta2}
                 </button>
               </div>
-              <button onClick={closeWelcome} className="mt-5 block w-full text-center text-xs text-slate-400 underline-offset-4 transition hover:text-slate-600 hover:underline">
+
+              <button
+                onClick={() => setWelcomeOpen(false)}
+                className="mt-5 block w-full text-center text-xs text-slate-400 underline-offset-4 transition hover:text-slate-600 hover:underline"
+              >
                 {t.welcome.ctaSkip}
               </button>
             </div>
@@ -694,6 +704,7 @@ export default function Home() {
             </span>
             <span className="text-lg font-black tracking-tight text-white">{t.brand}</span>
           </Link>
+
           <nav className="hidden items-center gap-6 text-sm text-white/75 lg:flex">
             <a className="transition hover:text-white" href="#features">{t.nav.features}</a>
             <a className="transition hover:text-white" href="#demo">{t.nav.demo}</a>
@@ -701,6 +712,7 @@ export default function Home() {
             <a className="transition hover:text-white" href="#pricing">{t.nav.pricing}</a>
             <a className="transition hover:text-white" href="#faq">{t.nav.faq}</a>
           </nav>
+
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-xl border border-white/20 bg-white/5 p-0.5">
               <button onClick={() => setLang('ar')} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${lang === 'ar' ? 'bg-white text-[#0b2f35]' : 'text-white/70 hover:text-white'}`} aria-label="العربية">ع</button>
@@ -719,6 +731,7 @@ export default function Home() {
       {/* ============ HERO ============ */}
       <div className="relative isolate bg-[#0b2f35] text-white">
         <div className="absolute inset-0 -z-10 opacity-70" style={{ backgroundImage: 'radial-gradient(circle at 15% 20%, #1b8c77 0, transparent 28%), radial-gradient(circle at 88% 12%, #e9a63a55 0, transparent 23%)' }} />
+
         <section className="mx-auto grid max-w-7xl gap-12 px-5 pb-24 pt-14 lg:grid-cols-[1.12fr_.88fr] lg:px-8 lg:pb-32 lg:pt-20">
           <div className="max-w-2xl">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-200 anim-fade-up">
@@ -728,16 +741,20 @@ export default function Home() {
               </span>
               {t.hero.ministry}
             </div>
+
             <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-emerald-100 anim-fade-up">
               <Sparkles className="h-4 w-4" />
               {t.hero.badge}
             </p>
+
             <h1 className="text-4xl font-black leading-[1.15] tracking-tight sm:text-5xl lg:text-6xl anim-fade-up" style={{ animationDelay: '80ms' }}>
               {t.hero.title1}
               <br />
               <span className="text-emerald-300 shine-text">{t.hero.title2}</span>
             </h1>
+
             <p className="mt-6 max-w-xl text-lg leading-8 text-slate-200 anim-fade-up" style={{ animationDelay: '160ms' }}>{t.hero.desc}</p>
+
             <div className="mt-9 flex flex-wrap gap-3 anim-fade-up" style={{ animationDelay: '240ms' }}>
               <Link href="/register" className="group inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-6 py-3.5 font-bold text-[#083a33] shadow-lg shadow-emerald-950/25 transition hover:-translate-y-0.5 hover:bg-emerald-300">
                 <span>{t.hero.cta1}</span>
@@ -748,7 +765,9 @@ export default function Home() {
                 {t.hero.cta2}
               </a>
             </div>
+
             <p className="mt-4 text-xs text-emerald-200/80 anim-fade-up" style={{ animationDelay: '320ms' }}>{t.hero.eyebrowTrust}</p>
+
             <div className="mt-9 flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/70 anim-fade-up" style={{ animationDelay: '400ms' }}>
               {t.hero.trust.map((item, i) => {
                 const Icon = [ShieldCheck, Check, Zap][i]
@@ -761,6 +780,7 @@ export default function Home() {
               })}
             </div>
           </div>
+
           <div className="relative mx-auto w-full max-w-md self-center anim-fade-up" style={{ animationDelay: '300ms' }}>
             <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-emerald-400/15 blur-2xl" />
             <div className="rounded-[1.75rem] border border-white/15 bg-white/95 p-4 text-[#102a43] shadow-2xl shadow-black/30">
@@ -771,10 +791,12 @@ export default function Home() {
                 </div>
                 <span className="rounded-xl bg-emerald-50 p-2.5 text-emerald-700"><BarChart3 className="h-5 w-5" /></span>
               </div>
+
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <Metric label={t.mockup.students} value="248" tone="bg-emerald-50 text-emerald-700" />
                 <Metric label={t.mockup.revenue} value="48 500 DH" tone="bg-amber-50 text-amber-700" />
               </div>
+
               <div className="mt-4 rounded-2xl bg-slate-50 p-4">
                 <div className="mb-4 flex items-center justify-between text-sm">
                   <span className="font-bold">{t.mockup.collect}</span>
@@ -787,6 +809,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
+
             <div className={`absolute ${lang === 'ar' ? '-left-8' : '-right-8'} top-32 hidden lg:block anim-float`}>
               <div className="rounded-2xl bg-white p-3 shadow-xl">
                 <div className="flex items-center gap-2">
@@ -798,6 +821,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
+
             <div className={`absolute ${lang === 'ar' ? '-right-8' : '-left-8'} bottom-20 hidden lg:block anim-float`} style={{ animationDelay: '1.5s' }}>
               <div className="rounded-2xl bg-white p-3 shadow-xl">
                 <div className="flex items-center gap-2">
@@ -811,6 +835,7 @@ export default function Home() {
             </div>
           </div>
         </section>
+
         <div className="border-t border-white/10 bg-black/20 backdrop-blur-sm">
           <div className="mx-auto grid max-w-7xl grid-cols-2 gap-6 px-5 py-8 lg:grid-cols-4 lg:px-8">
             {t.stats.map(s => (
@@ -1244,6 +1269,7 @@ export default function Home() {
                 </span>
               </div>
             </div>
+
             <div>
               <p className="text-sm font-bold text-white">{t.footer.product}</p>
               <ul className="mt-4 space-y-2.5 text-sm">
@@ -1254,6 +1280,7 @@ export default function Home() {
                 <li><a href="#faq" className="transition hover:text-emerald-300">{t.nav.faq}</a></li>
               </ul>
             </div>
+
             <div>
               <p className="text-sm font-bold text-white">{t.footer.legal}</p>
               <ul className="mt-4 space-y-2.5 text-sm">
@@ -1263,6 +1290,7 @@ export default function Home() {
                 <li><Link href="/legal/loi-09-08" className="transition hover:text-emerald-300">{t.footer.law0908}</Link></li>
               </ul>
             </div>
+
             <div>
               <p className="text-base font-bold text-white">{t.footer.contact}</p>
               <ul className="mt-4 space-y-3.5 text-sm text-slate-200">
@@ -1277,6 +1305,7 @@ export default function Home() {
               </ul>
             </div>
           </div>
+
           <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
             <p className="text-sm font-medium text-slate-200">
               © <Num>{new Date().getFullYear()}</Num> {t.brand}. {t.footer.copyright}
