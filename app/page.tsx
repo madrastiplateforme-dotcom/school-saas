@@ -1,14 +1,15 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
 import {
-  ArrowLeft, BarChart3, Check, ChevronLeft, GraduationCap, ShieldCheck,
+  ArrowLeft, ArrowUp, BarChart3, Check, ChevronLeft, GraduationCap, ShieldCheck,
   Sparkles, Users, Wallet, Calendar, FileText, MessageSquare, Lock,
   TrendingUp, Clock, BookOpen, Star, Phone, Mail, MapPin, Globe,
   UserCog, HeartHandshake, Zap, PlayCircle,
   Smartphone, ClipboardCheck, Gavel, UserCheck, Send, Palette,
-  X, Quote, Rocket, Settings2, PartyPopper,
+  X, Quote, Rocket, Settings2, PartyPopper, Search,
 } from 'lucide-react'
 
 // ============ TRANSLATIONS ============
@@ -17,12 +18,11 @@ const T = {
     dir: 'rtl' as const,
     lang: 'ar' as const,
     brand: 'مدرستي',
-    nav: { features: 'المميزات', how: 'كيف تبدأ', pricing: 'الأسعار', faq: 'أسئلة شائعة' },
+    nav: { features: 'المميزات', how: 'كيف تبدأ', demo: 'المنصة', pricing: 'الأسعار', faq: 'أسئلة شائعة' },
     login: 'تسجيل الدخول',
     startFree: 'ابدأ مجاناً',
     announcement: 'جديد: دعم كامل لـ WhatsApp Business   ',
     announcementLink: 'اكتشف المزيد',
-    // ============ WELCOME MODAL ============
     welcome: {
       badge: 'مرحباً بك في مدرستي',
       title: 'المنصة رقم 1 لتسيير المدارس الخاصة بالمغرب',
@@ -36,14 +36,14 @@ const T = {
       cta2: 'استكشف المنصة',
       ctaSkip: 'تخطي',
     },
-    // ============ HERO ============
     hero: {
       badge: 'منصة عصرية للمدارس الخاصة بالمغرب',
+      ministry: 'مطابقة للقانون 09-08 لحماية المعطيات',
       title1: 'تسيير مدرستك،',
       title2: 'بوضوح وراحة بال.',
       desc: 'كل ما تحتاجه الإدارة في مساحة واحدة: التلاميذ، التسجيل، الأقساط، الصندوق، النقط، الحضور، والتواصل مع الأولياء.',
       cta1: 'أنشئ حساب مؤسستك مجاناً',
-      cta2: 'شاهد عرضاً توضيحياً',
+      cta2: 'شاهد المنصة',
       eyebrowTrust: 'بدون بطاقة بنكية · إعداد في 10 دقائق',
       trust: ['بيانات منظّمة وآمنة', 'تجربة مجانية مدى الحياة', 'بدون بطاقة بنكية'],
     },
@@ -95,6 +95,20 @@ const T = {
           'تقارير جاهزة بضغطة واحدة',
         ],
       },
+    },
+    demo: {
+      kicker: 'شاهد المنصة',
+      title: 'جولة سريعة داخل المنصة',
+      desc: 'صور حقيقية من داخل النظام — كل ما ستراه هو ما ستستعمله يومياً.',
+      cta: 'انقر على أي صورة لتكبيرها',
+      screenshots: [
+        { src: '/images/landing/dashboard.png', title: 'لوحة القيادة', desc: 'ملخص شامل للمؤسسة' },
+        { src: '/images/landing/caisse.png', title: 'الصندوق والمالية', desc: 'تتبع الأقساط والمداخيل' },
+        { src: '/images/landing/teacher.png', title: 'لوحة الأستاذ', desc: 'النقط والحضور من الهاتف' },
+        { src: '/images/landing/parent.png', title: 'فضاء الأولياء', desc: 'متابعة الأبناء في الوقت الحقيقي' },
+        { src: '/images/landing/timetable.png', title: 'جدول الحصص', desc: 'إنشاء تلقائي بدون تعارضات' },
+        { src: '/images/landing/bulletin.png', title: 'الكشوف والنقط', desc: 'كشوف رسمية PDF بضغطة' },
+      ],
     },
     features: {
       kicker: 'الحل المتكامل',
@@ -234,16 +248,13 @@ const T = {
       copyright: 'جميع الحقوق محفوظة.',
       madeIn: 'صنع في المغرب بكل فخر',
       emailValue: 'madrasti.plateforme@gmail.com',
-      phoneValue: '+212 6 67 22 92 22',
-      whatsappLabel: 'تواصل عبر واتساب',
-      whatsappUrl: 'https://wa.me/212667229222',
     },
   },
   fr: {
     dir: 'ltr' as const,
     lang: 'fr' as const,
     brand: 'Madrasti',
-    nav: { features: 'Fonctionnalités', how: 'Comment ça marche', pricing: 'Tarifs', faq: 'FAQ' },
+    nav: { features: 'Fonctionnalités', how: 'Comment ça marche', demo: 'Plateforme', pricing: 'Tarifs', faq: 'FAQ' },
     login: 'Connexion',
     startFree: 'Commencer gratuitement',
     announcement: 'Nouveau : support complet WhatsApp Business',
@@ -263,11 +274,12 @@ const T = {
     },
     hero: {
       badge: 'Plateforme moderne pour les écoles privées au Maroc',
+      ministry: 'Conforme à la loi 09-08 sur la protection des données',
       title1: 'Gérez votre école,',
       title2: 'en toute clarté.',
       desc: 'Tout ce dont votre administration a besoin dans un seul espace : élèves, inscriptions, échéances, caisse, notes, présence, et communication avec les parents.',
       cta1: 'Créer mon établissement gratuitement',
-      cta2: 'Voir la démo',
+      cta2: 'Voir la plateforme',
       eyebrowTrust: 'Sans carte bancaire · Prêt en 10 minutes',
       trust: ['Données organisées et sécurisées', 'Essai gratuit à vie', 'Sans carte bancaire'],
     },
@@ -319,6 +331,20 @@ const T = {
           'Rapports prêts en un clic',
         ],
       },
+    },
+    demo: {
+      kicker: 'Découvrir',
+      title: 'Un tour rapide de la plateforme',
+      desc: 'Captures réelles depuis l\'application — ce que vous voyez est ce que vous utiliserez au quotidien.',
+      cta: 'Cliquez sur une image pour l\'agrandir',
+      screenshots: [
+        { src: '/images/landing/dashboard.png', title: 'Tableau de bord', desc: 'Vue d\'ensemble de l\'établissement' },
+        { src: '/images/landing/caisse.png', title: 'Caisse & Finance', desc: 'Suivi des échéances et revenus' },
+        { src: '/images/landing/teacher.png', title: 'Espace Enseignant', desc: 'Notes et présence depuis le téléphone' },
+        { src: '/images/landing/parent.png', title: 'Espace Parent', desc: 'Suivi des enfants en temps réel' },
+        { src: '/images/landing/timetable.png', title: 'Emploi du temps', desc: 'Génération auto sans conflits' },
+        { src: '/images/landing/bulletin.png', title: 'Bulletins & Notes', desc: 'Bulletins PDF officiels en un clic' },
+      ],
     },
     features: {
       kicker: 'La solution intégrée',
@@ -458,14 +484,12 @@ const T = {
       copyright: 'Tous droits réservés.',
       madeIn: 'Fait au Maroc avec fierté',
       emailValue: 'madrasti.plateforme@gmail.com',
-      phoneValue: '+212 6 67 22 92 22',
-      whatsappLabel: 'Discuter sur WhatsApp',
-      whatsappUrl: 'https://wa.me/212667229222',
     },
   },
 } as const
 
 type Lang = 'ar' | 'fr'
+type Shot = { src: string; title: string; desc: string }
 
 // ============ ICONS ============
 const problemIcons = [FileText, Wallet, Clock, Users]
@@ -531,6 +555,8 @@ export default function Home() {
   const [lang, setLang] = useState<Lang>('ar')
   const [welcomeOpen, setWelcomeOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [lightbox, setLightbox] = useState<Shot | null>(null)
+  const [showTop, setShowTop] = useState(false)
   const t = T[lang]
 
   // Set document lang & dir dynamically
@@ -549,9 +575,29 @@ export default function Home() {
         return () => clearTimeout(timer)
       }
     } catch {
-      // SSR / privacy mode — ignore
+      // SSR / privacy mode
     }
   }, [])
+
+  // Back to top button
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > 600)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // ESC key closes modals
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLightbox(null)
+        if (welcomeOpen) closeWelcome()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [welcomeOpen])
 
   const closeWelcome = () => {
     setWelcomeOpen(false)
@@ -559,6 +605,8 @@ export default function Home() {
       localStorage.setItem('madrasti_welcomed', '1')
     } catch {}
   }
+
+  const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
   return (
     <main dir={t.dir} className="min-h-screen overflow-hidden bg-[#fbfcfe] text-[#102a43]">
@@ -581,26 +629,26 @@ export default function Home() {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-8px); }
         }
-        @keyframes shimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
         @keyframes pulse-ring {
           0% { transform: scale(.9); opacity: .7; }
           70% { transform: scale(1.4); opacity: 0; }
           100% { transform: scale(1.4); opacity: 0; }
         }
+        @keyframes shine {
+          0% { background-position: -200% center; }
+          100% { background-position: 200% center; }
+        }
         .anim-fade-up { animation: fade-in-up .7s cubic-bezier(.2,.7,.3,1) both; }
         .anim-fade { animation: fade-in .5s ease both; }
         .anim-scale { animation: scale-in .5s cubic-bezier(.2,.7,.3,1) both; }
         .anim-float { animation: float-slow 5s ease-in-out infinite; }
-        .pulse-ring::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          border-radius: inherit;
-          box-shadow: 0 0 0 2px currentColor;
-          animation: pulse-ring 2.4s cubic-bezier(.2,.7,.3,1) infinite;
+        .shine-text {
+          background: linear-gradient(90deg, currentColor 0%, #6ee7b7 50%, currentColor 100%);
+          background-size: 200% auto;
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: shine 4s linear infinite;
         }
       `}</style>
 
@@ -611,18 +659,12 @@ export default function Home() {
           role="dialog"
           aria-modal="true"
         >
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-[#0b2f35]/70 backdrop-blur-md"
-            onClick={closeWelcome}
-          />
+          <div className="absolute inset-0 bg-[#0b2f35]/70 backdrop-blur-md" onClick={closeWelcome} />
 
-          {/* Card */}
           <div
             dir={t.dir}
             className="relative w-full max-w-lg overflow-hidden rounded-[1.75rem] border border-white/15 bg-white p-7 shadow-2xl anim-scale sm:p-9"
           >
-            {/* Decorative gradient */}
             <div
               className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full opacity-40 blur-3xl"
               style={{ background: 'radial-gradient(circle, #10b981 0%, transparent 70%)' }}
@@ -632,7 +674,6 @@ export default function Home() {
               style={{ background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)' }}
             />
 
-            {/* Close button */}
             <button
               onClick={closeWelcome}
               className="absolute left-4 top-4 grid h-9 w-9 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 rtl:left-auto rtl:right-4"
@@ -642,36 +683,27 @@ export default function Home() {
             </button>
 
             <div className="relative">
-              {/* Badge */}
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
                 <Sparkles className="h-3.5 w-3.5" />
                 {t.welcome.badge}
               </div>
 
-              {/* Logo */}
               <div className="mt-5 flex items-center gap-3">
                 <span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-900/20">
                   <GraduationCap className="h-8 w-8" />
                 </span>
                 <div>
-                  <p className="text-2xl font-black tracking-tight text-[#102a43]">
-                    {t.brand}
-                  </p>
+                  <p className="text-2xl font-black tracking-tight text-[#102a43]">{t.brand}</p>
                   <p className="text-xs text-slate-500">{t.footer.madeIn}</p>
                 </div>
               </div>
 
-              {/* Title */}
               <h2 className="mt-6 text-2xl font-black leading-tight text-slate-900 sm:text-3xl">
                 {t.welcome.title}
               </h2>
 
-              {/* Desc */}
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                {t.welcome.desc}
-              </p>
+              <p className="mt-3 text-sm leading-7 text-slate-600">{t.welcome.desc}</p>
 
-              {/* Bullets */}
               <ul className="mt-5 space-y-2.5">
                 {t.welcome.bullets.map((b, i) => (
                   <li
@@ -687,7 +719,6 @@ export default function Home() {
                 ))}
               </ul>
 
-              {/* CTAs */}
               <div className="mt-7 flex flex-wrap gap-3">
                 <Link
                   href="/register"
@@ -699,13 +730,12 @@ export default function Home() {
                 </Link>
                 <button
                   onClick={closeWelcome}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-bold text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
                 >
                   {t.welcome.cta2}
                 </button>
               </div>
 
-              {/* Skip link */}
               <button
                 onClick={closeWelcome}
                 className="mt-5 block w-full text-center text-xs text-slate-400 underline-offset-4 transition hover:text-slate-600 hover:underline"
@@ -740,8 +770,9 @@ export default function Home() {
             <span className="text-lg font-black tracking-tight text-white">{t.brand}</span>
           </Link>
 
-          <nav className="hidden items-center gap-7 text-sm text-white/75 md:flex">
+          <nav className="hidden items-center gap-6 text-sm text-white/75 lg:flex">
             <a className="transition hover:text-white" href="#features">{t.nav.features}</a>
+            <a className="transition hover:text-white" href="#demo">{t.nav.demo}</a>
             <a className="transition hover:text-white" href="#how">{t.nav.how}</a>
             <a className="transition hover:text-white" href="#pricing">{t.nav.pricing}</a>
             <a className="transition hover:text-white" href="#faq">{t.nav.faq}</a>
@@ -771,7 +802,7 @@ export default function Home() {
 
             <Link
               href="/login"
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-white/20 px-4 py-2 text-sm font-bold text-white/90 transition hover:bg-white/10"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-white/40 bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:border-white/60 hover:bg-white/20"
             >
               {t.login}
             </Link>
@@ -797,6 +828,21 @@ export default function Home() {
 
         <section className="mx-auto grid max-w-7xl gap-12 px-5 pb-24 pt-14 lg:grid-cols-[1.12fr_.88fr] lg:px-8 lg:pb-32 lg:pt-20">
           <div className="max-w-2xl">
+            {/* Ministry badge */}
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-200 anim-fade-up">
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-white p-0.5">
+                <Image
+                  src="/images/ministry-logo.png"
+                  alt="Ministère"
+                  width={18}
+                  height={18}
+                  className="rounded-full object-contain"
+                  unoptimized
+                />
+              </span>
+              {t.hero.ministry}
+            </div>
+
             <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-emerald-100 anim-fade-up">
               <Sparkles className="h-4 w-4" />
               {t.hero.badge}
@@ -808,7 +854,7 @@ export default function Home() {
             >
               {t.hero.title1}
               <br />
-              <span className="text-emerald-300">{t.hero.title2}</span>
+              <span className="text-emerald-300 shine-text">{t.hero.title2}</span>
             </h1>
 
             <p
@@ -833,13 +879,13 @@ export default function Home() {
                   }`}
                 />
               </Link>
-              <Link
+              <a
                 href="#demo"
                 className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-6 py-3.5 font-bold transition hover:bg-white/10"
               >
                 <PlayCircle className="h-4 w-4" />
                 {t.hero.cta2}
-              </Link>
+              </a>
             </div>
 
             <p
@@ -1050,125 +1096,132 @@ export default function Home() {
         </section>
       </Reveal>
 
-      {/* ============ FEATURES ============ */}
+      {/* ============ DEMO / SCREENSHOTS ============ */}
       <Reveal>
-        <section id="features" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+        <section id="demo" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="page-kicker">{t.features.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.features.title}</h2>
-            <p className="mt-4 leading-7 text-slate-500">{t.features.desc}</p>
+            <p className="page-kicker">{t.demo.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.demo.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.demo.desc}</p>
           </div>
 
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {t.features.items.map((f, i) => {
-              const Icon = featureIcons[i]
-              const color = featureColors[i]
-              const colorMap: Record<string, string> = {
-                emerald: 'bg-emerald-50 text-emerald-700',
-                amber: 'bg-amber-50 text-amber-700',
-                indigo: 'bg-indigo-50 text-indigo-700',
-                purple: 'bg-purple-50 text-purple-700',
-                rose: 'bg-rose-50 text-rose-700',
-                cyan: 'bg-cyan-50 text-cyan-700',
-                orange: 'bg-orange-50 text-orange-700',
-                slate: 'bg-slate-100 text-slate-700',
-              }
-              const isLarge = i === 0 || i === 1
-              return (
-                <Reveal
-                  key={i}
-                  delay={i * 60}
-                  className={isLarge ? 'sm:col-span-2 lg:col-span-2' : ''}
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {t.demo.screenshots.map((shot, i) => (
+              <Reveal key={i} delay={i * 80}>
+                <button
+                  type="button"
+                  onClick={() => setLightbox(shot)}
+                  className="group relative block w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 text-right shadow-sm transition duration-300 hover:-translate-y-1.5 hover:border-emerald-300 hover:shadow-2xl hover:shadow-emerald-100"
                 >
-                  <article className="group h-full rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl">
-                    <span className={`grid h-12 w-12 place-items-center rounded-2xl ${colorMap[color]} transition group-hover:scale-110`}>
-                      <Icon className="h-6 w-6" />
-                    </span>
-                    <h3 className="mt-5 text-base font-extrabold">{f.title}</h3>
-                    <p className="mt-2 text-sm leading-7 text-slate-500">{f.text}</p>
-                  </article>
-                </Reveal>
-              )
-            })}
+                  {/* Browser bar */}
+                  <div className="flex items-center gap-1.5 border-b border-slate-100 bg-slate-100/80 px-3 py-2">
+                    <span className="h-2 w-2 rounded-full bg-rose-400" />
+                    <span className="h-2 w-2 rounded-full bg-amber-400" />
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                    <span className="ml-2 text-[10px] font-medium text-slate-400">madrasti.win</span>
+                  </div>
+
+                  {/* Image */}
+                  <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+                    <Image
+                      src={shot.src}
+                      alt={shot.title}
+                      fill
+                      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                      className="object-cover object-top transition duration-500 group-hover:scale-105"
+                      unoptimized
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-[#0b2f35]/0 transition group-hover:bg-[#0b2f35]/30">
+                      <span className="grid h-12 w-12 scale-75 place-items-center rounded-full bg-white/95 text-[#0b2f35] opacity-0 shadow-lg transition group-hover:scale-100 group-hover:opacity-100">
+                        <Search className="h-5 w-5" />
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Caption */}
+                  <div className="p-4" dir={t.dir}>
+                    <p className="text-sm font-extrabold text-slate-800">{shot.title}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{shot.desc}</p>
+                  </div>
+                </button>
+              </Reveal>
+            ))}
+          </div>
+
+          <p className="mt-8 text-center text-xs font-medium text-slate-400">{t.demo.cta}</p>
+        </section>
+      </Reveal>
+
+      {/* ============ FEATURES ============ */}
+      <Reveal>
+        <section id="features" className="border-y border-slate-100 bg-white py-20">
+          <div className="mx-auto max-w-7xl px-5 lg:px-8">
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="page-kicker">{t.features.kicker}</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.features.title}</h2>
+              <p className="mt-4 leading-7 text-slate-500">{t.features.desc}</p>
+            </div>
+
+            <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {t.features.items.map((f, i) => {
+                const Icon = featureIcons[i]
+                const color = featureColors[i]
+                const colorMap: Record<string, string> = {
+                  emerald: 'bg-emerald-50 text-emerald-700',
+                  amber: 'bg-amber-50 text-amber-700',
+                  indigo: 'bg-indigo-50 text-indigo-700',
+                  purple: 'bg-purple-50 text-purple-700',
+                  rose: 'bg-rose-50 text-rose-700',
+                  cyan: 'bg-cyan-50 text-cyan-700',
+                  orange: 'bg-orange-50 text-orange-700',
+                  slate: 'bg-slate-100 text-slate-700',
+                }
+                const isLarge = i === 0 || i === 1
+                return (
+                  <Reveal key={i} delay={i * 60} className={isLarge ? 'sm:col-span-2 lg:col-span-2' : ''}>
+                    <article className="group h-full rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl">
+                      <span className={`grid h-12 w-12 place-items-center rounded-2xl ${colorMap[color]} transition group-hover:scale-110`}>
+                        <Icon className="h-6 w-6" />
+                      </span>
+                      <h3 className="mt-5 text-base font-extrabold">{f.title}</h3>
+                      <p className="mt-2 text-sm leading-7 text-slate-500">{f.text}</p>
+                    </article>
+                  </Reveal>
+                )
+              })}
+            </div>
           </div>
         </section>
       </Reveal>
 
       {/* ============ HOW IT WORKS ============ */}
       <Reveal>
-        <section id="how" className="border-y border-slate-100 bg-white py-20">
-          <div className="mx-auto max-w-7xl px-5 lg:px-8">
-            <div className="mx-auto max-w-2xl text-center">
-              <p className="page-kicker">{t.howItWorks.kicker}</p>
-              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.howItWorks.title}</h2>
-              <p className="mt-4 leading-7 text-slate-500">{t.howItWorks.desc}</p>
-            </div>
-
-            <div className="relative mt-14 grid gap-8 lg:grid-cols-3">
-              <div className="absolute left-0 right-0 top-12 hidden h-0.5 bg-gradient-to-r from-emerald-200 via-emerald-400 to-emerald-200 lg:block" />
-
-              {t.howItWorks.steps.map((step, i) => {
-                const icons = [Rocket, Settings2, PartyPopper]
-                const Icon = icons[i]
-                return (
-                  <Reveal key={i} delay={i * 120}>
-                    <div className="relative text-center">
-                      <div className="relative z-10 mx-auto grid h-24 w-24 place-items-center rounded-full border-4 border-white bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-xl shadow-emerald-900/20">
-                        <Icon className="h-9 w-9" />
-                      </div>
-                      <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                        <Num>{i + 1}</Num>
-                        <span>خطوة</span>
-                      </div>
-                      <h3 className="mt-4 text-lg font-extrabold">{step.title}</h3>
-                      <p className="mx-auto mt-2 max-w-xs text-sm leading-7 text-slate-500">{step.text}</p>
-                    </div>
-                  </Reveal>
-                )
-              })}
-            </div>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ============ ADVANCED MODULES ============ */}
-      <Reveal>
-        <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+        <section id="how" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="page-kicker">{t.advanced.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-              {t.advanced.title}
-            </h2>
-            <p className="mt-4 leading-7 text-slate-500">{t.advanced.desc}</p>
+            <p className="page-kicker">{t.howItWorks.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.howItWorks.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.howItWorks.desc}</p>
           </div>
 
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {t.advanced.items.map((adv, i) => {
-              const icons = [ClipboardCheck, Users, Gavel, Calendar, BarChart3, Smartphone, Send, Palette]
+          <div className="relative mt-14 grid gap-8 lg:grid-cols-3">
+            <div className="absolute left-0 right-0 top-12 hidden h-0.5 bg-gradient-to-r from-emerald-200 via-emerald-400 to-emerald-200 lg:block" />
+
+            {t.howItWorks.steps.map((step, i) => {
+              const icons = [Rocket, Settings2, PartyPopper]
               const Icon = icons[i]
-              const gradients = [
-                'from-sky-500 to-sky-700',
-                'from-indigo-500 to-indigo-700',
-                'from-rose-500 to-rose-700',
-                'from-emerald-500 to-emerald-700',
-                'from-amber-500 to-amber-700',
-                'from-violet-500 to-violet-700',
-                'from-cyan-500 to-cyan-700',
-                'from-orange-500 to-orange-700',
-              ]
-              const gradient = gradients[i]
               return (
-                <Reveal key={i} delay={i * 60}>
-                  <article className="group relative h-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-xl">
-                    <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-l ${gradient}`} />
-                    <span
-                      className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md transition group-hover:scale-110`}
-                    >
-                      <Icon className="h-6 w-6" />
-                    </span>
-                    <h3 className="mt-5 text-base font-extrabold">{adv.title}</h3>
-                    <p className="mt-2 text-sm leading-7 text-slate-500">{adv.text}</p>
-                  </article>
+                <Reveal key={i} delay={i * 120}>
+                  <div className="relative text-center">
+                    <div className="relative z-10 mx-auto grid h-24 w-24 place-items-center rounded-full border-4 border-white bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-xl shadow-emerald-900/20">
+                      <Icon className="h-9 w-9" />
+                    </div>
+                    <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+                      <Num>{i + 1}</Num>
+                      <span>خطوة</span>
+                    </div>
+                    <h3 className="mt-4 text-lg font-extrabold">{step.title}</h3>
+                    <p className="mx-auto mt-2 max-w-xs text-sm leading-7 text-slate-500">{step.text}</p>
+                  </div>
                 </Reveal>
               )
             })}
@@ -1176,214 +1229,257 @@ export default function Home() {
         </section>
       </Reveal>
 
-      {/* ============ ROLES ============ */}
+      {/* ============ ADVANCED MODULES ============ */}
       <Reveal>
-        <section id="roles" className="border-y border-slate-100 bg-white py-20">
+        <section className="border-y border-slate-100 bg-white py-20">
           <div className="mx-auto max-w-7xl px-5 lg:px-8">
             <div className="mx-auto max-w-2xl text-center">
-              <p className="page-kicker">{t.roles.kicker}</p>
-              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.roles.title}</h2>
-              <p className="mt-4 leading-7 text-slate-500">{t.roles.desc}</p>
+              <p className="page-kicker">{t.advanced.kicker}</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.advanced.title}</h2>
+              <p className="mt-4 leading-7 text-slate-500">{t.advanced.desc}</p>
             </div>
 
             <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              {t.roles.items.map((r, i) => {
-                const Icon = roleIcons[i]
-                const gradient = roleGradients[i]
+              {t.advanced.items.map((adv, i) => {
+                const icons = [ClipboardCheck, Users, Gavel, Calendar, BarChart3, Smartphone, Send, Palette]
+                const Icon = icons[i]
+                const gradients = [
+                  'from-sky-500 to-sky-700',
+                  'from-indigo-500 to-indigo-700',
+                  'from-rose-500 to-rose-700',
+                  'from-emerald-500 to-emerald-700',
+                  'from-amber-500 to-amber-700',
+                  'from-violet-500 to-violet-700',
+                  'from-cyan-500 to-cyan-700',
+                  'from-orange-500 to-orange-700',
+                ]
+                const gradient = gradients[i]
                 return (
-                  <Reveal key={i} delay={i * 80}>
-                    <div className="group relative h-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:shadow-xl">
+                  <Reveal key={i} delay={i * 60}>
+                    <article className="group relative h-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-xl">
                       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-l ${gradient}`} />
-                      <span className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md transition group-hover:scale-110`}>
+                      <span
+                        className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md transition group-hover:scale-110`}
+                      >
                         <Icon className="h-6 w-6" />
                       </span>
-                      <h3 className="mt-5 text-lg font-extrabold">{r.title}</h3>
-                      <p className="mt-2 text-sm leading-7 text-slate-500">{r.text}</p>
-                    </div>
+                      <h3 className="mt-5 text-base font-extrabold">{adv.title}</h3>
+                      <p className="mt-2 text-sm leading-7 text-slate-500">{adv.text}</p>
+                    </article>
                   </Reveal>
                 )
               })}
             </div>
+          </div>
+        </section>
+      </Reveal>
+
+      {/* ============ ROLES ============ */}
+      <Reveal>
+        <section id="roles" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="page-kicker">{t.roles.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.roles.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.roles.desc}</p>
+          </div>
+
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {t.roles.items.map((r, i) => {
+              const Icon = roleIcons[i]
+              const gradient = roleGradients[i]
+              return (
+                <Reveal key={i} delay={i * 80}>
+                  <div className="group relative h-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:shadow-xl">
+                    <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-l ${gradient}`} />
+                    <span className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${gradient} text-white shadow-md transition group-hover:scale-110`}>
+                      <Icon className="h-6 w-6" />
+                    </span>
+                    <h3 className="mt-5 text-lg font-extrabold">{r.title}</h3>
+                    <p className="mt-2 text-sm leading-7 text-slate-500">{r.text}</p>
+                  </div>
+                </Reveal>
+              )
+            })}
           </div>
         </section>
       </Reveal>
 
       {/* ============ TESTIMONIALS ============ */}
       <Reveal>
-        <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="page-kicker">{t.testimonials.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-              {t.testimonials.title}
-            </h2>
-          </div>
+        <section className="border-y border-slate-100 bg-white py-20">
+          <div className="mx-auto max-w-7xl px-5 lg:px-8">
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="page-kicker">{t.testimonials.kicker}</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.testimonials.title}</h2>
+            </div>
 
-          <div className="mt-12 grid gap-5 md:grid-cols-3">
-            {t.testimonials.items.map((tst, i) => (
-              <Reveal key={i} delay={i * 100}>
-                <div className="relative h-full rounded-2xl border border-slate-100 bg-slate-50/40 p-6 transition hover:shadow-lg">
-                  <Quote className="absolute -top-3 right-5 h-8 w-8 text-emerald-200" />
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: 5 }).map((_, k) => (
-                      <Star key={k} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="mt-4 text-sm leading-7 text-slate-700">"{tst.text}"</p>
-                  <div className="mt-5 flex items-center gap-3 border-t border-slate-200 pt-4">
-                    <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 font-bold text-emerald-700">
-                      {tst.name.charAt(0)}
-                    </span>
-                    <div>
-                      <p className="text-sm font-bold">{tst.name}</p>
-                      <p className="text-xs text-slate-500">{tst.role}</p>
+            <div className="mt-12 grid gap-5 md:grid-cols-3">
+              {t.testimonials.items.map((tst, i) => (
+                <Reveal key={i} delay={i * 100}>
+                  <div className="relative h-full rounded-2xl border border-slate-100 bg-slate-50/40 p-6 transition hover:shadow-lg">
+                    <Quote className="absolute -top-3 right-5 h-8 w-8 text-emerald-200" />
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: 5 }).map((_, k) => (
+                        <Star key={k} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      ))}
+                    </div>
+                    <p className="mt-4 text-sm leading-7 text-slate-700">"{tst.text}"</p>
+                    <div className="mt-5 flex items-center gap-3 border-t border-slate-200 pt-4">
+                      <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 font-bold text-emerald-700">
+                        {tst.name.charAt(0)}
+                      </span>
+                      <div>
+                        <p className="text-sm font-bold">{tst.name}</p>
+                        <p className="text-xs text-slate-500">{tst.role}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Reveal>
-            ))}
+                </Reveal>
+              ))}
+            </div>
           </div>
         </section>
       </Reveal>
 
       {/* ============ PRICING ============ */}
       <Reveal>
-        <section id="pricing" className="border-y border-slate-100 bg-white py-20">
-          <div className="mx-auto max-w-7xl px-5 lg:px-8">
-            <div className="text-center">
-              <p className="page-kicker">{t.pricing.kicker}</p>
-              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.pricing.title}</h2>
-              <p className="mt-4 leading-7 text-slate-500">{t.pricing.desc}</p>
-            </div>
+        <section id="pricing" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+          <div className="text-center">
+            <p className="page-kicker">{t.pricing.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.pricing.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.pricing.desc}</p>
+          </div>
 
-            <div className="mt-12 grid gap-5 lg:grid-cols-3">
-              {t.pricing.plans.map((plan, i) => {
-                const featured = i === 1
-                const isGratuit = i === 0
+          <div className="mt-12 grid gap-5 lg:grid-cols-3">
+            {t.pricing.plans.map((plan, i) => {
+              const featured = i === 1
+              const isGratuit = i === 0
 
-                return (
-                  <Reveal key={i} delay={i * 100}>
-                    <article
-                      className={`relative h-full rounded-[1.35rem] border p-7 transition ${
-                        featured
-                          ? 'border-emerald-600 bg-[#0b4c42] text-white shadow-2xl shadow-emerald-900/25 lg:scale-[1.03]'
-                          : 'border-slate-200 bg-white hover:border-emerald-200'
-                      }`}
-                    >
-                      {featured && (
-                        <span className="absolute -top-3 right-6 rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-amber-950">
-                          {t.pricing.popular}
-                        </span>
+              return (
+                <Reveal key={i} delay={i * 100}>
+                  <article
+                    className={`relative h-full rounded-[1.35rem] border p-7 transition ${
+                      featured
+                        ? 'border-emerald-600 bg-[#0b4c42] text-white shadow-2xl shadow-emerald-900/25 lg:scale-[1.03]'
+                        : 'border-slate-200 bg-white hover:border-emerald-200'
+                    }`}
+                  >
+                    {featured && (
+                      <span className="absolute -top-3 right-6 rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-amber-950">
+                        {t.pricing.popular}
+                      </span>
+                    )}
+
+                    <p className={`font-bold ${featured ? 'text-emerald-200' : 'text-emerald-700'}`}>
+                      {plan.name}
+                    </p>
+                    <p className={`mt-2 text-sm ${featured ? 'text-emerald-100/80' : 'text-slate-400'}`}>
+                      {plan.description}
+                    </p>
+
+                    <div className="mt-6 flex items-end gap-2 flex-wrap">
+                      {isGratuit ? (
+                        <>
+                          <span className="text-4xl font-black">
+                            <Num>0</Num>
+                          </span>
+                          <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
+                            درهم
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-4xl font-black">
+                            <Num>1.5</Num>
+                          </span>
+                          <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
+                            {t.pricing.currency}
+                          </span>
+                        </>
                       )}
+                    </div>
 
-                      <p className={`font-bold ${featured ? 'text-emerald-200' : 'text-emerald-700'}`}>
-                        {plan.name}
-                      </p>
-                      <p className={`mt-2 text-sm ${featured ? 'text-emerald-100/80' : 'text-slate-400'}`}>
-                        {plan.description}
-                      </p>
-
-                      <div className="mt-6 flex items-end gap-2 flex-wrap">
-                        {isGratuit ? (
-                          <>
-                            <span className="text-4xl font-black">
-                              <Num>0</Num>
-                            </span>
-                            <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
-                              درهم
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-4xl font-black">
-                              <Num>1.5</Num>
-                            </span>
-                            <span className={`mb-1 text-sm ${featured ? 'text-emerald-100' : 'text-slate-500'}`}>
-                              {t.pricing.currency}
-                            </span>
-                          </>
-                        )}
-                      </div>
-
-                      {!isGratuit && (plan as any).examples && (
-                        <div className={`mt-4 rounded-xl p-3 space-y-1.5 ${
-                          featured ? 'bg-white/10' : 'bg-slate-50'
-                        }`}>
-                          {(plan as any).examples.map((ex: any, k: number) => (
-                            <div
-                              key={k}
-                              className={`flex items-center justify-between text-xs ${
-                                featured ? 'text-emerald-100' : 'text-slate-600'
-                              }`}
-                            >
-                              <span>{ex.students}</span>
-                              <span className="font-bold">
-                                <Num>{ex.price}</Num>
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <ul className="mt-6 space-y-3">
-                        {plan.items.map((item, k) => (
-                          <li
+                    {!isGratuit && (plan as any).examples && (
+                      <div className={`mt-4 rounded-xl p-3 space-y-1.5 ${
+                        featured ? 'bg-white/10' : 'bg-slate-50'
+                      }`}>
+                        {(plan as any).examples.map((ex: any, k: number) => (
+                          <div
                             key={k}
-                            className={`flex items-center gap-2 text-sm ${
-                              featured ? 'text-white/90' : 'text-slate-600'
+                            className={`flex items-center justify-between text-xs ${
+                              featured ? 'text-emerald-100' : 'text-slate-600'
                             }`}
                           >
-                            <Check className="h-4 w-4 shrink-0 text-emerald-400" />
-                            {item}
-                          </li>
+                            <span>{ex.students}</span>
+                            <span className="font-bold">
+                              <Num>{ex.price}</Num>
+                            </span>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
+                    )}
 
-                      <Link
-                        href="/register"
-                        className={`mt-8 flex items-center justify-center rounded-xl px-4 py-3 text-sm font-bold transition ${
-                          featured
-                            ? 'bg-white text-[#0b4c42] hover:bg-emerald-50'
-                            : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-                        }`}
-                      >
-                        {plan.cta}
-                      </Link>
-                    </article>
-                  </Reveal>
-                )
-              })}
-            </div>
+                    <ul className="mt-6 space-y-3">
+                      {plan.items.map((item, k) => (
+                        <li
+                          key={k}
+                          className={`flex items-center gap-2 text-sm ${
+                            featured ? 'text-white/90' : 'text-slate-600'
+                          }`}
+                        >
+                          <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
 
-            <p className="mt-8 text-center text-sm text-slate-500">{t.pricing.footer}</p>
+                    <Link
+                      href="/register"
+                      className={`mt-8 flex items-center justify-center rounded-xl px-4 py-3 text-sm font-bold transition ${
+                        featured
+                          ? 'bg-white text-[#0b4c42] hover:bg-emerald-50'
+                          : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                      }`}
+                    >
+                      {plan.cta}
+                    </Link>
+                  </article>
+                </Reveal>
+              )
+            })}
           </div>
+
+          <p className="mt-8 text-center text-sm text-slate-500">{t.pricing.footer}</p>
         </section>
       </Reveal>
 
       {/* ============ FAQ ============ */}
       <Reveal>
-        <section id="faq" className="mx-auto max-w-3xl px-5 py-20 lg:px-8">
-          <div className="text-center">
-            <p className="page-kicker">{t.faq.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.faq.title}</h2>
-          </div>
+        <section id="faq" className="border-y border-slate-100 bg-white py-20">
+          <div className="mx-auto max-w-3xl px-5 lg:px-8">
+            <div className="text-center">
+              <p className="page-kicker">{t.faq.kicker}</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.faq.title}</h2>
+            </div>
 
-          <div className="mt-12 space-y-3">
-            {t.faq.items.map((f, i) => (
-              <details
-                key={i}
-                className="group rounded-2xl border border-slate-200 bg-white transition open:border-emerald-300 open:bg-emerald-50/30"
-              >
-                <summary className="flex cursor-pointer items-center justify-between gap-4 p-5 font-bold text-slate-800 transition hover:text-emerald-700">
-                  {f.q}
-                  <ChevronLeft
-                    className={`h-5 w-5 shrink-0 transition group-open:-rotate-90 ${
-                      lang === 'fr' ? 'rotate-180' : ''
-                    }`}
-                  />
-                </summary>
-                <p className="px-5 pb-5 text-sm leading-7 text-slate-600">{f.a}</p>
-              </details>
-            ))}
+            <div className="mt-12 space-y-3">
+              {t.faq.items.map((f, i) => (
+                <details
+                  key={i}
+                  className="group rounded-2xl border border-slate-200 bg-white transition open:border-emerald-300 open:bg-emerald-50/30"
+                >
+                  <summary className="flex cursor-pointer items-center justify-between gap-4 p-5 font-bold text-slate-800 transition hover:text-emerald-700">
+                    {f.q}
+                    <ChevronLeft
+                      className={`h-5 w-5 shrink-0 transition group-open:-rotate-90 ${
+                        lang === 'fr' ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </summary>
+                  <p className="px-5 pb-5 text-sm leading-7 text-slate-600">{f.a}</p>
+                </details>
+              ))}
+            </div>
           </div>
         </section>
       </Reveal>
@@ -1438,34 +1534,20 @@ export default function Home() {
               </Link>
               <p className="mt-4 text-sm leading-7 text-slate-300">{t.footer.desc}</p>
 
-              <div className="mt-5 flex gap-2">
-                <a
-                  href="#"
-                  className="grid h-9 w-9 place-items-center rounded-lg bg-white/5 text-white/70 transition hover:bg-emerald-500 hover:text-white"
-                  aria-label="Facebook"
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                  </svg>
-                </a>
-                <a
-                  href="#"
-                  className="grid h-9 w-9 place-items-center rounded-lg bg-white/5 text-white/70 transition hover:bg-emerald-500 hover:text-white"
-                  aria-label="Instagram"
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-                    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
-                  </svg>
-                </a>
-                <a
-                  href="#"
-                  className="grid h-9 w-9 place-items-center rounded-lg bg-white/5 text-white/70 transition hover:bg-emerald-500 hover:text-white"
-                  aria-label="LinkedIn"
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.063 2.063 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-                  </svg>
-                </a>
+              <div className="mt-5 flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-white p-1">
+                  <Image
+                    src="/images/ministry-logo.png"
+                    alt="Ministère"
+                    width={24}
+                    height={24}
+                    className="object-contain"
+                    unoptimized
+                  />
+                </span>
+                <span className="text-xs font-medium text-slate-300">
+                  {lang === 'ar' ? 'مطابقة للقانون 09-08' : 'Conforme loi 09-08'}
+                </span>
               </div>
             </div>
 
@@ -1473,6 +1555,7 @@ export default function Home() {
               <p className="text-sm font-bold text-white">{t.footer.product}</p>
               <ul className="mt-4 space-y-2.5 text-sm">
                 <li><a href="#features" className="transition hover:text-emerald-300">{t.nav.features}</a></li>
+                <li><a href="#demo" className="transition hover:text-emerald-300">{t.nav.demo}</a></li>
                 <li><a href="#how" className="transition hover:text-emerald-300">{t.nav.how}</a></li>
                 <li><a href="#pricing" className="transition hover:text-emerald-300">{t.nav.pricing}</a></li>
                 <li><a href="#faq" className="transition hover:text-emerald-300">{t.nav.faq}</a></li>
@@ -1503,33 +1586,6 @@ export default function Home() {
                   </a>
                 </li>
 
-                <li className="flex items-center gap-2.5">
-                  <Phone className="h-4 w-4 shrink-0 text-emerald-300" />
-                  <a
-                    href={`tel:${t.footer.phoneValue.replace(/\s/g, '')}`}
-                    className="font-medium transition hover:text-emerald-300"
-                    dir="ltr"
-                  >
-                    {t.footer.phoneValue}
-                  </a>
-                </li>
-
-                <li>
-                  <a
-                    href={`${t.footer.whatsappUrl}?text=${encodeURIComponent(
-                      lang === 'ar'
-                        ? 'السلام عليكم، أريد معلومات عن منصة مدرستي'
-                        : 'Bonjour, je voudrais des informations sur Madrasti'
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-emerald-950/30 transition hover:-translate-y-0.5 hover:bg-[#1ebd58]"
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    {t.footer.whatsappLabel}
-                  </a>
-                </li>
-
                 <li className="flex items-start gap-2.5">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
                   <span className="font-medium">{t.footer.address}</span>
@@ -1549,6 +1605,62 @@ export default function Home() {
           </div>
         </div>
       </footer>
+
+      {/* ============ LIGHTBOX ============ */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-[#0b2f35]/90 p-4 backdrop-blur-md anim-fade"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            onClick={() => setLightbox(null)}
+            className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          <div
+            className="relative w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl anim-scale"
+            onClick={(e) => e.stopPropagation()}
+            dir={t.dir}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+              <div>
+                <p className="font-extrabold text-slate-800">{lightbox.title}</p>
+                <p className="text-xs text-slate-500">{lightbox.desc}</p>
+              </div>
+              <span className="hidden rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 sm:block">
+                {t.brand}
+              </span>
+            </div>
+            <div className="relative aspect-[16/10] w-full bg-slate-50">
+              <Image
+                src={lightbox.src}
+                alt={lightbox.title}
+                fill
+                sizes="90vw"
+                className="object-contain"
+                unoptimized
+                priority
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ BACK TO TOP ============ */}
+      {showTop && (
+        <button
+          onClick={scrollTop}
+          className="fixed bottom-6 right-6 z-40 grid h-12 w-12 place-items-center rounded-full bg-[#0b2f35] text-white shadow-2xl transition hover:-translate-y-1 hover:bg-[#0b4c42] anim-scale"
+          aria-label="Back to top"
+        >
+          <ArrowUp className="h-5 w-5" />
+        </button>
+      )}
 
     </main>
   )
