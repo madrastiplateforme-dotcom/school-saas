@@ -8,6 +8,7 @@ import {
   TrendingUp, Clock, BookOpen, Star, Phone, Mail, MapPin, Globe,
   UserCog, HeartHandshake, Zap, PlayCircle,
   Smartphone, ClipboardCheck, Gavel, UserCheck, Send, Palette,
+  X, Quote, Rocket, Settings2, PartyPopper,
 } from 'lucide-react'
 
 // ============ TRANSLATIONS ============
@@ -16,7 +17,7 @@ const T = {
     dir: 'rtl' as const,
     lang: 'ar' as const,
     brand: 'مدرستي',
-    nav: { features: 'المميزات', roles: 'الأدوار', pricing: 'الأسعار', faq: 'أسئلة شائعة' },
+    nav: { features: 'المميزات', how: 'كيف تبدأ', pricing: 'الأسعار', faq: 'أسئلة شائعة' },
     login: 'تسجيل الدخول',
     startFree: 'ابدأ مجاناً',
     announcement: 'جديد: دعم كامل لـ WhatsApp Business   ',
@@ -28,6 +29,7 @@ const T = {
       desc: 'كل ما تحتاجه الإدارة في مساحة واحدة: التلاميذ، التسجيل، الأقساط، الصندوق، النقط، الحضور، والتواصل مع الأولياء.',
       cta1: 'أنشئ حساب مؤسستك',
       cta2: 'شاهد عرضاً توضيحياً',
+      eyebrowTrust: 'بدون بطاقة بنكية · إعداد في 10 دقائق',
       trust: ['بيانات منظّمة وآمنة', 'تجربة مجانية مدى الحياة', 'بدون بطاقة بنكية'],
     },
     mockup: { kicker: 'نظرة سريعة', title: 'ملخص المؤسسة', students: 'التلاميذ النشطون', revenue: 'مداخيل هذا الشهر', collect: 'حالة التحصيل', remaining: 'المتبقي', success: 'نسبة النجاح' },
@@ -37,6 +39,10 @@ const T = {
       { value: '12h', label: 'موفرة أسبوعياً' },
       { value: '24/7', label: 'دعم متواصل' },
     ],
+    socialProof: {
+      title: 'موثوق بها من طرف مدارس خاصة في المغرب',
+      items: ['مدرسة النخبة', 'أكاديمية المستقبل', 'مجموعة الأمل', 'مدرسة الراشدين', 'أكاديمية النجاح'],
+    },
     problems: {
       kicker: 'التحديات اليومية',
       title: 'التحديات اليومية لتسيير مدرسة خاصة',
@@ -47,6 +53,33 @@ const T = {
         { title: 'وقت ضائع في الإدارة', text: 'ساعات في التسجيل، الفواتير، والتقارير بدل التركيز على التعليم.' },
         { title: 'تواصل ضعيف مع الأولياء', text: 'لا وسيلة سريعة لإخبار الآباء بالغيابات، النقط، أو المستجدات.' },
       ],
+    },
+    comparison: {
+      kicker: 'لماذا مدرستي؟',
+      title: 'الطريقة القديمة مقابل الطريقة الحديثة',
+      desc: 'شوف الفرق بعينيك. نفس المدرسة، تجربة مختلفة تماماً.',
+      old: {
+        title: 'بدون منصة',
+        items: [
+          'Excel ودفاتر ورقية متفرقة',
+          'بحث يدوي عن كل معلومة',
+          'أخطاء في الحسابات والأقساط',
+          'غيابات بدون تتبع دقيق',
+          'تواصل صعب مع الأولياء',
+          'تقارير تُحضّر يدوياً كل شهر',
+        ],
+      },
+      new: {
+        title: 'مع مدرستي',
+        items: [
+          'قاعدة بيانات موحّدة وآمنة',
+          'بحث فوري في كل الملفات',
+          'حساب تلقائي دقيق للأقساط',
+          'تتبع الغيابات + إشعار فوري',
+          'رسائل وواتساب وإيميل مباشر',
+          'تقارير جاهزة بضغطة واحدة',
+        ],
+      },
     },
     features: {
       kicker: 'الحل المتكامل',
@@ -61,6 +94,16 @@ const T = {
         { title: 'الرسائل والإشعارات', text: 'رسائل داخلية + إشعارات بالبريد الإلكتروني للأولياء.' },
         { title: 'متابعة الغيابات', text: 'حضور يومي، إشعار فوري للأولياء، وتقارير دقيقة.' },
         { title: 'أمان وحماية البيانات', text: 'توافق مع القانون 09-08، تشفير، ونسخ احتياطي تلقائي.' },
+      ],
+    },
+    howItWorks: {
+      kicker: 'كيف تبدأ؟',
+      title: 'ابدأ في 3 خطوات بسيطة',
+      desc: 'ما عندكش شي حاجة صعبة. ف 10 دقائق تكون جاهز.',
+      steps: [
+        { title: 'أنشئ حساب مؤسستك', text: 'سجّل بالمعلومات الأساسية — الاسم، العنوان، البريد. بدون بطاقة بنكية.' },
+        { title: 'أضف تلاميذك وأقسامك', text: 'استورد قائمتك من Excel أو أدخلها يدوياً. كل شي يتحفظ تلقائياً.' },
+        { title: 'ابدأ التسيير اليومي', text: 'سجّل الحضور، الأقساط، النقط، وابعث الإشعارات للأولياء بضغطة.' },
       ],
     },
     advanced: {
@@ -181,7 +224,7 @@ const T = {
     dir: 'ltr' as const,
     lang: 'fr' as const,
     brand: 'Madrasti',
-    nav: { features: 'Fonctionnalités', roles: 'Rôles', pricing: 'Tarifs', faq: 'FAQ' },
+    nav: { features: 'Fonctionnalités', how: 'Comment ça marche', pricing: 'Tarifs', faq: 'FAQ' },
     login: 'Connexion',
     startFree: 'Commencer gratuitement',
     announcement: 'Nouveau : support complet WhatsApp Business',
@@ -193,6 +236,7 @@ const T = {
       desc: 'Tout ce dont votre administration a besoin dans un seul espace : élèves, inscriptions, échéances, caisse, notes, présence, et communication avec les parents.',
       cta1: 'Créer mon établissement',
       cta2: 'Voir la démo',
+      eyebrowTrust: 'Sans carte bancaire · Prêt en 10 minutes',
       trust: ['Données organisées et sécurisées', 'Essai gratuit à vie', 'Sans carte bancaire'],
     },
     mockup: { kicker: 'Aperçu rapide', title: 'Résumé de l\'établissement', students: 'Élèves actifs', revenue: 'Revenus ce mois', collect: 'Taux de recouvrement', remaining: 'Restant', success: 'Taux de réussite' },
@@ -202,6 +246,10 @@ const T = {
       { value: '12h', label: 'Économisées/sem.' },
       { value: '24/7', label: 'Support continu' },
     ],
+    socialProof: {
+      title: 'Adoptée par des écoles privées au Maroc',
+      items: ['École Elites', 'Académie Avenir', 'Groupe Amal', 'École Rachidine', 'Académie Najah'],
+    },
     problems: {
       kicker: 'Défis quotidiens',
       title: 'Les défis quotidiens des écoles privées',
@@ -212,6 +260,33 @@ const T = {
         { title: 'Temps perdu en administration', text: 'Des heures en inscriptions, factures et rapports au lieu de se concentrer sur l\'enseignement.' },
         { title: 'Communication faible avec les parents', text: 'Aucun moyen rapide d\'informer les parents des absences, notes ou actualités.' },
       ],
+    },
+    comparison: {
+      kicker: 'Pourquoi Madrasti ?',
+      title: 'L\'ancienne méthode vs la moderne',
+      desc: 'Voyez la différence. Même école, expérience totalement différente.',
+      old: {
+        title: 'Sans plateforme',
+        items: [
+          'Excel et dossiers papier éparpillés',
+          'Recherche manuelle de chaque information',
+          'Erreurs dans les calculs et échéances',
+          'Absences sans suivi précis',
+          'Communication difficile avec les parents',
+          'Rapports préparés manuellement chaque mois',
+        ],
+      },
+      new: {
+        title: 'Avec Madrasti',
+        items: [
+          'Base de données unifiée et sécurisée',
+          'Recherche instantanée dans tous les dossiers',
+          'Calcul automatique et précis des échéances',
+          'Suivi des absences + notification instantanée',
+          'Messages, WhatsApp et email directs',
+          'Rapports prêts en un clic',
+        ],
+      },
     },
     features: {
       kicker: 'La solution intégrée',
@@ -226,6 +301,16 @@ const T = {
         { title: 'Messages & notifications', text: 'Messages internes + notifications par email pour les parents.' },
         { title: 'Suivi des absences', text: 'Présence quotidienne, notification instantanée et rapports précis.' },
         { title: 'Sécurité & protection', text: 'Conformité loi 09-08, chiffrement et sauvegarde automatique.' },
+      ],
+    },
+    howItWorks: {
+      kicker: 'Comment démarrer ?',
+      title: 'Lancez-vous en 3 étapes simples',
+      desc: 'Rien de compliqué. En 10 minutes, vous êtes prêt.',
+      steps: [
+        { title: 'Créez votre établissement', text: 'Inscrivez-vous avec les informations de base — nom, adresse, email. Sans carte bancaire.' },
+        { title: 'Ajoutez vos élèves et classes', text: 'Importez votre liste depuis Excel ou saisissez-la. Tout est sauvegardé automatiquement.' },
+        { title: 'Commencez la gestion quotidienne', text: 'Présence, échéances, notes, et envoyez les notifications aux parents en un clic.' },
       ],
     },
     advanced: {
@@ -385,28 +470,19 @@ export default function Home() {
         </span>
       </div>
 
-      {/* ============ HERO WRAPPER ============ */}
-      <div className="relative isolate bg-[#0b2f35] text-white">
-        <div
-          className="absolute inset-0 -z-10 opacity-70"
-          style={{
-            backgroundImage:
-              'radial-gradient(circle at 15% 20%, #1b8c77 0, transparent 28%), radial-gradient(circle at 88% 12%, #e9a63a55 0, transparent 23%)',
-          }}
-        />
-
-        {/* ============ HEADER ============ */}
-        <header className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400 text-[#0b2f35] shadow-lg shadow-emerald-950/20">
-              <GraduationCap className="h-6 w-6" />
+      {/* ============ STICKY HEADER ============ */}
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0b2f35]/85 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 lg:px-8">
+          <Link href="/" className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-400 text-[#0b2f35] shadow-lg shadow-emerald-950/20">
+              <GraduationCap className="h-5 w-5" />
             </span>
-            <span className="text-xl font-black tracking-tight">{t.brand}</span>
+            <span className="text-lg font-black tracking-tight text-white">{t.brand}</span>
           </Link>
 
-          <nav className="hidden items-center gap-8 text-sm text-white/75 md:flex">
+          <nav className="hidden items-center gap-7 text-sm text-white/75 md:flex">
             <a className="transition hover:text-white" href="#features">{t.nav.features}</a>
-            <a className="transition hover:text-white" href="#roles">{t.nav.roles}</a>
+            <a className="transition hover:text-white" href="#how">{t.nav.how}</a>
             <a className="transition hover:text-white" href="#pricing">{t.nav.pricing}</a>
             <a className="transition hover:text-white" href="#faq">{t.nav.faq}</a>
           </nav>
@@ -446,9 +522,19 @@ export default function Home() {
               {t.startFree}
             </Link>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* ============ HERO ============ */}
+      {/* ============ HERO ============ */}
+      <div className="relative isolate bg-[#0b2f35] text-white">
+        <div
+          className="absolute inset-0 -z-10 opacity-70"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 15% 20%, #1b8c77 0, transparent 28%), radial-gradient(circle at 88% 12%, #e9a63a55 0, transparent 23%)',
+          }}
+        />
+
         <section className="mx-auto grid max-w-7xl gap-12 px-5 pb-24 pt-14 lg:grid-cols-[1.12fr_.88fr] lg:px-8 lg:pb-32 lg:pt-20">
           <div className="max-w-2xl">
             <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-emerald-100">
@@ -481,7 +567,9 @@ export default function Home() {
               </Link>
             </div>
 
-            <div className="mt-11 flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/70">
+            <p className="mt-4 text-xs text-emerald-200/80">{t.hero.eyebrowTrust}</p>
+
+            <div className="mt-9 flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/70">
               {t.hero.trust.map((item, i) => {
                 const Icon = [ShieldCheck, Check, Zap][i]
                 return (
@@ -581,6 +669,25 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ============ SOCIAL PROOF ============ */}
+      <section className="border-b border-slate-100 bg-white py-12">
+        <div className="mx-auto max-w-7xl px-5 lg:px-8">
+          <p className="text-center text-xs font-bold uppercase tracking-wider text-slate-400">
+            {t.socialProof.title}
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-5">
+            {t.socialProof.items.map((name, i) => (
+              <span
+                key={i}
+                className="text-base font-black tracking-tight text-slate-300 transition hover:text-slate-500"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ============ PROBLEMS ============ */}
       <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
@@ -605,40 +712,124 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ============ FEATURES ============ */}
-      <section id="features" className="border-y border-slate-100 bg-white py-20">
+      {/* ============ COMPARISON ============ */}
+      <section className="border-y border-slate-100 bg-white py-20">
         <div className="mx-auto max-w-7xl px-5 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="page-kicker">{t.features.kicker}</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.features.title}</h2>
-            <p className="mt-4 leading-7 text-slate-500">{t.features.desc}</p>
+            <p className="page-kicker">{t.comparison.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.comparison.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.comparison.desc}</p>
           </div>
 
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {t.features.items.map((f, i) => {
-              const Icon = featureIcons[i]
-              const color = featureColors[i]
-              const colorMap: Record<string, string> = {
-                emerald: 'bg-emerald-50 text-emerald-700',
-                amber: 'bg-amber-50 text-amber-700',
-                indigo: 'bg-indigo-50 text-indigo-700',
-                purple: 'bg-purple-50 text-purple-700',
-                rose: 'bg-rose-50 text-rose-700',
-                cyan: 'bg-cyan-50 text-cyan-700',
-                orange: 'bg-orange-50 text-orange-700',
-                slate: 'bg-slate-100 text-slate-700',
-              }
+          <div className="mt-12 grid gap-5 lg:grid-cols-2">
+            {/* OLD */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-7">
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-slate-200 text-slate-500">
+                  <X className="h-5 w-5" />
+                </span>
+                <h3 className="text-lg font-black text-slate-500">{t.comparison.old.title}</h3>
+              </div>
+              <ul className="mt-6 space-y-3.5">
+                {t.comparison.old.items.map((item, i) => (
+                  <li key={i} className="flex items-start gap-2.5 text-sm text-slate-500">
+                    <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+                    <span className="line-through decoration-slate-300">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* NEW */}
+            <div className="rounded-2xl border-2 border-emerald-500 bg-[#0b4c42] p-7 text-white shadow-2xl shadow-emerald-900/25">
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400 text-[#0b2f35]">
+                  <Check className="h-5 w-5" />
+                </span>
+                <h3 className="text-lg font-black text-emerald-200">{t.comparison.new.title}</h3>
+              </div>
+              <ul className="mt-6 space-y-3.5">
+                {t.comparison.new.items.map((item, i) => (
+                  <li key={i} className="flex items-start gap-2.5 text-sm text-white/95">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ============ FEATURES ============ */}
+      <section id="features" className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+        <div className="mx-auto max-w-2xl text-center">
+          <p className="page-kicker">{t.features.kicker}</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.features.title}</h2>
+          <p className="mt-4 leading-7 text-slate-500">{t.features.desc}</p>
+        </div>
+
+        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {t.features.items.map((f, i) => {
+            const Icon = featureIcons[i]
+            const color = featureColors[i]
+            const colorMap: Record<string, string> = {
+              emerald: 'bg-emerald-50 text-emerald-700',
+              amber: 'bg-amber-50 text-amber-700',
+              indigo: 'bg-indigo-50 text-indigo-700',
+              purple: 'bg-purple-50 text-purple-700',
+              rose: 'bg-rose-50 text-rose-700',
+              cyan: 'bg-cyan-50 text-cyan-700',
+              orange: 'bg-orange-50 text-orange-700',
+              slate: 'bg-slate-100 text-slate-700',
+            }
+            const isLarge = i === 0 || i === 1
+            return (
+              <article
+                key={i}
+                className={`group rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl ${
+                  isLarge ? 'sm:col-span-2 lg:col-span-2' : ''
+                }`}
+              >
+                <span className={`grid h-12 w-12 place-items-center rounded-2xl ${colorMap[color]}`}>
+                  <Icon className="h-6 w-6" />
+                </span>
+                <h3 className="mt-5 text-base font-extrabold">{f.title}</h3>
+                <p className="mt-2 text-sm leading-7 text-slate-500">{f.text}</p>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* ============ HOW IT WORKS ============ */}
+      <section id="how" className="border-y border-slate-100 bg-white py-20">
+        <div className="mx-auto max-w-7xl px-5 lg:px-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="page-kicker">{t.howItWorks.kicker}</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t.howItWorks.title}</h2>
+            <p className="mt-4 leading-7 text-slate-500">{t.howItWorks.desc}</p>
+          </div>
+
+          <div className="relative mt-14 grid gap-8 lg:grid-cols-3">
+            {/* Connector line */}
+            <div className="absolute left-0 right-0 top-12 hidden h-0.5 bg-gradient-to-r from-emerald-200 via-emerald-400 to-emerald-200 lg:block" />
+
+            {t.howItWorks.steps.map((step, i) => {
+              const icons = [Rocket, Settings2, PartyPopper]
+              const Icon = icons[i]
               return (
-                <article
-                  key={i}
-                  className="group rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl"
-                >
-                  <span className={`grid h-12 w-12 place-items-center rounded-2xl ${colorMap[color]}`}>
-                    <Icon className="h-6 w-6" />
-                  </span>
-                  <h3 className="mt-5 text-base font-extrabold">{f.title}</h3>
-                  <p className="mt-2 text-sm leading-7 text-slate-500">{f.text}</p>
-                </article>
+                <div key={i} className="relative text-center">
+                  <div className="relative z-10 mx-auto grid h-24 w-24 place-items-center rounded-full border-4 border-white bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-xl shadow-emerald-900/20">
+                    <Icon className="h-9 w-9" />
+                  </div>
+                  <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+                    <Num>{i + 1}</Num>
+                    <span>خطوة</span>
+                  </div>
+                  <h3 className="mt-4 text-lg font-extrabold">{step.title}</h3>
+                  <p className="mx-auto mt-2 max-w-xs text-sm leading-7 text-slate-500">{step.text}</p>
+                </div>
               )
             })}
           </div>
@@ -731,7 +922,8 @@ export default function Home() {
 
         <div className="mt-12 grid gap-5 md:grid-cols-3">
           {t.testimonials.items.map((tst, i) => (
-            <div key={i} className="rounded-2xl border border-slate-100 bg-slate-50/40 p-6">
+            <div key={i} className="relative rounded-2xl border border-slate-100 bg-slate-50/40 p-6">
+              <Quote className="absolute -top-3 right-5 h-8 w-8 text-emerald-200" />
               <div className="flex items-center gap-1">
                 {Array.from({ length: 5 }).map((_, k) => (
                   <Star key={k} className="h-4 w-4 fill-amber-400 text-amber-400" />
@@ -973,7 +1165,7 @@ export default function Home() {
               <p className="text-sm font-bold text-white">{t.footer.product}</p>
               <ul className="mt-4 space-y-2.5 text-sm">
                 <li><a href="#features" className="transition hover:text-emerald-300">{t.nav.features}</a></li>
-                <li><a href="#roles" className="transition hover:text-emerald-300">{t.nav.roles}</a></li>
+                <li><a href="#how" className="transition hover:text-emerald-300">{t.nav.how}</a></li>
                 <li><a href="#pricing" className="transition hover:text-emerald-300">{t.nav.pricing}</a></li>
                 <li><a href="#faq" className="transition hover:text-emerald-300">{t.nav.faq}</a></li>
               </ul>
